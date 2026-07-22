@@ -16,4 +16,15 @@ type x86_64
 type wasm32
 type riscv64
 
-ARCH::type = compiler_target_arch()   # comptime constant, set per build
+# the compiler provides NOTHING here — zig comptime already knows the
+# target. ground blocks see the module's own declarations (as their
+# emitted zig forms), so the switch returns jpp tags directly.
+ARCH::type = zig{
+    switch (@import("builtin").target.cpu.arch) {
+        .aarch64 => arm64,
+        .x86_64  => x86_64,
+        .wasm32  => wasm32,
+        .riscv64 => riscv64,
+        else     => @compileError("jpp: unsupported target arch"),
+    }
+}
