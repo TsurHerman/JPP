@@ -1,0 +1,78 @@
+# ints.jpp
+#
+# seed note (Tsur): tagged compile-time enum carrying base types.
+#   int8,int16,int32,int64 / uint8,uint16,uint32,uint64
+#   Integer(a) = false ...
+#
+# jpp ground rules visible in this file:
+#   * file = module. this module is `ints`, its context is its imports (none).
+#   * machine types are builtin type VALUES (backed 1:1 by the metal).
+#     a type is an ordinary compile-time value; a function taking types
+#     is an ordinary function that runs at compile time.
+#   * top level runs at compile time. there is no "load time".
+
+export Integer, Signed, Unsigned, bits, signed, unsigned, widen
+
+# --- predicates ------------------------------------------------------
+# julia's abstract type tree (Integer <: Real <: Number) does not exist.
+# in its place: predicates. `Integer` is not a supertype, it is a question.
+# default answer false; specific methods answer true. most-specific wins.
+
+Integer(T::type) = false
+Signed(T::type)  = false
+
+for T in (int8, int16, int32, int64)        # top-level `for` = comptime,
+    Integer(T) = true                       # generating one method per T.
+    Signed(T)  = true                       # this is jpp's answer to eval:
+end                                         # staged codegen, sealed by build.
+
+for T in (uint8, uint16, uint32, uint64)
+    Integer(T) = true
+end
+
+Unsigned(T::type) = Integer(T) && !Signed(T)
+
+# annotation semantics, established here for the whole language:
+#   x::int32     exact type
+#   x::Integer   guard — Integer(typeof(x)) must hold, checked at compile time
+
+# --- structure -------------------------------------------------------
+
+for (T, n) in ((int8,8), (int16,16), (int32,32), (int64,64),
+               (uint8,8), (uint16,16), (uint32,32), (uint64,64))
+    bits(T) = n
+end
+
+# signedness twins
+for (U, S) in ((uint8,int8), (uint16,int16), (uint32,int32), (uint64,int64))
+    signed(U)   = S
+    signed(S)   = S
+    unsigned(U) = U
+    unsigned(S) = U
+end
+
+# next rung of the ladder (promotion and checked ops use this)
+widen(int8)  = int16;  widen(int16)  = int32;  widen(int32)  = int64
+widen(uint8) = uint16; widen(uint16) = uint32; widen(uint32) = uint64
+widen(int64)  = int64      # top of the ladder, for now (bigint is a module,
+widen(uint64) = uint64     # not a builtin — someone imports it or doesn't)
+
+# note: integer literals are comptime ints (arbitrary precision, adapt to
+# the site that consumes them, zig-style). `x + 1` never causes promotion.
+
+# --- ground zero -----------------------------------------------------
+# ground blocks (zig{}/c{}/llvm{}): the jpp signature is the contract,
+# param names flow in, declared return type flows out, nothing inferred
+# across the boundary. bodies are axioms — no context dispatch inside.
+#
+# overflow: julia-9/10 rule — integers wrap (two's complement), zig +% *%.
+# checked_ints remains possible as a policy module.
+
+export +, -, *, popcount
+
+for T in (int8, int16, int32, int64, uint8, uint16, uint32, uint64) {
+    +(a::T, b::T)::T = zig{ a +% b }
+    -(a::T, b::T)::T = zig{ a -% b }
+    *(a::T, b::T)::T = zig{ a *% b }
+    popcount(a::T)::int32 = zig{ @popCount(a) }
+}

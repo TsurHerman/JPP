@@ -1,0 +1,43 @@
+# floats.jpp
+
+export Float, bits, widen
+
+Float(T::type) = false
+for T in (float16, float32, float64)
+    Float(T) = true
+end
+
+for (T, n) in ((float16,16), (float32,32), (float64,64))
+    bits(T) = n
+end
+
+widen(float16) = float32
+widen(float32) = float64
+widen(float64) = float64
+
+# --- ground zero (IEEE 754 semantics, julia-9/10: julia == ieee here) --
+
+export +, -, *, fma, fast_inv_sqrt
+
+for T in (float16, float32, float64) {
+    +(a::T, b::T)::T = zig{ a + b }
+    -(a::T, b::T)::T = zig{ a - b }
+    *(a::T, b::T)::T = zig{ a * b }
+}
+
+# llvm{} = the exact door; target-guarded method + portable fallback.
+fma(a::float64, b::float64, c::float64)::float64
+    where target.arch == aarch64 = llvm{
+        %r = call double @llvm.fma.f64(double %a, double %b, double %c)
+        ret double %r
+    }
+fma(a::float64, b::float64, c::float64)::float64 = zig{ @mulAdd(f64, a, b, c) }
+
+# c{} = the legacy door; zig ships clang, so this is not FFI.
+fast_inv_sqrt(x::float32)::float32 = c{
+    float y = x;
+    long i = *(long*)&y;
+    i = 0x5f3759df - (i >> 1);
+    y = *(float*)&i;
+    return y * (1.5f - 0.5f * x * y * y);
+}

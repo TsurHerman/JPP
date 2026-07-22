@@ -1,0 +1,17 @@
+# tensors.jpp — decision stub, design pass pending.
+#
+# DECIDED (julia-9/10 deviation #4, explicit):
+#   * 0-based indexing.
+#   * python/numpy ordering: row-major (C order), last index fastest.
+#     rationale: the tensor world jpp lands in speaks numpy/pytorch —
+#     zero-copy views over their buffers, C libraries, no transpose tax
+#     at every boundary. julia's column-major stays a policy module away
+#     for the BLAS-shaped corners that want it.
+#
+# and in this language the deviation is SHALLOW by construction:
+#   indexing is an open function. getindex/setindex resolve in context,
+#   so `using one_based` (or fortran_order) is ordinary method extension
+#   for whoever needs julia-shaped arrays. non-issue, as stated.
+#
+# everything else about tensors: not yet designed. waits on the memory
+# model examples (tensors are where alloc/views/ownership get real).
