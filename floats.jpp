@@ -25,13 +25,17 @@ for T in (float16, float32, float64) {
     *(a::T, b::T)::T = zig{ a * b }
 }
 
-# llvm{} = the exact door; target-guarded method + portable fallback.
-fma(a::float64, b::float64, c::float64)::float64
-    where target.arch == aarch64 = llvm{
-        %r = call double @llvm.fma.f64(double %a, double %b, double %c)
-        ret double %r
-    }
-fma(a::float64, b::float64, c::float64)::float64 = zig{ @mulAdd(f64, a, b, c) }
+# llvm{} = the exact door. arch selection is ORDINARY DISPATCH on the
+# comptime value ARCH — no special target mechanism exists or is needed.
+using intrinsics
+
+fma(a::float64, b::float64, c::float64)::float64 = _fma(a, b, c, ARCH)
+
+_fma(a, b, c, T::type)::float64 = zig{ @mulAdd(f64, a, b, c) }   # portable
+_fma(a, b, c, ::arm64)::float64 = llvm{
+    %r = call double @llvm.fma.f64(double %a, double %b, double %c)
+    ret double %r
+}
 
 # c{} = the legacy door; zig ships clang, so this is not FFI.
 fast_inv_sqrt(x::float32)::float32 = c{

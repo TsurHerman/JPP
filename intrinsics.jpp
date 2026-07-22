@@ -1,0 +1,19 @@
+# intrinsics.jpp — the target as a value.
+#
+# arch tags are comptime type values; ARCH is bound by the compiler to
+# the tag of the current compilation target. that's all this module is:
+# the vocabulary for dispatching on "where am I compiling to".
+#
+# dispatch forms this enables (ratified here):
+#   f(x, T::type)   matches any type value          (portable fallback)
+#   f(x, ::arm64)   matches the VALUE arm64 itself  (exact beats generic)
+
+export ARCH, arm64, x86_64, wasm32, riscv64
+
+# tags (the set grows with zig's target list; these are the day-one ones)
+type arm64
+type x86_64
+type wasm32
+type riscv64
+
+ARCH::type = compiler_target_arch()   # comptime constant, set per build
