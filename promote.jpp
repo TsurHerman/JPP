@@ -9,9 +9,8 @@ using reals
 export promote, promotable, +, -, *
 
 # --- the rule table: methods of `promote` ON TYPE VALUES ---------------
-# (same function name as the value-level promote below; types are values,
-#  dispatch tells them apart. this is julia's promote_type/promote pair
-#  collapsed into one open function.)
+# (same open function as the value-level promote below; types are values,
+#  dispatch tells them apart. julia's promote_type/promote pair collapsed.)
 
 # same signedness: wider wins
 promote(A::Integer, B::Integer) where Signed(A) == Signed(B) =
@@ -34,20 +33,20 @@ promote(F::Float, G::Float) = bits(F) >= bits(G) ? F : G
 promotable(A::type, B::type) = A != B && exists(promote, A, B)
 
 # --- value-level promote, and the surface operators --------------------
+# {A,B} = comptime type parameters, inferred from the arguments.
 # extension-only rule keeps this from eating the world: we cannot
 # re-cover +(int64,int64) — same-type arithmetic stays owned by ints.
 
-promote(a::A, b::B) where promotable(A, B) = {
+promote{A,B}(a::A, b::B) where promotable(A, B) = {
     T = promote(A, B)                        # comptime, memoized
     (convert(T, a), convert(T, b))
 }
 
-+(a::A, b::B) where promotable(A, B) = { (x, y) = promote(a, b); x + y }
--(a::A, b::B) where promotable(A, B) = { (x, y) = promote(a, b); x - y }
-*(a::A, b::B) where promotable(A, B) = { (x, y) = promote(a, b); x * y }
++{A,B}(a::A, b::B) where promotable(A, B) = { (x, y) = promote(a, b); x + y }
+-{A,B}(a::A, b::B) where promotable(A, B) = { (x, y) = promote(a, b); x - y }
+*{A,B}(a::A, b::B) where promotable(A, B) = { (x, y) = promote(a, b); x * y }
 
-# note the guard on value-level promote: promotable(A,B) demands A != B,
-# which is also what keeps exists(promote, A, B) well-founded — the
-# value-level method can never satisfy its own existence check.
-# a strict_promote policy module can still refuse int64+uint64 with a
-# compile error — importing THAT instead is a context choice, not a fork.
+# note: the A != B inside promotable is also what keeps exists(promote,A,B)
+# well-founded — the value-level method can never satisfy its own existence
+# check (for type-valued args A == B == type kills the guard). the guard
+# does double duty: semantics and termination, same clause.

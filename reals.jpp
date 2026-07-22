@@ -1,5 +1,7 @@
-# reals.jpp — where ints and floats meet. convert lives here.
+# reals.jpp — where ints and floats MEET. only the cross-domain methods
+# live here; each family owns its in-family conversion, core owns identity.
 
+using core
 using ints
 using floats
 
@@ -7,17 +9,11 @@ export Real, convert
 
 Real(T::type) = Integer(T) || Float(T)
 
-# convert(T, x): first argument is a type VALUE — ordinary dispatch.
-convert(T::type, x::T) = x                      # identity, most specific
+# int -> float: exact in the float's sense (rounds per IEEE)
+convert(T::Float, x<:Integer)::T = zig{ @floatFromInt(x) }
 
-# julia-9/10: convert is EXACT — lossy conversion is an error, not a wrap.
-# zig's casts agree in safe builds (@intCast asserts fit), so ground = zig.
-
-convert(T::Integer, x::I) where Integer(I) && T != I = zig{ @intCast(x) }
-convert(T::Float,   x::I) where Integer(I)           = zig{ @floatFromInt(x) }
-convert(T::Float,   x::F) where Float(F) && T != F   = zig{ @floatCast(x) }
-convert(T::Integer, x::F) where Float(F) = zig{
-    // julia: InexactError unless representable. trap if fractional.
+# float -> int: julia-9/10, EXACT — InexactError unless representable
+convert(T::Integer, x<:Float)::T = zig{
     const r = @round(x);
     if (r != x) @panic("inexact");
     @intFromFloat(r)

@@ -7,22 +7,22 @@ for T in (float16, float32, float64)
     Float(T) = true
 end
 
-for (T, n) in ((float16,16), (float32,32), (float64,64))
-    bits(T) = n
-end
-
 widen(float16) = float32
 widen(float32) = float64
 widen(float64) = float64
 
 # --- ground zero (IEEE 754 semantics, julia-9/10: julia == ieee here) --
 
-export +, -, *, fma, fast_inv_sqrt
+export +, -, *, fma, fast_inv_sqrt, convert
+
+using core
+convert(T::Float, x<:Float)::T = zig{ @floatCast(x) }   # float->float
 
 for T in (float16, float32, float64) {
     +(a::T, b::T)::T = zig{ a + b }
     -(a::T, b::T)::T = zig{ a - b }
     *(a::T, b::T)::T = zig{ a * b }
+    bits(T)::int32 = zig{ @bitSizeOf(T) }   # per-T axiom, same subtlety as ints
 }
 
 # llvm{} = the exact door. arch selection is ORDINARY DISPATCH on the

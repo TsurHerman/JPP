@@ -28,3 +28,6 @@ ARCH::type = zig{
         else     => @compileError("jpp: unsupported target arch"),
     }
 }
+
+exists(f, args...) : does f resolve for these comptime-known values
+ret_type(f,args...) : propagted back from surface bits return type

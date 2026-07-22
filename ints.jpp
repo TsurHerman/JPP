@@ -34,14 +34,13 @@ Unsigned(T::type) = Integer(T) && !Signed(T)
 
 # annotation semantics, established here for the whole language:
 #   x::int32     exact type
-#   x::Integer   guard — Integer(typeof(x)) must hold, checked at compile time
+#   x<:Integer   guard on the TYPE of x — Integer(typeof(x)) must hold
+#   T::Integer   T is a comptime VALUE satisfying Integer(T) (types are
+#                values; :: applies the predicate to the value itself)
+#   f{T}(...)    comptime type parameters, {} immediately after the name
 
 # --- structure -------------------------------------------------------
-
-for (T, n) in ((int8,8), (int16,16), (int32,32), (int64,64),
-               (uint8,8), (uint16,16), (uint32,32), (uint64,64))
-    bits(T) = n
-end
+# (bits lives in the ground loop below — the metal knows its own width)
 
 # signedness twins
 for (U, S) in ((uint8,int8), (uint16,int16), (uint32,int32), (uint64,int64))
@@ -68,11 +67,24 @@ widen(uint64) = uint64     # not a builtin — someone imports it or doesn't)
 # overflow: julia-9/10 rule — integers wrap (two's complement), zig +% *%.
 # checked_ints remains possible as a policy module.
 
-export +, -, *, popcount
+export +, -, *, popcount, convert
 
 for T in (int8, int16, int32, int64, uint8, uint16, uint32, uint64) {
     +(a::T, b::T)::T = zig{ a +% b }
     -(a::T, b::T)::T = zig{ a -% b }
     *(a::T, b::T)::T = zig{ a *% b }
     popcount(a::T)::int32 = zig{ @popCount(a) }
+    bits(T)::int32 = zig{ @bitSizeOf(T) }
+    # NOTE the subtlety: this is deliberately a per-T method inside the
+    # loop, NOT one generic bits(T::Integer) method. a ground body is an
+    # axiom only for the machine types enumerated here — a future
+    # Integer(BigInt)=true must not inherit @bitSizeOf by accident.
 }
+
+# int -> int conversion lives here, with its types. exact (traps on
+# overflow in safe builds — julia InexactError semantics). no T != I
+# guard needed: core's identity convert{T}(x::T) is an exact match and
+# outranks this predicate method.
+using core
+convert(T::Integer, x<:Integer)::T = zig{ @intCast(x) }
+
