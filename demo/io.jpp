@@ -1,0 +1,6 @@
+# io.jpp — multiple dispatch on print; returns inferred across the
+# ground boundary (no ::nothing needed — zig infers the block's type)
+export print
+
+print(x::int64) = zig{ std.debug.print("int64:   {d}\n", .{x}) }
+print(x::float64) = zig{ std.debug.print("float64: {d}\n", .{x}) }

@@ -1,32 +1,36 @@
-# floats.jpp
+# floats.jpp — machine floats: predicate, structure, promotion, ground ops.
 
-export Float, bits, widen
+export Float, bits, widen, promote
+export +, -, *, fma, fast_inv_sqrt, convert
+
+# --- predicate & structure ----------------------------------------------
 
 Float(T::type) = false
-for T in (float16, float32, float64)
+for T in (float16, float32, float64) {
     Float(T) = true
-end
+}
 
 widen(float16) = float32
 widen(float32) = float64
 widen(float64) = float64
 
-# --- ground zero (IEEE 754 semantics, julia-9/10: julia == ieee here) --
+# --- promote: wider wins -------------------------------------------------
 
-export +, -, *, fma, fast_inv_sqrt, convert
+promote{F<:Float, G<:Float} = bits(F) >= bits(G) ? F : G
 
-using core
-convert(T::Float, x<:Float)::T = zig{ @floatCast(x) }   # float->float
+# --- ground zero (IEEE 754) ----------------------------------------------
 
 for T in (float16, float32, float64) {
     +(a::T, b::T)::T = zig{ a + b }
     -(a::T, b::T)::T = zig{ a - b }
     *(a::T, b::T)::T = zig{ a * b }
-    bits(T)::int32 = zig{ @bitSizeOf(T) }   # per-T axiom, same subtlety as ints
+    bits(T)::int32 = zig{ @bitSizeOf(T) }   # per-T axiom, deliberately in-loop
 }
 
-# llvm{} = the exact door. arch selection is ORDINARY DISPATCH on the
-# comptime value ARCH — no special target mechanism exists or is needed.
+using core
+convert{T<:Float}(x<:Float)::T = zig{ @floatCast(x) }
+
+# arch selection is ordinary dispatch on the comptime value ARCH
 using intrinsics
 
 fma(a::float64, b::float64, c::float64)::float64 = _fma(a, b, c, ARCH)
@@ -37,7 +41,6 @@ _fma(a, b, c, ::arm64)::float64 = llvm{
     ret double %r
 }
 
-# c{} = the legacy door; zig ships clang, so this is not FFI.
 fast_inv_sqrt(x::float32)::float32 = c{
     float y = x;
     long i = *(long*)&y;

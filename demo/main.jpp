@@ -1,0 +1,11 @@
+# main.jpp — entry module
+using ints
+using floats
+using algebra
+using io
+
+main() = {
+    print(42)
+    describe(21)
+    describe(1.5)
+}

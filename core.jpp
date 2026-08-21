@@ -1,9 +1,0 @@
-# core.jpp — root open functions everyone extends. the 2018 pattern:
-# a shared root so independent extenders fuse instead of colliding.
-
-export convert
-
-# ratified syntax: comptime type parameters in {} immediately after the
-# function name. T is inferred at the call site unless given explicitly.
-convert{T}(x::T) = x      # identity. exact match — beats every predicate
-                          # method, so extenders never need a T != I guard.

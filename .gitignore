@@ -1,0 +1,4 @@
+# derived artifacts — regenerate with `zig build transpile`
+gen/
+.zig-cache/
+zig-out/

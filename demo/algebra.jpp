@@ -1,0 +1,13 @@
+# algebra.jpp — generic composed methods; bodies dispatch in the
+# CALLER's context (the founding sentence)
+using io
+export double, square, describe
+
+double(x) = x + x
+square(x) = x * x
+
+describe(x) = {
+    print(x)
+    print(double(x))
+    print(square(x))
+}

@@ -1,0 +1,12 @@
+# tweaked_main.jpp — caller of a caller of a caller:
+#   tweaked_main -> stats.report -> algebra.describe/double -> `+`
+# the tweaked `+` reaches through TWO modules that never imported it.
+# `*` stays untweaked (square is honest, double is off-by-one).
+using tweaked
+using ints
+using floats
+using stats
+using algebra
+using io
+
+main() = report(21)

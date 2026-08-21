@@ -1,0 +1,40 @@
+# reals.jpp — where ints and floats meet: cross-domain convert & promote,
+# and the promoting operators. in-family rules fuse in from ints/floats.
+
+using ints
+using floats
+
+export Real, convert, promote, +, -, *
+
+Real(T::type) = Integer(T) || Float(T)
+
+# --- cross-domain convert ------------------------------------------------
+
+convert{T<:Float}(x<:Integer)::T = zig{ @floatFromInt(x) }
+
+# float -> int: exact, InexactError unless representable
+convert{T<:Integer}(x<:Float)::T = zig{
+    const r = @round(x);
+    if (r != x) @panic("inexact");
+    @intFromFloat(r)
+}
+
+# --- cross-domain promote: ints dissolve into floats ----------------------
+
+promote{A<:Integer, F<:Float} = F
+promote{F<:Float, A<:Integer} = F
+
+# --- paren call on values: the converted pair ------------------------------
+
+promote(a<:Real, b<:Real) = {
+    T = promote{typeof(a), typeof(b)}
+    convert{T}(a), convert{T}(b)
+}
+
+# --- the promoting operators, generated (julia verbatim) --------------------
+# domain constraint, not reflection: a missing promote{} rule errors at the
+# call site naming both types. same-type calls hit the exact ground methods.
+
+for op in (+, -, *) {
+    op(a<:Real, b<:Real) = op(promote(a, b)...)
+}
