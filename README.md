@@ -40,6 +40,7 @@ Status of the major features:
 | predicate gates `where T <: Integer` (sugar for `Integer(T)`); predicates are ordinary words qualed on `::type` | RUNS (where_gate) |
 | predicates DEFINED from predicates (joins/meets), so `where` needs no boolean combinators | RUNS (pred_join) |
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
+| a small implicit `Base` import; arithmetic remains ordinary library code | RATIFIED — unbuilt; exact export set and bootstrap remain OPEN |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
 | declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs | RUNS (declaration_names, unused_ground; negative: undeclared_order, unused_input, unused_untyped_ground, unused_anonymous) |
@@ -106,6 +107,15 @@ Status of the major features:
   (`Base/Test.jpp` → `using Test`). A tree module of the same name
   shadows it. Zig's `std` exists only inside `zig{}` — a different
   name, a different plane.
+- **A small implicit Base import (RATIFIED, unbuilt).** Reduce common
+  import boilerplate by making a small `Base` interface implicitly
+  available. Arithmetic remains ordinary library code: the import supplies
+  visible definitions governed by the existing fusion, specificity, and
+  caller-first context rules. It does not give operators special compiler
+  meanings or require consumers to re-export them. The exact export set
+  and bootstrap arrangement remain OPEN. Today Base modules still require
+  explicit imports; joining `Base/` into a source tree is discovery, not
+  an implicit import.
 - **Exports gate everything (ratified).** A word callable from outside
   its module — by fusion (`using`) OR by qualification (`M.f`) — must
   be labeled `export`. One closed interface per module; internals
@@ -1069,9 +1079,9 @@ print/algebra demo):
   modules price thirteen two-line baskets in retail/member contexts.
   Arithmetic has one explicit shared provider; the member policy changes
   discounts and freight through deeper imports. Native record values cross
-  ground boundaries. The case study records ergonomics and limits; an
-  implicit foundation import and export-only dependency declarations remain
-  proposals, not implemented features.
+  ground boundaries. The case study records ergonomics and limits. A small
+  implicit `Base` import is RATIFIED but unbuilt; export-only dependency
+  declarations remain OPEN.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across

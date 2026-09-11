@@ -73,7 +73,7 @@ all six fields plus `gross − discount = net` and
 
 | Observation from this code | Design implication |
 |---|---|
-| Arithmetic is defined and exported once; ten consumers repeat `using arithmetic`. | A small implicit foundation import could remove repetition. Operators and `Any` should remain ordinary library definitions. Consumers need not export operators. |
+| Arithmetic is defined and exported once; ten consumers repeat `using arithmetic`. | A small implicit `Base` import is now RATIFIED to reduce repetition, but remains unbuilt. Arithmetic stays ordinary library code. Consumers need not export operators. |
 | `using pricing.lines`, `using shipping`, and `using tax` explain domain dependencies. | Keep domain imports explicit. A takeover module gives a folder a focused public API. |
 | One policy import changes both discounts and freight deep in the same library graph. | Caller context is useful without policy parameters on every helper. Defaults have real meanings here. |
 | `withPrices`, `withShipping`, `withTax`, and `deduct` mainly carry intermediate results. | Implement the ratified immutable local bindings (§6): names for dataflow edges, not mutable state. |
@@ -81,10 +81,10 @@ all six fields plus `gross − discount = net` and
 | The basket is fixed at two lines. | Variadic packs or traversal are needed before claiming a general cart. Putting its entire loop in a ground would bypass jpp dispatch and weaken the experiment. |
 
 The preferred direction is **a small implicit foundation, explicit domain
-imports, and explicit exported extension points**. The implicit import and
-export-without-body tunnel remain proposals, not features implemented by
-this case. All calls here have actual source-visible local or imported
-definitions. Meaningful defaults suffice for these policies; a future case
+imports, and explicit exported extension points**. The small implicit `Base`
+import is now RATIFIED; the export-without-body tunnel remains OPEN. Neither
+is implemented by this case. All calls here have actual source-visible local
+or imported definitions. Meaningful defaults suffice for these policies; a future case
 with a service that genuinely requires a provider should test the tunnel.
 
 `choose` evaluates both value arguments before selection; it is not lazy

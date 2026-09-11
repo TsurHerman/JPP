@@ -37,6 +37,8 @@ a feature; preserve the ratified semantics unless the task changes them.
   Mutual pairs do not imply a transitive equivalence relation. Keep losing
   candidates needed for other dominance decisions during context collapse.
 - `Base/` supplies library modules; the source tree can shadow their names.
+  A small implicit `Base` import is RATIFIED but unbuilt; arithmetic remains
+  ordinary library code. Current modules still use explicit imports.
   `design/` contains future syntax, not runnable regression fixtures.
 - `src/ast.zig` describes the intended AST but is not yet consumed by
   jppc. `src/emit.zig` and the original hand-transpiled spike are historical.
