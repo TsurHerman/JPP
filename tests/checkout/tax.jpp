@@ -1,0 +1,7 @@
+using arithmetic
+using money
+export taxCharge, taxRate
+
+# Fictional example policy: 20 percent on discounted goods plus delivery.
+taxRate() = 2000
+taxCharge(net_cents::int64, freight_cents::int64) = rateAmount(net_cents + freight_cents, taxRate())

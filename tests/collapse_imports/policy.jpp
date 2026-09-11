@@ -1,0 +1,2 @@
+export tag
+tag(x::int64) = zig{ x + 100 }

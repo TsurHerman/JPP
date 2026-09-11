@@ -1,0 +1,5 @@
+using arithmetic
+export carrierFee
+
+# 350 cents handling + 75 cents per started kilogram.
+carrierFee(grams::int64) = 350 + 75 * ceilQuotient(grams, 1000)

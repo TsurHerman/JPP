@@ -26,6 +26,16 @@ that defines `main`; `Base/` modules join every tree, the tree's own
 shadow them), then `zig run <out_dir>/run.zig`.
 `zig test src/jpp.zig`; `zig test spike/<probe>.zig`.
 
+For a larger runnable example, read [the checkout case study](tests/checkout/test.md):
+
+```sh
+zig run src/jppc.zig -- tests/checkout tests/.gen/checkout
+zig run tests/.gen/checkout/run.zig
+```
+
+It prices baskets through nested modules in two application contexts,
+prints receipts, and checks the totals. It also runs under `zig build test`.
+
 **The case contract (unix, self-judging, ONE artifact):** jppc emits a
 single `run.zig` per tree. Each program (root module defining `main`)
 runs as a fresh root context; `check(name, got, want)` (from

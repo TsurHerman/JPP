@@ -1,0 +1,15 @@
+using checkout
+using model
+using verify
+using Test
+
+main() = {
+    verifyQuote("retail / small basket", quote(basket(line(1299, 2, 250), line(2500, 1, 800))), 5098, 0, 5098, 500, 1120, 6718)
+    verifyQuote("retail / bulk basket", quote(basket(line(1299, 10, 250), line(2500, 2, 800))), 17990, 1299, 16691, 0, 3338, 20029)
+    verifyQuote("retail / empty basket", quote(basket(line(1299, 0, 250), line(2500, 0, 800))), 0, 0, 0, 0, 0, 0)
+    verifyQuote("retail / exact delivery threshold", quote(basket(line(5000, 1, 500), line(5000, 1, 500))), 10000, 0, 10000, 0, 2000, 12000)
+    verifyQuote("retail / below delivery threshold", quote(basket(line(4999, 1, 500), line(5000, 1, 500))), 9999, 0, 9999, 425, 2085, 12509)
+    verifyQuote("retail / below bulk quantity", quote(basket(line(100, 9, 100), line(2500, 0, 800))), 900, 0, 900, 425, 265, 1590)
+    verifyQuote("retail / exact bulk quantity", quote(basket(line(100, 10, 100), line(2500, 0, 800))), 1000, 100, 900, 425, 265, 1590)
+    check("order has a real line record", Line(int64), false)
+}

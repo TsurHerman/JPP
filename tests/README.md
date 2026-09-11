@@ -62,6 +62,9 @@ negative facts and context position. `pointwise_gap` rejects dominance with
 an incomparable coordinate; `gate_conjunction` checks every conjunct.
 `order_cycle` diagnoses a strict cycle with no maximum.
 `collapse_dependencies` keeps a losing method needed for another decision.
+`collapse_imports` keeps caller overrides needed behind deeper imports
+without making those imports visible early. `ground_records` preserves runtime
+data, static type fields, and runtime branch inference across ground boundaries.
 `private_helpers`, `private_downstream`, and `folder_scope` test lexical
 privacy and declaration homes through module aggregation. `equality_scope`
 checks the same import rule for equality gates; `undefined_export` prevents
@@ -72,6 +75,12 @@ types, predicate rank, and the authored Base order. `any_override` and
 `any_shadow` check caller overrides and source-tree replacement;
 `any_order_gap` and `any_unimported` reject hidden order and builtin names.
 
+[checkout](checkout/test.md) is an application case study: nineteen source
+modules, thirteen baskets in two contexts, and 105 assertions covering
+discounts, rounding, delivery, tax, records, and accounting identities.
+It records the ergonomics of shared arithmetic, explicit domain imports,
+deep policy overrides, and the missing local-binding/record/variadic surface.
+
 ## Promise catalog and coverage
 
 | # | Promise (README ref) | Covered today | Boundary tests to write |
@@ -80,12 +89,12 @@ types, predicate rank, and the authored Base order. `any_override` and
 | 2 | Ambiguity: same-module crossing = comptime error at the call; intersection cures (§9) | `ambiguity`, `where_gate_clash`, `pointwise_gap`, `order_cycle` (negative cases); machinery tests | — |
 | 3 | Ordered context: position breaks ties; flip flips (§1, §9) | `override`, `context_flip`; machinery tests | — |
 | 4 | Context accumulation: caller ahead, callee STATIC behind (§1) | `depth_override`, `caller_context`, `equality_scope` | direct extendAll-ordering test |
-| 5 | Depth overrides: surgical, unlimited (§1, §10.5) | `depth_override` | 4+ levels; two overrides at different depths |
+| 5 | Depth overrides: surgical, unlimited (§1, §10.5) | `depth_override`, `collapse_imports`; `checkout` (4+ levels, discount and freight overrides at different depths) | recursive call graphs |
 | 6 | Delegation `M.f` (§1) | machinery tests | surface `M.f` (parser) then a case |
-| 7 | Collapse: resolving module owns the instance (§9) | `collapse_dependencies`; machinery tests | symbol-hash stability once hashes land |
+| 7 | Collapse: resolving module owns the instance (§9) | `collapse_dependencies`, `collapse_imports`, `checkout`; machinery tests | symbol-hash stability once hashes land |
 | 8 | Exports gate everything (§1) | `export_gate`, `private_downstream` (negative); `private_helpers`; machinery tests (fixture) | `M.f` qualification path once surface lands |
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
-| 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` defined over bool, exported, precedence pinned); machinery tests (`+` shadowed) | `+ - * /` have no library definitions yet — each tree defines its own |
+| 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` defined over bool, exported, precedence pinned); `checkout` (shared `+ - * /` provider inside the example); machinery tests (`+` shadowed) | standard Base arithmetic library |
 | 10 | Binder: packs, named args (§4) | binderprobe (spike) | surface named args |
 | 11 | Enum bridge (§4) | enumprobe (spike) | surface selectors |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
@@ -96,6 +105,7 @@ types, predicate rank, and the authored Base order. `any_override` and
 | 18 | Annotated inputs may be unused; anonymous universal predicate inputs use `<:Any` | `unused_ground`, `any` (positive); `unused_input`, `unused_untyped_ground`, `unused_anonymous` (negative) | richer pattern syntax |
 | 19 | Type values and bound return types survive calls | `type_values`, `type_bindings`; machinery pack test | general static value selectors |
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
+| 21 | Ground inference preserves runtime data and intentional static fields (§7) | `ground_records`; `checkout` (native record pipeline and void statement emission) | richer record surface |
 
 Call dependency contracts remain OPEN: the existing caller-context cases
 prove selection and propagation, but not lexical call validity. The

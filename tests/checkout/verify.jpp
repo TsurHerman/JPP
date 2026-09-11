@@ -1,0 +1,20 @@
+using arithmetic
+using model.quote
+using Test
+export verifyQuote
+
+verifyQuote(label::string, quoted, gross::int64, discount::int64, net::int64, freight::int64, tax::int64, total::int64) = {
+    showQuote(label, quoted)
+    check("gross goods", grossCents(quoted), gross)
+    check("line discounts", discountCents(quoted), discount)
+    check("net goods", netCents(quoted), net)
+    check("delivery", freightCents(quoted), freight)
+    check("tax", taxCents(quoted), tax)
+    check("payable", totalCents(quoted), total)
+    check("goods accounting identity", grossCents(quoted) - discountCents(quoted), netCents(quoted))
+    check("invoice accounting identity", netCents(quoted) + freightCents(quoted) + taxCents(quoted), totalCents(quoted))
+}
+
+showQuote(label::string, quoted)::nothing = zig{
+    std.debug.print("{s}: gross={d} discount={d} net={d} delivery={d} tax={d} total={d} cents\n", .{ label, quoted.gross, quoted.discount, quoted.net, quoted.freight, quoted.tax, quoted.total });
+}

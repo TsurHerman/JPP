@@ -574,8 +574,16 @@ fn extendAllFrom(comptime ctx: anytype, comptime mods: anytype, comptime i: usiz
     return extendAllFrom(ctx ++ .{mods[i]}, mods, i + 1);
 }
 
-pub fn extendAll(comptime ctx: anytype, comptime mods: anytype) ExtendAllT(ctx, mods, 0) {
-    return extendAllFrom(ctx, mods, 0);
+fn Extended(comptime ctx: anytype, comptime mods: anytype) type {
+    // A declaration caches the value as well as its type. Return-type mirrors
+    // otherwise repeat the same context construction through deep inference.
+    return struct {
+        const value = extendAllFrom(ctx, mods, 0);
+    };
+}
+
+pub fn extendAll(comptime ctx: anytype, comptime mods: anytype) @TypeOf(Extended(ctx, mods).value) {
+    return Extended(ctx, mods).value;
 }
 
 fn StaticOf(comptime home: type) if (@hasDecl(home, "STATIC")) @TypeOf(home.STATIC) else @TypeOf(.{home}) {
@@ -590,39 +598,69 @@ fn containsWord(comptime words: []const []const u8, comptime w: []const u8) bool
     return false;
 }
 
+fn DependencyModules(comptime ctx: anytype) type {
+    return struct {
+        // Only a discovery universe: these imports do NOT enter the caller's
+        // resolution context until the corresponding method is entered.
+        const value = blk: {
+            var mods: [512]type = undefined;
+            var n: usize = 0;
+            for (ctx) |mod| {
+                if (contains(mods[0..n], mod)) continue;
+                if (n == mods.len) @compileError("jpp: dependency module limit exceeded.");
+                mods[n] = mod;
+                n += 1;
+            }
+            var i: usize = 0;
+            while (i < n) : (i += 1) {
+                for (StaticOf(mods[i])) |mod| {
+                    if (contains(mods[0..n], mod)) continue;
+                    if (n == mods.len) @compileError("jpp: dependency module limit exceeded.");
+                    mods[n] = mod;
+                    n += 1;
+                }
+            }
+            break :blk mods[0..n].*;
+        };
+    };
+}
+
 fn footprint(comptime ctx: anytype, comptime word: []const u8) []const []const u8 {
     comptime {
         @setEvalBranchQuota(1_000_000);
         var words: [128][]const u8 = undefined;
-        var n: usize = 1;
+        // The judge and the order can themselves call ordinary words.
+        var n: usize = 3;
         words[0] = word;
-        var changed = true;
-        while (changed) {
-            changed = false;
-            for (0..n) |wi| {
-                const w = words[wi];
-                for (0..ctx.len) |mi| {
-                    if (!@hasDecl(ctx[mi], w)) continue;
-                    const MM = @field(ctx[mi], w);
-                    if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
-                    for (MM.methods) |m| {
-                        // a gate is a dependency edge like any call: the
-                        // predicate word must survive context collapse or
-                        // matching itself becomes unresolvable.
-                        for (m.gates) |gt| {
-                            if (!containsWord(words[0..n], gt.word)) {
-                                words[n] = gt.word;
-                                n += 1;
-                                changed = true;
-                            }
+        words[1] = "<:";
+        words[2] = "specificity";
+        const mods = DependencyModules(ctx).value;
+        // Scan each discovered word once. Repeatedly rescanning the entire
+        // prefix made ordinary deep module graphs exhaust the comptime quota.
+        var wi: usize = 0;
+        while (wi < n) : (wi += 1) {
+            const w = words[wi];
+            for (mods) |mod| {
+                if (!@hasDecl(mod, w)) continue;
+                const MM = @field(mod, w);
+                if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
+                for (MM.methods) |m| {
+                    // a gate is a dependency edge like any call: the
+                    // predicate word must survive context collapse or
+                    // matching itself becomes unresolvable.
+                    for (m.gates) |gt| {
+                        if (!containsWord(words[0..n], gt.word)) {
+                            if (n == words.len) @compileError("jpp: dependency word limit exceeded.");
+                            words[n] = gt.word;
+                            n += 1;
                         }
-                        if (m.body != .ops) continue;
-                        for (m.body.ops.ops) |op| {
-                            if (!containsWord(words[0..n], op.callee)) {
-                                words[n] = op.callee;
-                                n += 1;
-                                changed = true;
-                            }
+                    }
+                    if (m.body != .ops) continue;
+                    for (m.body.ops.ops) |op| {
+                        if (!containsWord(words[0..n], op.callee)) {
+                            if (n == words.len) @compileError("jpp: dependency word limit exceeded.");
+                            words[n] = op.callee;
+                            n += 1;
                         }
                     }
                 }
@@ -661,8 +699,14 @@ fn canonFrom(comptime acc: anytype, comptime ctx: anytype, comptime words: []con
     return canonFrom(acc, ctx, words, i + 1);
 }
 
-pub fn canon(comptime ctx: anytype, comptime word: []const u8) CanonT(.{}, ctx, footprint(ctx, word), 0) {
-    return canonFrom(.{}, ctx, footprint(ctx, word), 0);
+fn Canonical(comptime ctx: anytype, comptime word: []const u8) type {
+    return struct {
+        const value = canonFrom(.{}, ctx, footprint(ctx, word), 0);
+    };
+}
+
+pub fn canon(comptime ctx: anytype, comptime word: []const u8) @TypeOf(Canonical(ctx, word).value) {
+    return Canonical(ctx, word).value;
 }
 
 // --- resolution ------------------------------------------------------------------------

@@ -1,0 +1,14 @@
+# The entire application customization is this additional import.
+using policies.member
+using checkout
+using model
+using verify
+
+main() = {
+    verifyQuote("member / small basket", quote(basket(line(1299, 2, 250), line(2500, 1, 800))), 5098, 255, 4843, 500, 1069, 6412)
+    verifyQuote("member / bulk basket", quote(basket(line(1299, 10, 250), line(2500, 2, 800))), 17990, 2199, 15791, 0, 3158, 18949)
+    verifyQuote("member / empty basket", quote(basket(line(1299, 0, 250), line(2500, 0, 800))), 0, 0, 0, 0, 0, 0)
+    verifyQuote("member / free delivery", quote(basket(line(3000, 1, 500), line(3000, 1, 500))), 6000, 300, 5700, 0, 1140, 6840)
+    verifyQuote("member / discount before threshold", quote(basket(line(2500, 1, 500), line(2500, 1, 500))), 5000, 250, 4750, 425, 1035, 6210)
+    verifyQuote("member / round each line", quote(basket(line(110, 1, 500), line(110, 1, 500))), 220, 12, 208, 425, 127, 760)
+}

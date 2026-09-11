@@ -1,0 +1,8 @@
+export pricedCart, grossGoods, netGoods, parcelGrams
+
+pricedCart(gross_cents::int64, net_cents::int64, grams::int64) = zig{
+    .{ .gross_cents = gross_cents, .net_cents = net_cents, .grams = grams }
+}
+grossGoods(priced) = zig{ priced.gross_cents }
+netGoods(priced) = zig{ priced.net_cents }
+parcelGrams(priced) = zig{ priced.grams }

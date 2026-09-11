@@ -35,8 +35,8 @@ Status of the major features:
 | feature | status |
 |---|---|
 | dispatch core: exact/bare quals, dominance, position, context accumulation, depth overrides | RUNS |
-| conservative context collapse; lexical private helpers and exported fusion | RUNS (collapse_dependencies, private_helpers, private_downstream) |
-| ground `zig{}` bodies, inferred returns across the boundary | RUNS |
+| conservative context collapse across deeper imports; lexical private helpers and exported fusion | RUNS (collapse_dependencies, collapse_imports, checkout, private_helpers, private_downstream) |
+| ground `zig{}` bodies, inferred returns across the boundary, runtime records with static fields | RUNS (ground_records, checkout) |
 | predicate gates `where T <: Integer` (sugar for `Integer(T)`); predicates are ordinary words qualed on `::type` | RUNS (where_gate) |
 | predicates DEFINED from predicates (joins/meets), so `where` needs no boolean combinators | RUNS (pred_join) |
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
@@ -666,13 +666,16 @@ freestanding; Zig ships clang, so `c{}` is native, not FFI).
 Boundary contract:
 - The jpp signature is the contract: param names flow in. The return
   type: declared wins when present; otherwise INFERRED across the
-  boundary (ratified — zig infers a ground block's type via a @TypeOf
-  mirror of the body over an undefined pack: analyzed, never executed).
+  boundary. RUNS: the ground's generated `run` return signature analyzes
+  the body with `@TypeOf` against its runtime parameters; the separate
+  return query asks for that function call's type without executing it.
+  Runtime record fields stay runtime, while explicitly static fields
+  retain their values and type identity (`ground_records`).
   Same rule as jpp-level bodies — one inference story everywhere.
-  KNOWN LIMIT of the mirror (found via check.jpp): a body whose
-  analysis forces comptime evaluation of slot VALUES — e.g. `if` over
-  params, which comptime-known undefineds turn into a comptime branch —
-  cannot be mirrored; such grounds must declare their return.
+  This replaces the undefined-comptime-pack mirror, which incorrectly
+  froze record data and tried to evaluate runtime branch conditions.
+  Runtime selection now infers correctly. Zig operations that inherently
+  require comptime data still cannot depend on runtime values.
 - Ground blocks see the module's own declarations (their emitted Zig forms).
 - Bodies are axioms — no context dispatch inside. One-way door.
 - **Axioms are enumerated, not predicate-generic**: ground methods are
@@ -979,6 +982,13 @@ Boundary contract:
   nothing in the footprint provably cannot change any resolution and
   drop (decl-level). RUNS: the active implementation is conservative and
   keeps every module defining a reachable word, including losing methods.
+  Discovery follows static imports transitively so a dependency hidden
+  behind a later module boundary cannot erase a caller's override early.
+  That discovery graph is not the resolution context: collapse only
+  filters the existing caller sequence, and imports still accumulate on
+  method entry (`collapse_imports`, `checkout`). Worklist discovery and
+  cached context values let the checkout graph compile under the existing
+  comptime quota; this does not settle the recursion issue in §11.
   A more aggressive decision-based collapse is OPEN. The historical
   probe's claim that removing losers always preserves winners is false
   for the pairwise nontransitive relation: A<B, B<C, no A<C leaves A
@@ -1039,7 +1049,7 @@ print/algebra demo):
 - `src/jppc.zig` — the transpiler: lexer (ground capture with
   string-skipping), parser (defs, params, predicate gates, infix
   precedence, blocks), normalizer (ANF), emitter (five-fact data literals + ground fn
-  structs with @TypeOf-mirror inferred returns), driver
+  structs with return inference against runtime parameters), driver
   (defaults: tests/dispatch -> gen/, machinery copied alongside,
   harness generated). Source trees are discovered recursively; folder
   aggregates, takeover modules, dotted imports, and Base library
@@ -1055,6 +1065,13 @@ print/algebra demo):
   it would report dependencies from the footprint closure. Such a report
   is not a checked callable contract; that boundary is now under explicit
   design review in [word contracts](design/word_contracts.md).
+- [Checkout](tests/checkout/test.md) is a larger RUNS case: nineteen source
+  modules price thirteen two-line baskets in retail/member contexts.
+  Arithmetic has one explicit shared provider; the member policy changes
+  discounts and freight through deeper imports. Native record values cross
+  ground boundaries. The case study records ergonomics and limits; an
+  implicit foundation import and export-only dependency declarations remain
+  proposals, not implemented features.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across

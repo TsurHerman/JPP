@@ -1,0 +1,11 @@
+using arithmetic
+using model.line
+using pricing.discounts
+export grossLine, netLine, gramsLine
+
+grossLine(item<:Line) = unitPrice(item) * unitCount(item)
+netLine(item<:Line) = deduct(grossLine(item), unitCount(item))
+gramsLine(item<:Line) = unitGrams(item) * unitCount(item)
+
+# Private helper passes the computed amount once; local bindings are unbuilt.
+deduct(cents::int64, count::int64) = cents - lineDiscount(cents, count)

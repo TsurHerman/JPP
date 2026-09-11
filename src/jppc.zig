@@ -587,7 +587,8 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
     for (m.exports) |x| o.add("\"{s}\",", .{x});
     o.add(" }};\ncomptime {{ jpp.validateExports(DECLARED, EXPORTED); }}\n", .{});
 
-    // ground structs (printed zig; Ret = declared or @TypeOf mirror)
+    // Infer against run's runtime parameters. An undefined comptime sample
+    // would accidentally freeze ordinary fields in returned record literals.
     for (m.defs, 0..) |d, k| {
         const g = d.ground orelse continue;
         o.add("\nconst G{d} = struct {{\n", .{k});
@@ -598,18 +599,23 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
             emitBoundType(o, d, r);
             o.add(";\n", .{});
         } else {
-            if (groundUsesAny(d, g)) o.add("        const bound: B = undefined;\n", .{}) else o.add("        _ = B;\n", .{});
-            emitGroundPrelude(o, d, g);
-            o.add("        return @TypeOf({s});\n", .{g});
+            o.add("        return @TypeOf(run(@as(B, undefined)));\n", .{});
         }
         o.add("    }}\n", .{});
-        o.add("    pub fn run(bound: anytype) Ret(@TypeOf(bound)) {{\n", .{});
+        if (d.ret != null) {
+            o.add("    pub fn run(bound: anytype) Ret(@TypeOf(bound)) {{\n", .{});
+        } else {
+            o.add("    pub fn run(bound: anytype) @TypeOf(ground_result: {{\n", .{});
+            emitGroundPrelude(o, d, g);
+            o.add("        break :ground_result {s};\n    }}) {{\n", .{g});
+            if (!groundUsesAny(d, g)) o.add("        _ = bound;\n", .{});
+        }
         emitGroundPrelude(o, d, g);
         // declared-nothing grounds are STATEMENTS (blocks, ifs); the rest
         // are expressions returned
         const is_void = if (d.ret) |r| std.mem.eql(u8, r, "nothing") else false;
         if (is_void) {
-            if (std.mem.endsWith(u8, g, "}")) o.add("        {s}\n", .{g}) else o.add("        {s};\n", .{g});
+            if (std.mem.endsWith(u8, g, "}") or std.mem.endsWith(u8, g, ";")) o.add("        {s}\n", .{g}) else o.add("        {s};\n", .{g});
         } else {
             o.add("        return {s};\n", .{g});
         }

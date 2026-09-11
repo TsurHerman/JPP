@@ -1,0 +1,11 @@
+export quoteRecord, grossCents, discountCents, netCents, freightCents, taxCents, totalCents
+
+quoteRecord(gross::int64, discount::int64, net::int64, freight::int64, tax::int64, total::int64) = zig{
+    .{ .gross = gross, .discount = discount, .net = net, .freight = freight, .tax = tax, .total = total }
+}
+grossCents(quoted) = zig{ quoted.gross }
+discountCents(quoted) = zig{ quoted.discount }
+netCents(quoted) = zig{ quoted.net }
+freightCents(quoted) = zig{ quoted.freight }
+taxCents(quoted) = zig{ quoted.tax }
+totalCents(quoted) = zig{ quoted.total }

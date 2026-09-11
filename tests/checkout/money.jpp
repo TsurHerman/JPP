@@ -1,0 +1,5 @@
+using arithmetic
+export rateAmount
+
+# 10000 basis points = 100 percent. Money remains integer cents.
+rateAmount(cents::int64, basis_points::int64) = roundQuotient(cents * basis_points, 10000)

@@ -1,0 +1,6 @@
+using arithmetic
+export discountRate, freeShippingThreshold
+
+# Same signatures as the defaults. The application's context selects these.
+discountRate(count::int64) = choose(atLeast(count, 10), 1500, 500)
+freeShippingThreshold() = 5000
