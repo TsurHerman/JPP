@@ -1,9 +1,10 @@
+using Any
 # one word, five methods, four of them gated on overlapping classes.
 # every int16 answers ALL four predicates; the lattice is what decides.
 using preds
 export kind, tiny, utiny
 
-kind(::Any) = 0
+kind(<:Any) = 0
 kind(::T) where T <: Numeric = 1
 kind(::T) where T <: Small = 2
 kind(::T) where T <: Signed = 3

@@ -1,0 +1,5 @@
+# Universal membership and its fallback order are ordinary library methods.
+export Any, <:
+
+Any(::type)::bool = true
+<:(::type, Any) = true

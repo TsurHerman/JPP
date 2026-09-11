@@ -1,0 +1,5 @@
+using Any
+export pick
+
+pick(::T) where T = 1
+pick(<:Any) = 2

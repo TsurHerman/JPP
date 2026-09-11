@@ -32,12 +32,12 @@ live in different places. `pairup(1, 1.5)` fails identity;
 **A gated binder sits on the PREDICATE rung.** The ledger's ladder is
 `::` exact 3 > `<:` predicate 2 > bare 1, and `x<:Integer` is the same
 statement as `x::T where T <: Integer`, so the two must rank alike.
-`describe` puts all three rungs on one word in one module: `describe(1)`
-answers 3 (exact outranks the gate), `describe(1.5)` answers 2 (the gate
-outranks bare), `describe("hi")` answers 0. Without the lift the gated
-and bare methods would tie at rank 1 and collide as an ambiguity error,
-which would make the ordinary julia pairing of a general fallback plus a
-constrained specialization illegal in a single module.
+`describe(1)` answers 3 because the exact input type outranks a gate.
+Its fallback is now the ordinary Any predicate, also on rank 2.
+`describe(1.5)` answers 2 because Base explicitly authors other classes
+below Any; `describe("hi")` answers 0 because only Any accepts strings.
+Both spellings use that same authored order. The `any` case separately
+checks that a predicate beats an unconstrained binder at rank 1.
 
 `kindof` exists because `describe`'s exact rung hides the Integer gate
 ever winning — with the exact method gone, the gate is what answers.
@@ -47,3 +47,6 @@ gate resolves caller-first with the defining module's static context as
 fallback — the same reach a body gets — so applicability stays
 caller-derived (a caller that extends `Integer` leads by position)
 without every caller having to import the predicate module.
+The caller imports Any here for its order rule when comparing gates;
+predicate applicability and the context used for order comparisons are
+distinct. `any_override` tests membership with Any imported only by the library.

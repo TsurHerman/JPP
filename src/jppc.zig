@@ -593,17 +593,15 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
         o.add("\nconst G{d} = struct {{\n", .{k});
         o.add("    pub fn Ret(comptime B: type) type {{\n", .{});
         if (d.ret) |r| {
-            o.add("        const declared = ", .{});
+            if (!boundTypeName(d, r)) o.add("        _ = B;\n", .{});
+            o.add("        return ", .{});
             emitBoundType(o, d, r);
-            o.add(";\n        if (declared != jpp.Any) return declared;\n", .{});
+            o.add(";\n", .{});
+        } else {
+            if (groundUsesAny(d, g)) o.add("        const bound: B = undefined;\n", .{}) else o.add("        _ = B;\n", .{});
+            emitGroundPrelude(o, d, g);
+            o.add("        return @TypeOf({s});\n", .{g});
         }
-        if (groundUsesAny(d, g)) {
-            o.add("        const bound: B = undefined;\n", .{});
-        } else if (d.ret == null or !boundTypeName(d, d.ret.?)) {
-            o.add("        _ = B;\n", .{});
-        }
-        emitGroundPrelude(o, d, g);
-        o.add("        return @TypeOf({s});\n", .{g});
         o.add("    }}\n", .{});
         o.add("    pub fn run(bound: anytype) Ret(@TypeOf(bound)) {{\n", .{});
         emitGroundPrelude(o, d, g);

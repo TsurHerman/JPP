@@ -2,7 +2,7 @@
 
 Status: **OPEN — research recommendation, not implemented or ratified.**
 Reviewed against the current compiler and language cases on 2026-09-11.
-The separate explicit `Any` change is RUNS; it does not implement contracts.
+The ordinary Base `Any` predicate is RUNS; it does not implement contracts.
 
 ## Recommendation
 
@@ -44,7 +44,7 @@ from their separation of declarations, obligations, and implementations.
 
 Consider three possible bases for a word:
 
-- `tag(::Any) = 0`: supplies an actual answer for every accepted input. This
+- `tag(<:Any) = 0`: supplies an actual answer for every accepted input. This
   is appropriate only if zero is the intended fallback meaning. Otherwise
   an uncovered implementation becomes an apparently successful computation.
 - A catch-all that raises an error: records a failure path rather than an
@@ -60,8 +60,9 @@ can intentionally return false outside its specialized cases. Requiring
 that default for *all* words confuses an author's chosen semantics with a
 compiler's need to validate references.
 
-`Any` is a universal input domain, not evidence of implementation coverage.
-`::Any` may be ignored because its domain is explicit; `x::Any` may retain a
+Base defines `Any(::type)::bool = true` as an ordinary predicate. Universal
+membership is not evidence of implementation coverage.
+`<:Any` may be ignored because its domain is explicit; `x<:Any` may retain a
 name. Reading the name in the body is not a proof that the dependency is
 valid, that the result is correct, or that every input has an implementation.
 The unused-input diagnostic is a small guard against accidental generic
@@ -81,8 +82,9 @@ One possible spelling is a signature without `=`:
 
 ```text
 # Proposal only — the current parser requires a body.
+using Any
 export tag
-tag(::Any)::int64
+tag(<:Any)::int64
 ```
 
 Here the surface describes the permitted family of implementations; it does

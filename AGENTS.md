@@ -24,7 +24,9 @@ a feature; preserve the ratified semantics unless the task changes them.
   fresh name binds an input. Never manufacture class identities from
   undefined names. Annotated inputs may be unused: their annotation gives
   them a signature role. Unused, unannotated inputs error, including `_`;
-  use `::Any` for an unrestricted anonymous input. Type values retain their
+  `Any` is an ordinary Base predicate: import it and use `<:Any`, with
+  ordinary predicate rank and authored order. Never special-case its name,
+  input acceptance, or return type in the compiler. Type values retain their
   identity in comptime pack fields; an integer value and its type are
   different call arguments.
 - Private helpers are lexical; exported words fuse through caller context.

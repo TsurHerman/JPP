@@ -1,0 +1,13 @@
+using Any
+using Test
+
+pick(::T) where T = 0
+pick(<:Any) = 1
+
+main() = {
+    check("local Any module supplies its own membership", Any(bool), true)
+    check("Base membership is not injected", Any(int64), false)
+    check("local predicate accepts bool", pick(true), 1)
+    check("local predicate excludes integers", pick(7), 0)
+    check("Base order is not injected", <:(int64, Any), false)
+}

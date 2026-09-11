@@ -28,7 +28,8 @@ class names) are separate planes and neither constrains the other.
 `int64` is Signed but not Small; `uint16` is Small but not Signed —
 the two incomparable middles, separated only by which predicates the
 argument answers; `float64` reaches only Numeric; a string reaches only
-the bare method.
+the Any predicate method. Base's ordinary order rule places each of the
+diamond's predicates below Any; the caller imports that order explicitly.
 
 **Transitivity is not authored here, and is not needed here.** See
 `tests/lattice_gap` for why that holds only while the middle classes

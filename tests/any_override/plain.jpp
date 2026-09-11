@@ -1,0 +1,7 @@
+using lib
+using Test
+
+main() = {
+    check("library imports the ordinary Any definition", pick(7), 2)
+    check("standard Any accepts floats", pick(1.5), 2)
+}

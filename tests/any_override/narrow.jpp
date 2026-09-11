@@ -1,0 +1,2 @@
+export Any
+Any(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }

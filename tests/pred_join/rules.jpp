@@ -1,12 +1,13 @@
+using Any
 using preds
 export kind, pkind, ubyte, sbyte
 
-kind(::Any) = 0
+kind(<:Any) = 0
 kind(::T) where T <: Integer = 1
 kind(::T) where T <: Signed = 2
 kind(::T) where T <: SmallSigned = 3
 
-pkind(::Any) = 0
+pkind(<:Any) = 0
 pkind(::T) where T <: Prec = 1
 
 ubyte()::uint8 = zig{ 7 }

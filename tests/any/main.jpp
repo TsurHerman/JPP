@@ -1,29 +1,32 @@
+using Any
 using fallback
 using Test
 export forward
 
-# A used unannotated binder has the same domain/rank as explicit Any.
-# This module precedes fallback, so its implementation must win the tie.
+# Any is an ordinary predicate, so the later gated method beats this bare one.
 forward(x) = x
-identity(x::Any)::Any = x
-groundIdentity(x::Any)::Any = zig{ x }
-ignored(x::Any) = 11
-groundIgnored(x::Any)::int64 = zig{ 12 }
-anonymous(::Any) = 13
+identity(x<:Any) = x
+groundIdentity(x<:Any) = zig{ x }
+ignored(x<:Any) = 11
+groundIgnored(x<:Any)::int64 = zig{ 12 }
+anonymous(<:Any) = 13
 Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
-kind(::Any) = 0
+kind(<:Any) = 0
 kind(<:Integer) = 1
 kind(::int64) = 2
 kind(::type) = 3
 kind(Any) = 4
 same(P::type, Q::type)::bool = zig{ P == Q }
 sameString(a::string, b::string)::bool = zig{ std.mem.eql(u8, a, b) }
-result(T::type, x::Any)::T = x
-groundResult(T::type, x::Any)::T = zig{ x }
-small(::Any)::int32 = zig{ 7 }
+result(T::type, x<:Any)::T = x
+groundResult(T::type, x<:Any)::T = zig{ x }
+small(<:Any)::int32 = zig{ 7 }
 
 main() = {
-    check("Any and unannotated used input tie by context", forward(7), 7)
+    check("Any has predicate rank despite later context position", forward(7), 99)
+    check("Any is directly callable on integer types", Any(int64), true)
+    check("Any is directly callable on other types", Any(string), true)
+    check("Any accepts predicate identities", Any(Integer), true)
     check("named Any can be ignored", ignored(true), 11)
     check("ground Any can be ignored", groundIgnored("data"), 12)
     check("anonymous Any accepts a type value", anonymous(int64), 13)
@@ -34,12 +37,13 @@ main() = {
     check("Any preserves type identity", same(identity(float64), float64), true)
     check("ground Any preserves runtime type", groundIdentity(1.5), 1.5)
     check("ground Any preserves type identity", same(groundIdentity(int64), int64), true)
-    check("bound Any return infers a concrete result", result(Any, 7), 7)
-    check("ground bound Any return infers a concrete result", groundResult(Any, 7), 7)
+    check("bound concrete return type remains exact", result(int64, 7), 7)
+    check("ground bound concrete return type remains exact", groundResult(int64, 7), 7)
     check("exact input domain beats Any", kind(identity(7)), 2)
-    check("predicate domain beats Any", kind(small(true)), 1)
+    check("authored order refines Any", kind(small(true)), 1)
     check("Any fallback accepts bool", kind(true), 0)
     check("type input domain beats Any", kind(float64), 3)
-    check("Any as a value denotes that specific type", kind(Any), 4)
-    check("input inclusion does not author an order fact", <:(int64, Any), false)
+    check("Any as a value denotes its predicate identity", kind(Any), 4)
+    check("Base authors the fallback order", <:(Integer, Any), true)
+    check("Base does not author the reverse order", <:(Any, Integer), false)
 }

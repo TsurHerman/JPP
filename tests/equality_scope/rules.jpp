@@ -1,4 +1,5 @@
+using Any
 using order
 export accepts
-accepts(::Any, ::Any) = false
+accepts(<:Any, <:Any) = false
 accepts(P::type, Q::type) where P == Q = true

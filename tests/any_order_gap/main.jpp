@@ -1,0 +1,8 @@
+export Any, Integer, pick
+
+Any(::type)::bool = true
+Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
+pick(<:Any) = 0
+pick(<:Integer) = 1
+
+main() = pick(7)

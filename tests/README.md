@@ -67,11 +67,16 @@ privacy and declaration homes through module aggregation. `equality_scope`
 checks the same import rule for equality gates; `undefined_export` prevents
 an export list from inventing a definition.
 
+`Any` is an ordinary imported predicate. `any` checks direct calls, retained
+types, predicate rank, and the authored Base order. `any_override` and
+`any_shadow` check caller overrides and source-tree replacement;
+`any_order_gap` and `any_unimported` reject hidden order and builtin names.
+
 ## Promise catalog and coverage
 
 | # | Promise (README ref) | Covered today | Boundary tests to write |
 |---|---|---|---|
-| 1 | Specificity ladder: exact type value > exact input type > pred > bare; dominance, never sum (§4, §9) | `type_values` (type value versus input type); `dispatch` (exact/bare); `where_gate` (all three rungs on one word, in BOTH the `where T <: P` and the short `x<:P` spelling, landing rung for rung); `pointwise_gap`, `gate_conjunction`; machinery tests (bar lattice, ladder) | per-slot projections with variadics |
+| 1 | Specificity ladder: exact type value > exact input type > pred > bare; dominance, never sum (§4, §9) | `type_values` (type value versus input type); `dispatch` (exact/predicate); `where_gate` (long and short predicate spellings, authored Any fallback); `any` (predicate above bare); `pointwise_gap`, `gate_conjunction`; machinery tests (bar lattice, full ladder) | per-slot projections with variadics |
 | 2 | Ambiguity: same-module crossing = comptime error at the call; intersection cures (§9) | `ambiguity`, `where_gate_clash`, `pointwise_gap`, `order_cycle` (negative cases); machinery tests | — |
 | 3 | Ordered context: position breaks ties; flip flips (§1, §9) | `override`, `context_flip`; machinery tests | — |
 | 4 | Context accumulation: caller ahead, callee STATIC behind (§1) | `depth_override`, `caller_context`, `equality_scope` | direct extendAll-ordering test |
@@ -86,9 +91,9 @@ an export list from inventing a definition.
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: aggregate, takeover, dotted (§1) | `folder_modules`, `folder_scope`, `private_helpers` | nested aggregates (folder of folders) |
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
-| 15 | Library resolution: `using Test` from `Base/`, tree shadows Base | all check-based cases (implicitly) | explicit shadowing case (a tree module named Test) |
+| 15 | Library resolution: modules from `Base/`, tree shadows Base | all check-based cases (implicitly); `any_shadow` explicitly replaces a Base module | — |
 | 17 | Defined signature names require lexical definitions/imports | `declaration_names`, `undeclared_order`, `undefined_export` | user-defined type/constant declarations after that surface exists |
-| 18 | Annotated inputs may be unused; anonymous unrestricted inputs use `::Any` | `unused_ground`, `any` (positive); `unused_input`, `unused_untyped_ground`, `unused_anonymous` (negative) | richer pattern syntax |
+| 18 | Annotated inputs may be unused; anonymous universal predicate inputs use `<:Any` | `unused_ground`, `any` (positive); `unused_input`, `unused_untyped_ground`, `unused_anonymous` (negative) | richer pattern syntax |
 | 19 | Type values and bound return types survive calls | `type_values`, `type_bindings`; machinery pack test | general static value selectors |
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
 

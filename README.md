@@ -42,7 +42,8 @@ Status of the major features:
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
-| declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs; explicit `::Any` | RUNS (declaration_names, unused_ground, any; negative: undeclared_order, unused_input, unused_untyped_ground, unused_anonymous) |
+| declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs | RUNS (declaration_names, unused_ground; negative: undeclared_order, unused_input, unused_untyped_ground, unused_anonymous) |
+| `Any` is an ordinary imported predicate with authored fallback order | RUNS (any, any_override, any_shadow; negative: any_order_gap, any_unimported) |
 | exact type values, type-domain inputs, type-returning calls, and bound return types | RUNS (type_values, type_bindings) |
 | the type-only `<:` word: defined class/type facts, negative facts, general rules | RUNS (order_refines, order_variables, order_negative; negative: order_type_only, order_bool) |
 | `<:` is consulted PAIRWISE between candidates — no transitive closure; a chain conducts only through classes carrying a method, and the caller can supply a missing link | RUNS (lattice, lattice_bridge; negative: lattice_gap) |
@@ -275,18 +276,37 @@ value. `f(x::int64) = 42` is a valid constant function on integers, whether
 its body is ordinary jpp or a ground. Repeated type variables and predicate
 gates also retain their constraints when the values are unused.
 
-Anonymous inputs remain an option: `::Any` for any input, `::int64` for an
+Anonymous inputs remain an option: `<:Any` for an input accepted by the
+ordinary Any predicate, `::int64` for an
 integer, `::type` for a type value, and `<:Signed` for an input gated by
 Signed. A name used in a return annotation or a constraint is meaningful
 too. Thus `<:(P::type, Q::type) = false` is an explicit general rule, while
 the unannotated, undefined `Signed`/`Wide` example above still errors.
-Bare `_` is also an unused unannotated input and errors. `x::Any` may
-keep a name without using it. Both spellings retain each concrete input's
-type and value; `Any` introduces no boxing or erased runtime representation.
-It has the same dispatch rank as a used unannotated binder. An `::Any`
-return annotation permits the inferred concrete result. This universal
-input domain does not insert facts into the independently authored `<:`
-order; `Any` as a value denotes that particular type value.
+Bare `_` is also an unused unannotated input and errors. `x<:Any` may keep
+a name without using it. Like all predicate inputs, both spellings retain
+each concrete input's type and value, with no boxing or erased runtime
+representation.
+
+**Any is library code, not a builtin type or compiler wildcard (RUNS).**
+`using Any` imports `Base/Any.jpp`, which defines:
+
+```jpp
+export Any, <:
+Any(::type)::bool = true
+<:(::type, Any) = true
+```
+
+`Any(int64)` is an ordinary predicate call. `<:Any` has predicate rank 2,
+above an unconstrained binder and below an exact input type. Its fallback
+priority relative to other predicates comes from the authored order method
+above, when that module is in the comparison context. Merely defining an
+always-true predicate does not create an order edge (`any_order_gap`).
+Caller overrides can change membership; a source-tree `Any.jpp` can replace
+the Base module, including its order. The name requires a definition/import.
+`Any` as a value denotes its ordinary word/class identity. `::` still
+specifies an exact input type; predicate inputs use `<:`. Results follow
+normal inference or a concrete/bound return annotation, with no Any-specific
+return rule.
 
 A predicate word remains callable (`Signed(int64)` tests membership) and
 has a type-level class identity when passed as a value. Exported
@@ -298,7 +318,7 @@ proves set inclusion nor adds members to the predicate's definition.
 | declaration | accepted argument |
 |---|---|
 | `f(X) = X` | any input, bound to fresh `X` |
-| `f(::Any) = 0` or `f(x::Any) = 0` | any input, explicitly allowed to be unused |
+| `f(<:Any) = 0` or `f(x<:Any) = 0` | any input under Base's imported predicate, allowed to be unused |
 | `f(::int64) = 1` | an integer value |
 | `f(::type) = 2` | any type value |
 | `f(int64) = 3` | the specific type value `int64` |
@@ -1042,7 +1062,7 @@ print/algebra demo):
   predicates, and caller-authored `<:` facts refining gated dispatch.
   Defined signature values require lexical definitions/imports. Unused,
   unannotated fresh names error; annotated inputs may be unused, and
-  anonymous inputs use an annotation (`::Any` for the unrestricted case).
+  anonymous inputs use an annotation (`<:Any` imports the ordinary universal predicate).
   Type values, type results, and bound
   return types preserve comptime identity through ordinary calls. Private
   helpers and folder declaration homes are tested as part of the module boundary.

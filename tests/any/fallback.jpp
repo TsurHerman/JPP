@@ -1,2 +1,3 @@
+using Any
 export forward
-forward(::Any) = 99
+forward(<:Any) = 99

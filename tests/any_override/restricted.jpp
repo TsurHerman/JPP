@@ -1,0 +1,8 @@
+using narrow
+using lib
+using Test
+
+main() = {
+    check("caller predicate still accepts integers", pick(7), 2)
+    check("caller predicate changes applicability", pick(1.5), 1)
+}
