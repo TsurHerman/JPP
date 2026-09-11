@@ -1,0 +1,7 @@
+# calling it anyway. the promise: an unexported word is INVISIBLE —
+# the error is exactly a word that does not resolve, nothing leaks.
+using secret
+
+main() = {
+    hidden(7)
+}

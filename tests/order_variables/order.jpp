@@ -1,0 +1,9 @@
+# A defined pair refines a general rule over two actual type values.
+using preds
+export <:
+
+same(P::type, Q::type)::bool = zig{ P == Q }
+
+# Written first deliberately: specificity, not definition order, picks the fact.
+<:(P::type, Q::type) = same(P, Q)
+<:(Signed, Integer) = true

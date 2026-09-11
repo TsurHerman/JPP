@@ -1,0 +1,3 @@
+# ZERO imports — meaning arrives entirely from the caller
+export double
+double(x) = x + x

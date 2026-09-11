@@ -1,0 +1,4 @@
+using preds
+export pick
+pick(<:A) = 1
+pick(<:C) = 3

@@ -1,0 +1,9 @@
+# NEGATIVE. the chain Tiny <: Small <: Numeric is fully authored, and
+# an int8 answers Tiny and Numeric. yet this call does not compile.
+using order
+using rules
+using Test
+
+main() = {
+    check("chain conducts across the gap", gap(itsy()), 10)
+}

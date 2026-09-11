@@ -1,0 +1,12 @@
+using preds
+using order
+using rules
+using Test
+
+main() = {
+    check("gate on a DEFINED join", kind(ubyte()), 1)
+    check("gate on a DEFINED meet", kind(sbyte()), 3)
+    check("authored edge still decides", kind(21), 2)
+    check("join excludes non-members", kind(1.5), 0)
+    check("&& binds tighter than ||", pkind(ubyte()), 1)
+}

@@ -1,0 +1,11 @@
+using rules
+using preds
+using Test
+main() = {
+    check("defined name in an ordinary signature", identify(Signed), 1)
+    check("another defined name", identify(Wide), 2)
+    check("unrelated type", identify(int64), 0)
+    check("fresh uppercase name is a binder", identity(7), 7)
+    check("defined class order", <:(Signed, Wide), true)
+    check("order direction is explicit", <:(Wide, Signed), false)
+}

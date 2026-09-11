@@ -1,0 +1,4 @@
+using yes
+using no
+using Test
+main() = check("positive first", <:(int64, float64), true)

@@ -1,0 +1,6 @@
+using preds
+# the chain the library author shipped.
+export <:
+
+<:(Tiny, Small) = true
+<:(Small, Numeric) = true

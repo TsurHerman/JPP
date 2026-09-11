@@ -1,0 +1,9 @@
+# the PLAIN world: base's tag answers 1, at the call site and inside lib.
+using base
+using lib
+using Test
+
+main() = {
+    check("plain: tag answers 1", tag(21), 1)
+    check("plain: same inside lib", probe(21), 1)
+}

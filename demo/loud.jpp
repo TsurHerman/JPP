@@ -1,6 +1,0 @@
-# loud.jpp — a caller-side override of print for int64. algebra knows
-# NOTHING about this module; contexts that lead with it get loud ints
-# inside describe/double anyway.
-export print
-
-print(x::int64) = zig{ std.debug.print("INT!!!   {d}\n", .{x}) }

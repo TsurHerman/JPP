@@ -1,0 +1,6 @@
+using preds
+# the CALLER's module. one fact the library never stated, about two
+# classes the caller does not own.
+export <:
+
+<:(Tiny, Numeric) = true

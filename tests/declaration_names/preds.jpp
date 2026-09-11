@@ -1,0 +1,3 @@
+export Signed, Wide
+Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }
+Wide(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits >= 32, else => false } }

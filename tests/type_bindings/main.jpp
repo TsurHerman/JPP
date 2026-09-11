@@ -1,0 +1,20 @@
+using Test
+export typeof, accepts, same, <:, typed, grounded, groundType
+typeof(::T) where T = T
+same(P::type, Q::type)::bool = zig{ P == Q }
+accepts(_, _) = false
+accepts(P::type, Q::type) where P == Q = true
+<:(int32, uint32) = true
+<:(uint32, int32) = true
+typed(x::T)::T where T = x
+grounded(x::T)::T where T = zig{ x }
+groundType(::T)::type where T = zig{ T }
+main() = {
+    check("bound return type in a body", typed(7), 7)
+    check("bound return type in a ground", grounded(1.5), 1.5)
+    check("ground sees inferred type", same(groundType(3), int64), true)
+    check("body sees inferred type", same(typeof(3), int64), true)
+    check("identity gate", accepts(int64, int64), true)
+    check("type values are not equal just because both are types", accepts(int64, float64), false)
+    check("mutual surface facts satisfy equality gate", accepts(int32, uint32), true)
+}

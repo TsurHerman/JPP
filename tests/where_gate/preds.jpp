@@ -1,0 +1,8 @@
+# predicates are ORDINARY WORDS on types.
+# the slot is qualed `::type`, so the argument IS a type travelling as a
+# value; the body reads its structure at comptime. there is no abstract
+# type tree anywhere in jpp — this file is the whole of "Integer".
+export Integer, Float
+
+Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
+Float(T::type)::bool = zig{ switch (@typeInfo(T)) { .float => true, else => false } }

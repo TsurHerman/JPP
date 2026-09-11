@@ -1,0 +1,7 @@
+using preds
+export identify, identity, <:
+identify(::type) = 0
+identify(Signed) = 1
+identify(Wide) = 2
+identity(X) = X
+<:(Signed, Wide) = true

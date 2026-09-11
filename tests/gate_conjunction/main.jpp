@@ -1,0 +1,15 @@
+using Test
+export Signed, Wide, pick, flipped, byType
+Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }
+Wide(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits >= 32, else => false } }
+pick(::T) where T <: Signed = 1
+pick(::T) where T <: Signed, T <: Wide = 2
+flipped(::T) where T <: Signed = 1
+flipped(::T) where T <: Wide, T <: Signed = 2
+byType(T::type) where T <: Signed = 1
+byType(T::type) where T <: Signed, T <: Wide = 2
+main() = {
+    check("conjunction on explicit type values", byType(int64), 2)
+    check("conjunction refines its first gate", pick(1), 2)
+    check("conjunction refines its second gate", flipped(1), 2)
+}

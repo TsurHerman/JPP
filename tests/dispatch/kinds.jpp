@@ -1,0 +1,9 @@
+# dispatch made visible: every method returns its own number, so WHICH
+# method ran is the value itself.
+export kind, pick
+
+kind(::int64) = 1
+kind(::float64) = 2
+
+pick(_) = 0
+pick(::int64) = 1

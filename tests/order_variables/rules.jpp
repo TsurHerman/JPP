@@ -1,0 +1,6 @@
+# two gated methods on the SAME rung; only the order can separate them.
+using preds
+export g
+
+g(::T) where T <: Integer = 1
+g(::T) where T <: Signed = 2

@@ -1,0 +1,2 @@
+bad(::int64) where Missing = 0
+main() = 0

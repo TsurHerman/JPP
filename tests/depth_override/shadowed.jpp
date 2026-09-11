@@ -1,0 +1,14 @@
+# the SHADOWED world: same calls, but tweaked leads the context.
+# report -> stats -> algebra -> `+`: neither stats nor algebra imports
+# tweaked, yet the sentinel comes back — the override rode the context
+# through two oblivious modules. `*` has no override: square unchanged.
+using tweaked
+using ints
+using stats
+using algebra
+using Test
+
+main() = {
+    check("tweaked: SAME report(21), sentinel answer", report(21), 1000)
+    check("tweaked: square(21) untouched", square(21), 441)
+}

@@ -1,0 +1,4 @@
+using order
+export accepts
+accepts(_, _) = false
+accepts(P::type, Q::type) where P == Q = true

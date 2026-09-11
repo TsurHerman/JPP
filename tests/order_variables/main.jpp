@@ -1,0 +1,9 @@
+# VALIDATES: `<:` takes variables over classes, and specificity inside
+# the order word picks the specific fact over the general rule.
+using order
+using rules
+using Test
+
+main() = {
+    check("specific fact beats general rule", g(1), 2)
+}

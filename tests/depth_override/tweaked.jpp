@@ -1,0 +1,4 @@
+# the override: `+` answers a SENTINEL — 1000 cannot be a+b for our
+# probes, so wherever 1000 appears, it came from here. plain jpp body.
+export +
++(::int64, ::int64) = 1000

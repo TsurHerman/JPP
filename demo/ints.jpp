@@ -1,6 +1,0 @@
-# ints.jpp — ground integer arithmetic (wrapping: julia semantics)
-export +, -, *
-
-+(a::int64, b::int64) = zig{ a +% b }
--(a::int64, b::int64) = zig{ a -% b }
-*(a::int64, b::int64) = zig{ a *% b }

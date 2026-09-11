@@ -1,0 +1,10 @@
+# one module, two gated generals on the SAME rung. int64 answers both
+# predicates, both methods sit at rank 2 — and the LAST LINE is the only
+# difference from the where_gate_clash case, which does not compile.
+using preds
+export g, <:
+
+g(::T) where T <: Integer = 1
+g(::T) where T <: Signed = 2
+
+<:(Signed, Integer) = true

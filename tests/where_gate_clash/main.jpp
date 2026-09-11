@@ -1,0 +1,7 @@
+# the call that hits the overlap. this program never runs:
+# COMPILING it is the test, and compiling must fail.
+using clash
+
+main() = {
+    g(1)
+}

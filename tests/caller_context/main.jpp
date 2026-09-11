@@ -1,0 +1,12 @@
+# VALIDATES: dispatch is caller-derived — algebra imports NOTHING; the
+# meaning of `+` exists only in this context, and one generic serves
+# whatever types the context grounds.
+using ints
+using floats
+using algebra
+using Test
+
+main() = {
+    check("caller supplies meaning", double(21), 42)
+    check("one generic, another domain", double(1.5), 3.0)
+}

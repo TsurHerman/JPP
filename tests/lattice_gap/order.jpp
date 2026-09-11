@@ -1,0 +1,6 @@
+using preds
+# a CHAIN, fully authored: Tiny <: Small <: Numeric.
+export <:
+
+<:(Tiny, Small) = true
+<:(Small, Numeric) = true

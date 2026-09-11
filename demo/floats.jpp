@@ -1,6 +1,0 @@
-# floats.jpp — ground float arithmetic (IEEE 754)
-export +, -, *
-
-+(a::float64, b::float64) = zig{ a + b }
--(a::float64, b::float64) = zig{ a - b }
-*(a::float64, b::float64) = zig{ a * b }

@@ -1,0 +1,10 @@
+export check
+
+check(name::string, got::T, want::T)::nothing where T = zig{
+    if (got == want) {
+        std.debug.print("ok {s}\n", .{name});
+    } else {
+        std.debug.print("FAIL {s}: got {any} want {any}\n", .{ name, got, want });
+        jpp.testFail();
+    }
+}

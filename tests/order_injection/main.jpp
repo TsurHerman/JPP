@@ -1,0 +1,8 @@
+# VALIDATES: injecting one order fact cures a gated-vs-gated clash, in
+# the same module that raised it.
+using clash
+using Test
+
+main() = {
+    check("injected edge cures the clash", g(1), 2)
+}

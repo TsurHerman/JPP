@@ -1,0 +1,11 @@
+# VALIDATES: the three folder-module rules, one check each.
+using nested
+using governed
+using governed.raw
+using Test
+
+main() = {
+    check("a folder is a module", answer(), 42)
+    check("same-named file takes the folder over", best(), 42)
+    check("files stay addressable by dotted path", raw(), 21)
+}

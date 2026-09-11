@@ -1,0 +1,9 @@
+# four overlapping classes over the SAME types. no tree could express
+# this: SmallSigned sits below BOTH Small and Signed, which are
+# incomparable to each other and rejoin at Numeric. that is a diamond.
+export Numeric, Small, Signed, SmallSigned
+
+Numeric(T::type)::bool = zig{ switch (@typeInfo(T)) { .int, .float => true, else => false } }
+Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }
+Small(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits <= 16, .float => |f| f.bits <= 16, else => false } }
+SmallSigned(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed and i.bits <= 16, else => false } }

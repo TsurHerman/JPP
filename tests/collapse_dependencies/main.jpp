@@ -1,0 +1,5 @@
+using order
+using ends
+using middle
+using Test
+main() = check("losing middle candidate remains a dependency", pick(1), 1)

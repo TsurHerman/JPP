@@ -1,0 +1,9 @@
+# byte-identical to tests/lattice_gap/rules.jpp — the library is NOT
+# edited to cure anything.
+using preds
+export gap, itsy
+
+gap(::T) where T <: Tiny = 10
+gap(::T) where T <: Numeric = 20
+
+itsy()::int8 = zig{ 3 }

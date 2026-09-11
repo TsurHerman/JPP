@@ -1,0 +1,3 @@
+using group
+using Test
+main() = check("gate uses declaring child imports", chosen(1), 1)

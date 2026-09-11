@@ -1,0 +1,10 @@
+# same library, same call as tests/lattice_gap — which does not
+# compile. the only difference is this program's `using bridge`.
+using order
+using bridge
+using rules
+using Test
+
+main() = {
+    check("caller's edge closes the gap", gap(itsy()), 10)
+}

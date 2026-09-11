@@ -1,0 +1,3 @@
+# imports NOTHING — whoever calls probe decides what tag means
+export probe
+probe(x) = tag(x)

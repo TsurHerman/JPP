@@ -1,0 +1,28 @@
+using Test
+export category, relay, echo, choose, same, choosePair, <:
+category(_) = 0
+category(::int64) = 1
+category(::type) = 2
+category(int64) = 3
+relay(T::type) = echo(T)
+echo(T::type) = T
+choose(int64) = float64
+choose(::type) = int64
+same(P::type, Q::type)::bool = zig{ P == Q }
+choosePair(::type, ::type) = 0
+choosePair(int64, int64) = 1
+<:(int64, int64) = false
+main() = {
+    check("repeating a defined value is not a duplicate binder", choosePair(int64, int64), 1)
+    check("each fixed-value position is checked", choosePair(int64, float64), 0)
+    check("specific type value", category(int64), 3)
+    check("other type value", category(float64), 2)
+    check("integer value is not its type", category(1), 1)
+    check("ordinary fallback", category(1.0), 0)
+    check("type returned through two calls", category(relay(int64)), 3)
+    check("dispatch-dependent type result", same(choose(int64), float64), true)
+    check("other type result", same(choose(float64), int64), true)
+    check("distinct type values stay distinct", same(int64, float64), false)
+    check("order reflexivity", <:(int64, int64), true)
+    check("missing order pair", <:(int64, float64), false)
+}

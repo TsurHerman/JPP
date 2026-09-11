@@ -1,0 +1,9 @@
+# two predicates that OVERLAP WITHOUT EITHER CONTAINING THE OTHER:
+# uint32 is Wide and not Signed, int8 is Signed and not Wide, int64 is
+# both. no containment fixes their order, so an author who wants one
+# must declare it, and either direction is a real choice rather than a
+# false statement about the classes.
+export Wide, Signed
+
+Wide(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits >= 32, else => false } }
+Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }

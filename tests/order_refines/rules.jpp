@@ -1,0 +1,9 @@
+# two gated methods on the SAME rung, in the SHORT slot spelling.
+# `x<:Wide` is sugar for `x::T where Wide(T)` with T fresh, so these
+# rank exactly as the long form does. int64 answers both predicates, so
+# nothing but the declared order can separate them.
+using preds
+export g
+
+g(<:Wide) = 1
+g(<:Signed) = 2

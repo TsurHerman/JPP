@@ -1,0 +1,11 @@
+export A, B, C, pick, <:
+A(::type) = true
+B(::type) = true
+C(::type) = true
+<:(A, B) = true
+<:(B, C) = true
+<:(C, A) = true
+pick(<:A) = 1
+pick(<:B) = 2
+pick(<:C) = 3
+main() = pick(1)

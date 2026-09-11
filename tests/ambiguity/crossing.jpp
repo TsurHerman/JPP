@@ -1,0 +1,6 @@
+# one module, two crossing generals: (exact, bare) and (bare, exact).
+# g(1, 2) matches both and neither dominates — same module, so the
+# promise is a comptime ERROR at the call, naming the cure.
+export g
+g(::int64, _) = 1
+g(_, ::int64) = 2

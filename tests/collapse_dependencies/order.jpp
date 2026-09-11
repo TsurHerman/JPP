@@ -1,0 +1,4 @@
+using preds
+export <:
+<:(A, B) = true
+<:(B, C) = true

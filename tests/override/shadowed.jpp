@@ -1,0 +1,12 @@
+# the SHADOWED world: loud leads — same signature, same rank as base's
+# tag, so POSITION decides. same calls, different answers, including
+# inside lib (which imports nothing).
+using loud
+using base
+using lib
+using Test
+
+main() = {
+    check("loud leads: tag answers 99", tag(21), 99)
+    check("shadow reaches inside lib", probe(21), 99)
+}

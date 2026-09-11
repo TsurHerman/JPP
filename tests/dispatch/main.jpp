@@ -1,0 +1,12 @@
+# VALIDATES: dispatch selects the method by argument type, and exact
+# beats bare. each method returns its own number — the value says which
+# method ran.
+using kinds
+using Test
+
+main() = {
+    check("int64 selects method 1", kind(21), 1)
+    check("float64 selects method 2", kind(1.5), 2)
+    check("exact method wins", pick(21), 1)
+    check("bare method covers the rest", pick(1.5), 0)
+}

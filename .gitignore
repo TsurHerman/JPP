@@ -1,4 +1,5 @@
-# derived artifacts — regenerate with `zig build transpile`
+# derived artifacts — regenerate with `zig build transpile` / lang-tests
 gen/
+tests/.gen/
 .zig-cache/
 zig-out/

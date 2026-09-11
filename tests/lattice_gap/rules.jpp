@@ -1,0 +1,9 @@
+# the chain is complete, but only the ENDS carry methods. nothing is
+# gated on Small.
+using preds
+export gap, itsy
+
+gap(::T) where T <: Tiny = 10
+gap(::T) where T <: Numeric = 20
+
+itsy()::int8 = zig{ 3 }

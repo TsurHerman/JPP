@@ -1,0 +1,10 @@
+# VALIDATES: within the predicate rung, a DECLARED `<:` edge refines
+# dispatch. without the edge these two gated methods collide (see the
+# where_gate_clash case); with `Wide <: Signed` the lower gate wins.
+using wide_below
+using rules
+using Test
+
+main() = {
+    check("declared edge refines the gates", g(1), 1)
+}

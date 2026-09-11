@@ -1,0 +1,15 @@
+# VALIDATES: predicates + authored edges express a LATTICE, not a tree.
+# each call lands on a different depth of the diamond, and the two
+# incomparable middle classes (Small, Signed) are separated only by
+# which predicates the argument's type actually answers.
+using order
+using rules
+using Test
+
+main() = {
+    check("bottom of the diamond", kind(tiny()), 4)
+    check("signed, not small", kind(21), 3)
+    check("small, not signed", kind(utiny()), 2)
+    check("numeric only", kind(1.5), 1)
+    check("not numeric at all", kind("hi"), 0)
+}

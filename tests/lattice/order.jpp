@@ -1,0 +1,19 @@
+using preds
+# the lattice, authored edge by edge. four facts, no closure.
+#
+#        Numeric
+#        /     \
+#     Small   Signed
+#        \     /
+#      SmallSigned
+#
+# `SmallSigned <: Numeric` is deliberately NOT written. It is not
+# needed as long as Small and Signed carry methods of their own — they
+# eliminate Numeric from the maxima, and SmallSigned eliminates them.
+# See tests/lattice_gap for the case where that support disappears.
+export <:
+
+<:(SmallSigned, Small) = true
+<:(SmallSigned, Signed) = true
+<:(Small, Numeric) = true
+<:(Signed, Numeric) = true

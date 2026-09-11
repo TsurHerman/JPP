@@ -1,0 +1,2 @@
+export visit
+visit() = hidden(1)

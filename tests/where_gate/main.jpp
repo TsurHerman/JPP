@@ -1,0 +1,26 @@
+# VALIDATES: `where T <: Integer` is a predicate gate on qualification,
+# carried as method data, and a gated binder sits on the PREDICATE rung —
+# so exact still beats it and it still beats bare. note this file never
+# imports `preds`: a library's gate resolves through the library's own
+# static context, so gates do not leak a requirement onto callers.
+using rules
+using Test
+
+main() = {
+    check("exact outranks the gate", describe(1), 3)
+    check("gate outranks bare", describe(1.5), 2)
+    check("bare is the floor", describe("hi"), 0)
+
+    check("gate selects: integer", kindof(1), 1)
+    check("gate selects: float", kindof(1.5), 2)
+    check("gate rejects: neither", kindof("hi"), 0)
+
+    check("gate and identity together", pairup(1, 2), 1)
+    check("identity fails, gate moot", pairup(1, 1.5), 0)
+    check("identity holds, gate fails", pairup(1.5, 2.5), 0)
+
+    # the short spelling answers the long spelling's ladder, rung for rung
+    check("short form: exact still outranks", terse(1), 3)
+    check("short form: gate still outranks bare", terse(1.5), 2)
+    check("short form: bare is still the floor", terse("hi"), 0)
+}

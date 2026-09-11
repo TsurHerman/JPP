@@ -1,0 +1,4 @@
+using claims
+export f
+f(Missing) = true
+main() = 0

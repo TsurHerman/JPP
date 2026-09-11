@@ -1,0 +1,8 @@
+# one module, two gated generals on the SAME rung. int64 answers both
+# predicates, both methods sit at rank 2, and nothing refines one gate
+# against the other — no `<:` edge is declared between the two words.
+using preds
+export g
+
+g(::T) where T <: Integer = 1
+g(::T) where T <: Signed = 2

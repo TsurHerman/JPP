@@ -1,0 +1,7 @@
+# the call that hits the crossing. this program never runs:
+# COMPILING it is the test, and compiling must fail.
+using crossing
+
+main() = {
+    g(1, 2)
+}

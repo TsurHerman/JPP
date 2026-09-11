@@ -1,0 +1,10 @@
+using lib
+using folder
+using Test
+export hidden
+hidden(::int64) = 99
+main() = {
+    check("private helper remains local", probe(1), 42)
+    check("caller keeps its public word", hidden(1), 99)
+    check("merged method retains its declaration scope", answer(), 21)
+}

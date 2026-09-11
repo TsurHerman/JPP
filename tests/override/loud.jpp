@@ -1,0 +1,3 @@
+# same signature, same rank as base's tag — pure positional shadowing
+export tag
+tag(::int64) = 99

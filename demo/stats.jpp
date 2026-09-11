@@ -1,6 +1,0 @@
-# stats.jpp — an INTERMEDIATE module: uses algebra, knows nothing about
-# arithmetic overrides above it. meaning passes through.
-using algebra
-export report
-
-report(x) = describe(double(x))

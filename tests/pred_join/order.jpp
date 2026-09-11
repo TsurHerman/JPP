@@ -1,0 +1,11 @@
+using preds
+# every edge here is a THEOREM about membership — anything answering
+# Signed answers Integer, by the definition of Integer; anything
+# answering SmallSigned answers Signed, by the definition of
+# SmallSigned. the order cannot find that out. it is authored, or it
+# is absent.
+export <:
+
+<:(Signed, Integer) = true
+<:(Unsigned, Integer) = true
+<:(SmallSigned, Signed) = true

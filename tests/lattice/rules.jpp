@@ -1,0 +1,14 @@
+# one word, five methods, four of them gated on overlapping classes.
+# every int16 answers ALL four predicates; the lattice is what decides.
+using preds
+export kind, tiny, utiny
+
+kind(_) = 0
+kind(::T) where T <: Numeric = 1
+kind(::T) where T <: Small = 2
+kind(::T) where T <: Signed = 3
+kind(::T) where T <: SmallSigned = 4
+
+# literals are int64/float64, so reach the narrow widths through ground
+tiny()::int16 = zig{ 3 }
+utiny()::uint16 = zig{ 3 }
