@@ -6,10 +6,10 @@
 // in src/jpp.zig and run at zig comptime inside the GENERATED files.
 //
 // v1 surface (scope cuts documented in README):
-//   using NAME
+//   using NAME (implicit Base appended unless explicit, except in Base itself)
 //   export a, b, +
 //   name(params) [:: retty] = expr
-//   expr: literals, idents, calls, { blocks }, zig{ raw ground },
+//   expr: literals, idents, calls, { blocks with immutable name = expr binds }, zig{ raw ground },
 //         infix || && + - * / (that precedence, loosest first) — every
 //         operator is an ordinary overridable word, not a builtin
 //   params: x (bare) | x::typename (exact) | x::T where T (type var)
@@ -173,6 +173,7 @@ const Node = union(enum) {
     lit_b: bool,
     ident: []const u8,
     call: struct { callee: []const u8, args: []*Node },
+    bind: struct { name: []const u8, value: *Node },
     block: []*Node,
 };
 
@@ -276,6 +277,14 @@ const Parser = struct {
                 },
             }
             p.skipNl();
+        }
+        // Ordinary import syntax supplies the foundation; dispatch still
+        // belongs entirely to the comptime machinery. Base bootstraps itself.
+        if (!std.mem.eql(u8, name, "Base")) {
+            const explicit_base = for (usings.items) |u| {
+                if (std.mem.eql(u8, u, "Base")) break true;
+            } else false;
+            if (!explicit_base) try usings.append(p.a, "Base");
         }
         return .{ .name = name, .usings = usings.items, .exports = exports.items, .defs = defs.items };
     }
@@ -447,7 +456,16 @@ const Parser = struct {
                 var items = try std.ArrayList(*Node).initCapacity(p.a, 16);
                 p.skipNl();
                 while (p.peek().kind != .rbrace) {
-                    try items.append(p.a, try p.parseExpr(0));
+                    if (p.peek().kind == .ident and p.toks[p.i + 1].kind == .eq) {
+                        const name = p.next().text;
+                        _ = p.next();
+                        p.skipNlOnlyNewlinesBeforeBody();
+                        try items.append(p.a, try p.node(.{ .bind = .{ .name = name, .value = try p.parseExpr(0) } }));
+                    } else {
+                        try items.append(p.a, try p.parseExpr(0));
+                    }
+                    if (p.peek().kind != .rbrace and p.peek().kind != .nl and p.peek().kind != .semi)
+                        _ = try p.expect(.nl);
                     p.skipNl();
                 }
                 _ = try p.expect(.rbrace);
@@ -481,20 +499,43 @@ fn isTVar(d: Def, name: []const u8) bool {
 const VR = union(enum) { param_type: usize, name: []const u8, param: usize, local: usize, lit_i: i64, lit_f: f64, lit_s: []const u8, lit_b: bool };
 const OpIR = struct { callee: []const u8, args: []VR };
 const FlatIR = struct { ops: []OpIR, result: VR };
+const Local = struct { name: []const u8, value: VR };
+
+fn bindingError(kind: anyerror, name: []const u8) anyerror {
+    std.debug.print("jppc: {s} '{s}'\n", .{ @errorName(kind), name });
+    return kind;
+}
+
+fn hasBinding(n: *Node, name: []const u8) bool {
+    return switch (n.*) {
+        .bind => |b| std.mem.eql(u8, b.name, name) or hasBinding(b.value, name),
+        .block => |items| blk: {
+            for (items) |item| if (hasBinding(item, name)) break :blk true;
+            break :blk false;
+        },
+        .call => |c| blk: {
+            for (c.args) |arg| if (hasBinding(arg, name)) break :blk true;
+            break :blk false;
+        },
+        else => false,
+    };
+}
 
 fn flatten(a: std.mem.Allocator, def: Def) !FlatIR {
     var ops = try std.ArrayList(OpIR).initCapacity(a, 32);
-    const result = try flattenNode(a, def.body.?, def, &ops);
+    var locals = try std.ArrayList(Local).initCapacity(a, 16);
+    const result = try flattenNode(a, def.body.?, def, &ops, &locals);
     return .{ .ops = ops.items, .result = result };
 }
 
-fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpIR)) anyerror!VR {
+fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpIR), locals: *std.ArrayList(Local)) anyerror!VR {
     switch (n.*) {
         .lit_i => |v| return .{ .lit_i = v },
         .lit_f => |v| return .{ .lit_f = v },
         .lit_s => |v| return .{ .lit_s = v },
         .lit_b => |v| return .{ .lit_b = v },
         .ident => |name| {
+            for (locals.items) |local| if (std.mem.eql(u8, local.name, name)) return local.value;
             for (def.params, 0..) |p, i| {
                 if (std.mem.eql(u8, p.name, name)) return .{ .param = i };
             }
@@ -503,18 +544,37 @@ fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpI
                     if (p.ty) |t| if (std.mem.eql(u8, t, name)) return .{ .param_type = i };
                 }
             }
+            if (hasBinding(def.body.?, name)) return bindingError(error.ForwardBinding, name);
             return .{ .name = name };
         },
         .call => |c| {
+            // First-class callable local values need a separate application
+            // representation; never silently call a same-spelled module word.
+            if (hasBinding(def.body.?, c.callee)) return bindingError(error.LocalNotCallable, c.callee);
             const args = try a.alloc(VR, c.args.len);
-            for (c.args, 0..) |arg, i| args[i] = try flattenNode(a, arg, def, ops);
+            for (c.args, 0..) |arg, i| args[i] = try flattenNode(a, arg, def, ops, locals);
             try ops.append(a, .{ .callee = c.callee, .args = args });
             return .{ .local = ops.items.len - 1 };
         },
         .block => |items| {
             var last: ?VR = null;
-            for (items) |item| last = try flattenNode(a, item, def, ops);
+            for (items) |item| last = try flattenNode(a, item, def, ops, locals);
             return last orelse error.Normalize;
+        },
+        .bind => |b| {
+            if (std.mem.eql(u8, b.name, "true") or std.mem.eql(u8, b.name, "false"))
+                return bindingError(error.InvalidBinding, b.name);
+            for (def.params) |p| if (std.mem.eql(u8, p.name, b.name))
+                return bindingError(error.DuplicateBinding, b.name);
+            if (isTVar(def, b.name)) return bindingError(error.DuplicateBinding, b.name);
+            for (locals.items) |local| if (std.mem.eql(u8, local.name, b.name))
+                return bindingError(error.DuplicateBinding, b.name);
+            const value = try flattenNode(a, b.value, def, ops, locals);
+            // Nested blocks share the method's sequential binding environment.
+            for (locals.items) |local| if (std.mem.eql(u8, local.name, b.name))
+                return bindingError(error.DuplicateBinding, b.name);
+            if (!std.mem.eql(u8, b.name, "_")) try locals.append(a, .{ .name = b.name, .value = value });
+            return value;
         },
     }
 }
@@ -573,9 +633,11 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
     o.add("// GENERATED by jppc from {s} — do not edit.\n", .{m.name});
     o.add("const std = @import(\"std\");\n", .{});
     o.add("const jpp = @import(\"jpp.zig\");\n", .{});
-    // dotted module paths: emitted files are FLAT with dotted names;
-    // local aliases sanitize dots to underscores
-    for (m.usings) |u| o.add("const m_{s} = @import(\"{s}.zig\");\n", .{ try aliasOf(a, u), u });
+    // One injective encoding for both filenames and Zig identifiers.
+    for (m.usings) |u| {
+        const alias = try aliasOf(a, u);
+        o.add("const m_{s} = @import(\"m_{s}.zig\");\n", .{ alias, alias });
+    }
     o.add("\nconst this_module = @This();\n", .{});
     o.add("pub const STATIC = .{{ this_module", .{});
     for (m.usings) |u| o.add(", m_{s}", .{try aliasOf(a, u)});
@@ -723,6 +785,7 @@ fn groundUses(g: [:0]const u8, name: []const u8) bool {
 fn nodeUses(n: *Node, name: []const u8) bool {
     return switch (n.*) {
         .ident => |s| std.mem.eql(u8, s, name),
+        .bind => |b| nodeUses(b.value, name),
         .call => |c| blk: {
             for (c.args) |arg| if (nodeUses(arg, name)) break :blk true;
             break :blk false;
@@ -832,11 +895,20 @@ fn isProgram(f: Found, m: Mod) bool {
     return false;
 }
 
-/// dotted module path -> zig-safe local alias segment (dots to underscores)
+/// Escape every byte outside lowercase ASCII/digits, including underscores.
+/// Base/base must differ even on case-insensitive filesystems; a.b/a_b must
+/// also stay distinct. The m_ prefix keeps modules away from driver/runtime files.
 fn aliasOf(a: std.mem.Allocator, dotted: []const u8) ![]const u8 {
-    const out = try a.dupe(u8, dotted);
-    std.mem.replaceScalar(u8, out, '.', '_');
-    return out;
+    var out = try std.ArrayList(u8).initCapacity(a, dotted.len);
+    const hex = "0123456789abcdef";
+    for (dotted) |c| {
+        if (std.ascii.isLower(c) or std.ascii.isDigit(c)) {
+            try out.append(a, c);
+        } else {
+            try out.appendSlice(a, &.{ '_', hex[c >> 4], hex[c & 15] });
+        }
+    }
+    return out.items;
 }
 
 pub fn main(pinit: std.process.Init) !void {
@@ -955,11 +1027,14 @@ pub fn main(pinit: std.process.Init) !void {
         const mod = parsed[mi];
         const flats = try a.alloc(?FlatIR, mod.defs.len);
         for (mod.defs, 0..) |d, i| {
-            flats[i] = if (d.ground == null) try flatten(a, d) else null;
+            flats[i] = if (d.ground == null) flatten(a, d) catch |err| {
+                std.debug.print("jppc: normalization failed in {s}, method '{s}'\n", .{ f.path, d.name });
+                return err;
+            } else null;
         }
         var out = Out{ .buf = bigbuf };
         try emitModule(&out, a, mod, flats);
-        const out_path = try std.fmt.allocPrint(a, "{s}/{s}.zig", .{ out_dir, f.name });
+        const out_path = try std.fmt.allocPrint(a, "{s}/m_{s}.zig", .{ out_dir, try aliasOf(a, f.name) });
         try cwd.writeFile(io, .{ .sub_path = out_path, .data = out.text() });
         std.debug.print("jppc: {s} -> {s} ({d} defs, {d} bytes)\n", .{ f.path, out_path, mod.defs.len, out.len });
     }
@@ -1013,8 +1088,10 @@ pub fn main(pinit: std.process.Init) !void {
             child_idx[nchild] = i;
             nchild += 1;
         }
-        for (child_idx[0..nchild]) |i|
-            out.add("const m_{s} = @import(\"{s}.zig\");\n", .{ try aliasOf(a, all_names[i]), all_names[i] });
+        for (child_idx[0..nchild]) |i| {
+            const alias = try aliasOf(a, all_names[i]);
+            out.add("const m_{s} = @import(\"m_{s}.zig\");\n", .{ alias, alias });
+        }
         out.add("\nconst this_module = @This();\n", .{});
         out.add("pub const STATIC = ", .{});
         for (child_idx[0..nchild]) |_| out.add("jpp.extendAll(", .{});
@@ -1046,7 +1123,7 @@ pub fn main(pinit: std.process.Init) !void {
             }
             out.add(" }});\n", .{});
         }
-        const agg_path = try std.fmt.allocPrint(a, "{s}/{s}.zig", .{ out_dir, dir });
+        const agg_path = try std.fmt.allocPrint(a, "{s}/m_{s}.zig", .{ out_dir, try aliasOf(a, dir) });
         try cwd.writeFile(io, .{ .sub_path = agg_path, .data = out.text() });
         std.debug.print("jppc: aggregate {s} ({d} children, {d} words)\n", .{ agg_path, nchild, words.items.len });
         // the aggregate is itself a module — a child of ITS parent
@@ -1087,19 +1164,21 @@ pub fn main(pinit: std.process.Init) !void {
     out.add("// GENERATED — self-judging: each program is a fresh root context.\n", .{});
     out.add("const std = @import(\"std\");\n", .{});
     out.add("const jpp = @import(\"jpp.zig\");\n", .{});
-    for (programs[0..nprog]) |p|
-        out.add("const m_{s} = @import(\"{s}.zig\");\n", .{ p, p });
+    for (programs[0..nprog]) |p| {
+        const alias = try aliasOf(a, p);
+        out.add("const m_{s} = @import(\"m_{s}.zig\");\n", .{ alias, alias });
+    }
     const label = caseName(src_root);
     out.add("pub fn main() u8 {{\n", .{});
     if (nprog > 1) out.add("    var programs_failed: usize = 0;\n", .{});
     for (programs[0..nprog]) |p| {
         if (nprog == 1) {
-            out.add("    _ = jpp.call(m_{s}.STATIC, \"main\", .{{}});\n", .{p});
+            out.add("    _ = jpp.call(m_{s}.STATIC, \"main\", .{{}});\n", .{try aliasOf(a, p)});
             continue;
         }
         out.add("    {{\n", .{});
         out.add("        const before = jpp.test_failures;\n", .{});
-        out.add("        _ = jpp.call(m_{s}.STATIC, \"main\", .{{}});\n", .{p});
+        out.add("        _ = jpp.call(m_{s}.STATIC, \"main\", .{{}});\n", .{try aliasOf(a, p)});
         out.add("        const n = jpp.test_failures - before;\n", .{});
         out.add("        if (n == 0) {{\n", .{});
         out.add("            std.debug.print(\"[{s}/{s}] PASS\\n\", .{{}});\n", .{ label, p });

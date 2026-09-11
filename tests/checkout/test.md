@@ -1,6 +1,6 @@
 # Checkout: a modular application case study
 
-**RUNS.** Nineteen source modules, two independent application contexts,
+**RUNS.** Eighteen source modules, two independent application contexts,
 thirteen baskets, and 105 assertions. This case tests whether useful domain
 code remains understandable as modules call through other modules. The
 policies are fictional; the arithmetic domain is bounded nonnegative integer
@@ -27,13 +27,14 @@ retail                         member
                   ├── pricing.cart
                   │    └── pricing.lines
                   │         └── pricing.discounts
-                  │              └── money → arithmetic.rounding
+                  │              └── money → arithmetic.rounding → Base
                   ├── shipping (takeover)
                   │    └── shipping.carrier
                   └── tax → money
 
 model = aggregate of line, basket, priced, quote
-arithmetic = aggregate of integers, logic, rounding
+arithmetic = aggregate of logic, rounding
+Base = implicit ordinary arithmetic import in each module
 ```
 
 `Line` is an ordinary structural predicate over native record types. The
@@ -42,8 +43,8 @@ and accessors cross the Zig boundary; pricing, discounts, rounding, delivery,
 and tax calculations remain jpp calls. Ground code supplies primitive
 arithmetic, selection, record storage, and receipt printing.
 
-One deep path is `quote → priceBasket → pricePair → netLine → deduct →
-lineDiscount → rateAmount → roundQuotient → arithmetic`. The member policy's
+One deep path is `quote → priceBasket → netLine → lineDiscount → rateAmount →
+roundQuotient → div`. The member policy's
 `discountRate` is selected inside `lineDiscount`, without passing a policy
 argument through those libraries. Its `freeShippingThreshold` separately
 changes delivery policy. Neither library imports the member application.
@@ -73,24 +74,30 @@ all six fields plus `gross − discount = net` and
 
 | Observation from this code | Design implication |
 |---|---|
-| Arithmetic is defined and exported once; ten consumers repeat `using arithmetic`. | A small implicit `Base` import is now RATIFIED to reduce repetition, but remains unbuilt. Arithmetic stays ordinary library code. Consumers need not export operators. |
+| Arithmetic is defined once in Base; consumers receive its ordinary import implicitly. | Arithmetic-only consumers no longer write `using arithmetic`. Logic and rounding helpers remain explicit imports; consumers never need to re-export operators. |
 | `using pricing.lines`, `using shipping`, and `using tax` explain domain dependencies. | Keep domain imports explicit. A takeover module gives a folder a focused public API. |
 | One policy import changes both discounts and freight deep in the same library graph. | Caller context is useful without policy parameters on every helper. Defaults have real meanings here. |
-| `withPrices`, `withShipping`, `withTax`, and `deduct` mainly carry intermediate results. | Implement the ratified immutable local bindings (§6): names for dataflow edges, not mutable state. |
+| `quote` now names prices, net goods, freight, tax, and total in one body; `netLine` and `priceBasket` also bind intermediate results. | Immutable bindings replace helpers used solely for carrying results. They alias existing ANF values, preserving evaluation once and in source order. |
 | Record creation and access require grounds; the quote constructor takes six integers in order. | Record surface syntax and the already-validated named-pack binder would make inputs and units easier to inspect. |
 | The basket is fixed at two lines. | Variadic packs or traversal are needed before claiming a general cart. Putting its entire loop in a ground would bypass jpp dispatch and weaken the experiment. |
 
 The preferred direction is **a small implicit foundation, explicit domain
 imports, and explicit exported extension points**. The small implicit `Base`
-import is now RATIFIED; the export-without-body tunnel remains OPEN. Neither
-is implemented by this case. All calls here have actual source-visible local
-or imported definitions. Meaningful defaults suffice for these policies; a future case
+import and immutable local bindings now RUN. The export-without-body tunnel
+remains OPEN. All calls here have actual source-visible local or imported
+definitions. Meaningful defaults suffice for these policies; a future case
 with a service that genuinely requires a provider should test the tunnel.
 
 `choose` evaluates both value arguments before selection; it is not lazy
 control flow. Counts, cents, and grams still share `int64`; input validation,
 overflow policy, unit types, and arbitrary basket sizes remain outside this
 example's tested domain.
+
+The initial Base exports same-type int64/float64 arithmetic and int64 `div`.
+Rounding uses `div` explicitly because ordinary `/` produces a floating
+quotient. `Any` and its authored order remain explicitly imported. Base has
+ordinary context position, including precedence over imports reached later;
+it is not a special fallback tier. The member policy is imported ahead of it.
 
 ## Machinery failures this example exposed
 
@@ -108,3 +115,7 @@ example's tested domain.
   this boundary, including type identity and runtime selection.
 - A void ground ending in a semicolon emitted a second semicolon. Receipt
   printing exercises the corrected statement emission.
+- Adding implicit Base exposed generated `Base`/`base` filename collisions
+  on a case-insensitive filesystem. Escaped module filenames and aliases now
+  preserve identity; [module_encoding](../module_encoding/test.md) covers
+  case, punctuation, aggregation, and driver/runtime names.

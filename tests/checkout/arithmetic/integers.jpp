@@ -1,7 +1,0 @@
-# Arithmetic is provided once. Its users import it; they do not re-export it.
-export +, -, *, /
-
-+(a::int64, b::int64)::int64 = zig{ a + b }
--(a::int64, b::int64)::int64 = zig{ a - b }
-*(a::int64, b::int64)::int64 = zig{ a * b }
-/(a::int64, b::int64)::int64 = zig{ @divTrunc(a, b) }

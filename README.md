@@ -40,7 +40,8 @@ Status of the major features:
 | predicate gates `where T <: Integer` (sugar for `Integer(T)`); predicates are ordinary words qualed on `::type` | RUNS (where_gate) |
 | predicates DEFINED from predicates (joins/meets), so `where` needs no boolean combinators | RUNS (pred_join) |
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
-| a small implicit `Base` import; arithmetic remains ordinary library code | RATIFIED — unbuilt; exact export set and bootstrap remain OPEN |
+| a small implicit `Base` import; arithmetic remains ordinary library code | RUNS (base_import, base_shadow; negative: base_missing, base_mixed) |
+| immutable local bindings name ANF values without repeating calls | RUNS (local_bindings, checkout; binding_* frontend rejection cases) |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
 | declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs | RUNS (declaration_names, unused_ground; negative: undeclared_order, unused_input, unused_untyped_ground, unused_anonymous) |
@@ -107,15 +108,22 @@ Status of the major features:
   (`Base/Test.jpp` → `using Test`). A tree module of the same name
   shadows it. Zig's `std` exists only inside `zig{}` — a different
   name, a different plane.
-- **A small implicit Base import (RATIFIED, unbuilt).** Reduce common
-  import boilerplate by making a small `Base` interface implicitly
-  available. Arithmetic remains ordinary library code: the import supplies
-  visible definitions governed by the existing fusion, specificity, and
-  caller-first context rules. It does not give operators special compiler
-  meanings or require consumers to re-export them. The exact export set
-  and bootstrap arrangement remain OPEN. Today Base modules still require
-  explicit imports; joining `Base/` into a source tree is discovery, not
-  an implicit import.
+- **A small implicit Base import (RUNS).** Each source module except `Base`
+  receives `using Base` after its explicit imports. An explicit `using Base`
+  retains its written position and is not added again. `Base` itself has
+  only its authored imports, allowing it to bootstrap. A source-tree
+  `Base.jpp` can replace the library's `Base/Base.jpp` in full.
+  Arithmetic remains ordinary exported library code, governed by existing
+  fusion, specificity, and caller-first accumulation. This includes normal
+  import priority: an inherited Base entry can precede a deeper module's
+  imports, just like any other caller import; there is no special fallback
+  tier. Callers put their intended overrides ahead of Base.
+  The initial interface exports `+`, `-`, `*`, `/`, and `div`. Same-type
+  `int64` addition, subtraction, and multiplication wrap; `float64` operations
+  use ordinary floating arithmetic. `/` returns `float64` for either pair;
+  `div(int64, int64)` truncates toward zero. Other widths and mixed-type
+  promotion remain unbuilt. `Any` and its authored order still require
+  `using Any`; other Base-directory modules also remain explicit imports.
 - **Exports gate everything (ratified).** A word callable from outside
   its module — by fusion (`using`) OR by qualification (`M.f`) — must
   be labeled `export`. One closed interface per module; internals
@@ -142,8 +150,9 @@ Status of the major features:
   specialization parameter, monomorphized away — never a runtime value.
   **Current gap:** an unqualified body call is emitted as a word name even
   when the declaring module neither defines nor imports that word.
-  `caller_context` and `override` currently exercise this behavior; they
-  do not establish a checked dependency interface. The proposed correction
+  `override` currently exercises this behavior. `caller_context` now has
+  a source-visible `+` through implicit Base, but general call dependencies
+  still lack a checked interface. The proposed correction
   is a visible callable contract with context-selected implementations,
   not a caller inventing a lexical definition. Contract semantics remain
   OPEN; see [the research note](design/word_contracts.md).
@@ -654,6 +663,19 @@ The whole surface reduces to one mechanism:
   a `select` op carrying two regions (flat sub-bodies) — flatness is
   recursive, not global. Pipeline: parse -> tree -> normalize ->
   FlatBody -> emit Zig. Comptime rewrites, if ever, operate on FlatBody.
+- **Immutable local bindings (RUNS).** Inside a body block, `name = expression`
+  names the expression's value. Later uses alias the same ANF reference:
+  a call executes once even when its result is used several times. Literals,
+  runtime records, parameters, and type-valued results can all be bound.
+  Bindings are sequential and immutable within a method; a name cannot be
+  read before its initializer or replace an existing local, input, or
+  where-bound type. Blocks group expressions without introducing another
+  binding scope, and return their last expression's value. `_ = expression`
+  discards a result while preserving its effects and can be repeated.
+  An explicit local binding can shadow a module word as a value; applying
+  local callable values is still unbuilt and produces a diagnostic rather
+  than dispatching to a same-spelled module word. Typed local annotations
+  and mutable assignment remain outside this implemented surface.
 - **The unit of computation is the call** (reference: Thorin/AnyDSL,
   "A Graph-Based Higher-Order IR", CGO'15). A binding is not
   computation — it names a data edge, and is erased at emission (jpp
@@ -1063,7 +1085,10 @@ print/algebra demo):
   (defaults: tests/dispatch -> gen/, machinery copied alongside,
   harness generated). Source trees are discovered recursively; folder
   aggregates, takeover modules, dotted imports, and Base library
-  modules are supported.
+  modules are supported. Generated module filenames and Zig aliases use
+  the same byte escaping, preserving `Base`/`base` and `a.b`/`a_b` identities
+  on case-insensitive filesystems and avoiding driver/runtime collisions
+  (`module_encoding`).
 - `tests/` — executable language cases replacing the original demo.
   `caller_context` exercises generic arithmetic supplied by the caller;
   `override` and `depth_override` exercise overrides reaching into
@@ -1075,13 +1100,13 @@ print/algebra demo):
   it would report dependencies from the footprint closure. Such a report
   is not a checked callable contract; that boundary is now under explicit
   design review in [word contracts](design/word_contracts.md).
-- [Checkout](tests/checkout/test.md) is a larger RUNS case: nineteen source
+- [Checkout](tests/checkout/test.md) is a larger RUNS case: eighteen source
   modules price thirteen two-line baskets in retail/member contexts.
-  Arithmetic has one explicit shared provider; the member policy changes
+  Arithmetic comes from implicit Base; the member policy changes
   discounts and freight through deeper imports. Native record values cross
-  ground boundaries. The case study records ergonomics and limits. A small
-  implicit `Base` import is RATIFIED but unbuilt; export-only dependency
-  declarations remain OPEN.
+  ground boundaries. Local bindings let the quote pipeline name intermediate
+  results in one body. The case study records ergonomics and limits;
+  export-only dependency declarations remain OPEN.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across

@@ -1,0 +1,2 @@
+word(x) = x
+main() = { word = 7; word(1) }

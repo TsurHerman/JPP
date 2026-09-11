@@ -1,0 +1,39 @@
+using Test
+
+next()::int64 = zig{ blk: {
+    const State = struct { var count: i64 = 0; };
+    State.count += 1;
+    break :blk State.count;
+} }
+
+pack(x) = zig{ .{ .value = x } }
+recordValue(record) = zig{ record.value }
+same(a::type, b::type)::bool = zig{ a == b }
+aliasType(T::type) = { chosen = T; chosen }
+boundType(x::T) where T = { saved = T; _ = x; saved }
+symbol() = 88
+
+main() = {
+    first = next()
+    alias = first
+    check("one result can feed several uses", first + alias, 2)
+    check("binding does not repeat an effectful call", next(), 2)
+    _ = next()
+    _ = next()
+    check("discarded bindings still execute in order", next(), 5)
+    text = "bound string"
+    truth = true
+    check("literal string alias", text, "bound string")
+    check("literal boolean alias", truth, true)
+    record = pack(7)
+    copy = record
+    check("a native record can be bound and reused", recordValue(copy), 7)
+    selected = aliasType(int64)
+    check("type-valued results retain identity", same(selected, int64), true)
+    check("where type bindings retain identity through aliases", same(boundType(1.5), float64), true)
+    result = { nested = 9; nested + 1 }
+    check("a nested block returns its last value", result, 10)
+    check("blocks share the method binding environment", nested, 9)
+    symbol = 3
+    check("explicit local binding can name a module word", symbol, 3)
+}

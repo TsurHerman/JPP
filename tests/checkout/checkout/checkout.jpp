@@ -1,4 +1,3 @@
-using arithmetic
 using model.priced
 using model.quote
 using pricing.cart
@@ -6,7 +5,12 @@ using shipping
 using tax
 export quote
 
-quote(bag) = withPrices(priceBasket(bag))
-withPrices(priced) = withShipping(priced, shippingCharge(netGoods(priced), parcelGrams(priced)))
-withShipping(priced, freight::int64) = withTax(priced, freight, taxCharge(netGoods(priced), freight))
-withTax(priced, freight::int64, tax_cents::int64) = quoteRecord(grossGoods(priced), grossGoods(priced) - netGoods(priced), netGoods(priced), freight, tax_cents, netGoods(priced) + freight + tax_cents)
+quote(bag) = {
+    priced = priceBasket(bag)
+    gross = grossGoods(priced)
+    net = netGoods(priced)
+    freight = shippingCharge(net, parcelGrams(priced))
+    tax_cents = taxCharge(net, freight)
+    total = net + freight + tax_cents
+    quoteRecord(gross, gross - net, net, freight, tax_cents, total)
+}

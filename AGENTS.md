@@ -37,9 +37,15 @@ a feature; preserve the ratified semantics unless the task changes them.
   Mutual pairs do not imply a transitive equivalence relation. Keep losing
   candidates needed for other dominance decisions during context collapse.
 - `Base/` supplies library modules; the source tree can shadow their names.
-  A small implicit `Base` import is RATIFIED but unbuilt; arithmetic remains
-  ordinary library code. Current modules still use explicit imports.
+  Modules implicitly import the small `Base` arithmetic interface after
+  explicit imports, unless `using Base` is already written. Base itself
+  bootstraps without that implicit import. All ordinary context rules apply;
+  there is no special fallback tier. `Any` remains explicitly imported.
   `design/` contains future syntax, not runnable regression fixtures.
+- Local `name = expression` bindings are immutable aliases of ANF values.
+  Preserve evaluation once and in source order, type identity, and the
+  method-wide sequential binding environment. Rebinding and forward uses
+  are frontend errors; mutable assignment and callable locals are unbuilt.
 - `src/ast.zig` describes the intended AST but is not yet consumed by
   jppc. `src/emit.zig` and the original hand-transpiled spike are historical.
   Use `RUNNING.md` to distinguish these from the validated probes.
@@ -60,6 +66,8 @@ contexts. Use `using Test` and `check` for assertions. A case with
 making it compile is a regression. Add meaningful coverage for changed
 behavior and update the promise catalog when needed. Documentation-only
 changes need a consistency review, not a repeated full test run.
+Frontend rejection cases use `expect.transpile.err` instead: jppc must fail
+with the specified substring, and no Zig compilation is attempted.
 
 ## Working style
 

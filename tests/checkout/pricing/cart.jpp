@@ -1,9 +1,11 @@
-using arithmetic
 using model.basket
 using model.line
 using model.priced
 using pricing.lines
 export priceBasket
 
-priceBasket(bag) = pricePair(firstItem(bag), secondItem(bag))
-pricePair(a<:Line, b<:Line) = pricedCart(grossLine(a) + grossLine(b), netLine(a) + netLine(b), gramsLine(a) + gramsLine(b))
+priceBasket(bag) = {
+    a = firstItem(bag)
+    b = secondItem(bag)
+    pricedCart(grossLine(a) + grossLine(b), netLine(a) + netLine(b), gramsLine(a) + gramsLine(b))
+}

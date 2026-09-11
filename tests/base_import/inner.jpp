@@ -1,0 +1,3 @@
+using override
+export nestedDouble
+nestedDouble(x) = x + x

@@ -27,9 +27,14 @@ the file's content is the substring the error must contain. The
 build step judges here (a program cannot self-judge its own refusal
 to exist); compiling successfully FAILS the case.
 
+**Frontend rejection cases:** `expect.transpile.err` instead requires jppc
+to exit 1 with the specified substring. These cases test lexical syntax and
+normalization errors before generated Zig exists. Use one failure-stage
+marker per case; both stages are included in `zig build test`.
+
 Cases: `dispatch` (selection + the specificity ladder, as values),
-`caller_context` (caller-provided arithmetic; lexical dependency checking
-remains a gap), `override` (position shadowing through a library),
+`caller_context` (generic arithmetic with explicit providers and implicit
+Base), `override` (position shadowing through a library),
 `depth_override` (surgical override through two
 modules), `context_flip` (opposite orders, flipped winner),
 `folder_modules` (aggregate, takeover, dotted addressing),
@@ -75,11 +80,23 @@ types, predicate rank, and the authored Base order. `any_override` and
 `any_shadow` check caller overrides and source-tree replacement;
 `any_order_gap` and `any_unimported` reject hidden order and builtin names.
 
-[checkout](checkout/test.md) is an application case study: nineteen source
+[checkout](checkout/test.md) is an application case study: eighteen source
 modules, thirteen baskets in two contexts, and 105 assertions covering
 discounts, rounding, delivery, tax, records, and accounting identities.
-It records the ergonomics of shared arithmetic, explicit domain imports,
-deep policy overrides, and the missing local-binding/record/variadic surface.
+It now uses implicit Base arithmetic and immutable local bindings, while
+retaining explicit domain imports and deep policy overrides. Record and
+variadic surface syntax remain unbuilt.
+
+`base_import` compares implicit Base, caller overrides, explicit Base
+position, and priority through deeper imports. `base_shadow` replaces the
+foundation; `base_missing` and `base_mixed` reject hidden implementations and
+implicit promotion. `module_encoding` keeps case, dotted-path, and underscore
+identities distinct and prevents source modules from overwriting the runtime.
+
+`local_bindings` tests evaluation once, effects in source order, aliases of
+type and record values, discarded results, and nested blocks. Frontend cases
+`binding_duplicate`, `binding_parameter`, `binding_type_parameter`,
+`binding_forward`, `binding_self`, and `binding_call` pin the invalid forms.
 
 ## Promise catalog and coverage
 
@@ -94,21 +111,23 @@ deep policy overrides, and the missing local-binding/record/variadic surface.
 | 7 | Collapse: resolving module owns the instance (§9) | `collapse_dependencies`, `collapse_imports`, `checkout`; machinery tests | symbol-hash stability once hashes land |
 | 8 | Exports gate everything (§1) | `export_gate`, `private_downstream` (negative); `private_helpers`; machinery tests (fixture) | `M.f` qualification path once surface lands |
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
-| 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` defined over bool, exported, precedence pinned); `checkout` (shared `+ - * /` provider inside the example); machinery tests (`+` shadowed) | standard Base arithmetic library |
+| 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` and precedence); `base_import`, `base_shadow`, `base_missing`, `base_mixed`; `checkout` (Base arithmetic); machinery tests (`+` shadowed) | more widths and promotion |
 | 10 | Binder: packs, named args (§4) | binderprobe (spike) | surface named args |
 | 11 | Enum bridge (§4) | enumprobe (spike) | surface selectors |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: aggregate, takeover, dotted (§1) | `folder_modules`, `folder_scope`, `private_helpers` | nested aggregates (folder of folders) |
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
-| 15 | Library resolution: modules from `Base/`, tree shadows Base | all check-based cases (implicitly); `any_shadow` explicitly replaces a Base module | — |
+| 15 | Library resolution: modules from `Base/`, tree shadows Base | all check-based cases; `base_import`, `base_shadow`, `base_missing`, `any_shadow`, `module_encoding` | — |
 | 17 | Defined signature names require lexical definitions/imports | `declaration_names`, `undeclared_order`, `undefined_export` | user-defined type/constant declarations after that surface exists |
 | 18 | Annotated inputs may be unused; anonymous universal predicate inputs use `<:Any` | `unused_ground`, `any` (positive); `unused_input`, `unused_untyped_ground`, `unused_anonymous` (negative) | richer pattern syntax |
 | 19 | Type values and bound return types survive calls | `type_values`, `type_bindings`; machinery pack test | general static value selectors |
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
 | 21 | Ground inference preserves runtime data and intentional static fields (§7) | `ground_records`; `checkout` (native record pipeline and void statement emission) | richer record surface |
+| 22 | Immutable local bindings alias ANF values (§6) | `local_bindings`, `checkout`; `binding_*` frontend rejection cases | typed local annotations; application of callable values |
 
-Call dependency contracts remain OPEN: the existing caller-context cases
-prove selection and propagation, but not lexical call validity. The
+Call dependency contracts remain OPEN: implicit Base now supplies the
+arithmetic declaration surface, but general lexical call validity is still
+unchecked. The existing caller-context cases prove selection and propagation. The
 [research proposal](../design/word_contracts.md) separates those tests from
 the additional contract tests needed before the boundary can be claimed.
 

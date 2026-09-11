@@ -1,0 +1,2 @@
+export double
+double(x) = x + x

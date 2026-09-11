@@ -1,10 +1,10 @@
 # caller_context
 
-**Validates (README §1):** dispatch is caller-derived. `algebra` currently
-imports nothing; callers supply arithmetic implementations, and the same
-generic `double` serves every domain the context grounds. Two checks:
-caller implementations are used, and the generic method generalizes.
+**Validates (README §1):** the same generic `double` serves integer and float
+domains. `algebra` now receives a source-visible `+` through implicit Base;
+the caller's explicit arithmetic providers coexist ahead of that import.
+The answers here agree with Base; `base_import` and `depth_override` use
+different answers to prove which implementation wins.
 
-The missing lexical dependency on `+` is a current gap. This case proves
-context dispatch, not a checked library interface. The contract proposal
-must preserve these computations with an explicit dependency surface.
+The implicit import supplies this particular lexical dependency. General
+callee validation and checked callable contracts remain unbuilt.

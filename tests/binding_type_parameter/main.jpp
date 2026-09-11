@@ -1,0 +1,2 @@
+f(x::T) where T = { T = int64; x }
+main() = f(1.5)

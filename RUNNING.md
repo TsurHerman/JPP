@@ -26,6 +26,12 @@ that defines `main`; `Base/` modules join every tree, the tree's own
 shadow them), then `zig run <out_dir>/run.zig`.
 `zig test src/jpp.zig`; `zig test spike/<probe>.zig`.
 
+Each module implicitly imports the small arithmetic `Base` interface after
+its explicit imports; explicit `using Base` keeps its written position.
+`Base` itself has no implicit self-import. `using Test` and `using Any`
+remain explicit. Generated modules use escaped `m_*.zig` filenames so module
+names remain distinct on case-insensitive filesystems; `run.zig` is the driver.
+
 For a larger runnable example, read [the checkout case study](tests/checkout/test.md):
 
 ```sh
@@ -47,6 +53,9 @@ the exit code. `zig build lang-tests` walks `tests/` for case folders.
 NEGATIVE cases: `expect.err` in the folder flips the contract — the
 harness compiles the case expecting FAILURE and greps the error for
 the file's text (error promises: ambiguity, declaration binding, type-only order, export gating).
+Frontend-negative cases instead contain `expect.transpile.err`: jppc must
+exit 1 with that diagnostic substring. These cover invalid local bindings;
+they do not reach Zig compilation.
 
 ## Layout
 

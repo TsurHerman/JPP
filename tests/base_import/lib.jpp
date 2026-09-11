@@ -1,0 +1,4 @@
+using inner
+export double, report
+double(x) = x + x
+report(x) = nestedDouble(x)

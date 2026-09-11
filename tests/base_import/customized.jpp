@@ -1,0 +1,11 @@
+using override
+using lib
+using Test
+
+main() = {
+    check("explicit caller methods precede implicit Base", 5 + 6, 111)
+    check("caller override reaches the library", double(5), 110)
+    check("caller override also reaches deeper imports", report(5), 110)
+    check("unmodified domains still use Base", double(1.5), 3.0)
+    check("unmodified words still use Base", 6 * 7, 42)
+}

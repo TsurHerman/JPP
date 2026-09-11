@@ -1,5 +1,14 @@
 export check
 
+check(name::string, got::string, want::string)::nothing = zig{
+    if (std.mem.eql(u8, got, want)) {
+        std.debug.print("ok {s}\n", .{name});
+    } else {
+        std.debug.print("FAIL {s}: got {s} want {s}\n", .{ name, got, want });
+        jpp.testFail();
+    }
+}
+
 check(name::string, got::T, want::T)::nothing where T = zig{
     if (got == want) {
         std.debug.print("ok {s}\n", .{name});

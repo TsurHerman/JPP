@@ -63,6 +63,7 @@ pub fn build(b: *std.Build) void {
     // NEGATIVE cases: a folder containing `expect.err` never runs — the
     // promise IS a compile error. jppc transpiles it, then zig compiles
     // it EXPECTING failure, and the error must contain the file's text.
+    // expect.transpile.err instead checks frontend rejection before Zig runs.
     const lang_step = b.step("lang-tests", "Run jpp language cases (self-judging programs)");
     for (caseFolders(b)) |name| {
         const src = b.fmt("tests/{s}", .{name});
@@ -71,7 +72,13 @@ pub fn build(b: *std.Build) void {
         tr.setCwd(b.path("."));
         tr.addArg(src);
         tr.addArg(gen);
-        if (expectedError(b, name)) |needle| {
+        if (expectedError(b, name, "expect.transpile.err")) |needle| {
+            tr.expectExitCode(1);
+            tr.expectStdErrMatch(needle);
+            lang_step.dependOn(&tr.step);
+            continue;
+        }
+        if (expectedError(b, name, "expect.err")) |needle| {
             const neg = b.addSystemCommand(&.{
                 b.graph.zig_exe, "build-exe", "-fno-emit-bin", "--cache-dir", ".zig-cache",
             });
@@ -117,12 +124,12 @@ pub fn build(b: *std.Build) void {
     }
 }
 
-/// `tests/<case>/expect.err` marks a NEGATIVE case; content = the
-/// substring the compile error must contain.
-fn expectedError(b: *std.Build, name: []const u8) ?[]const u8 {
+/// A negative case's marker contains the required diagnostic substring;
+/// expect.err checks Zig compilation, expect.transpile.err checks jppc.
+fn expectedError(b: *std.Build, name: []const u8, file: []const u8) ?[]const u8 {
     const data = b.build_root.handle.readFileAlloc(
         b.graph.io,
-        b.fmt("tests/{s}/expect.err", .{name}),
+        b.fmt("tests/{s}/{s}", .{ name, file }),
         b.allocator,
         .unlimited,
     ) catch return null;

@@ -1,0 +1,16 @@
+using base
+using a
+using a.b
+using a_b
+using jpp
+using run
+using Test
+
+main() = {
+    check("Base and base are distinct modules", 2 + 3, 5)
+    check("lowercase base retains its own exports", answer(), 23)
+    check("dotted import and aggregate keep their identity", dotted(), 7)
+    check("underscore does not alias a dotted path", underscored(), 9)
+    check("module cannot overwrite the runtime", machineryName(), 11)
+    check("module cannot overwrite the driver", driverName(), 13)
+}

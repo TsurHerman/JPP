@@ -1,0 +1,2 @@
+export dotted
+dotted() = 7

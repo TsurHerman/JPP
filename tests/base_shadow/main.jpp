@@ -1,0 +1,6 @@
+using lib
+using Test
+main() = {
+    check("source Base provides implicit arithmetic", 2 + 3, 1005)
+    check("the same replacement reaches imported modules", double(5), 1010)
+}

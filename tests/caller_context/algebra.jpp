@@ -1,4 +1,4 @@
-# Current gap: + has no lexical dependency declaration here.
-# The case proves caller-provided arithmetic; see design/word_contracts.md.
+# Implicit Base makes + source-visible; explicit caller providers still fuse.
+# General lexical call validation remains open; see design/word_contracts.md.
 export double
 double(x) = x + x

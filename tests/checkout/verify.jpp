@@ -1,4 +1,3 @@
-using arithmetic
 using model.quote
 using Test
 export verifyQuote

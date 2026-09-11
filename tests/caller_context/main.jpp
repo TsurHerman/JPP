@@ -1,6 +1,5 @@
-# VALIDATES: dispatch is caller-derived — algebra imports NOTHING; the
-# meaning of `+` exists only in this context, and one generic serves
-# whatever types the context grounds.
+# One generic serves integer and floating domains. Algebra now implicitly
+# imports Base, while these explicit arithmetic providers remain ahead of it.
 using ints
 using floats
 using algebra

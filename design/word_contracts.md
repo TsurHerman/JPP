@@ -179,8 +179,10 @@ a string just because the base method returns an integer.
 3. Add declaration checks and concrete call/result obligations. Preserve
    declaration homes through folder aggregation and include contract
    dependencies in the future instance key and diagnostic report.
-4. Repair `override` and `caller_context` to declare their dependencies,
-   preserving their existing answers. Add focused cases for:
+4. Repair `override` to declare its dependency, preserving its answers.
+   `caller_context` now gets its arithmetic declaration through implicit
+   Base; this supplies visibility without implementing general call-contract
+   checking. Add focused cases for:
 
    - undeclared calls in both used and unused methods;
    - declaration-only dependency with a caller implementation;

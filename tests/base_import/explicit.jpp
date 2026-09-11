@@ -1,0 +1,10 @@
+using Base
+using override
+using lib
+using Test
+
+main() = {
+    check("explicit Base keeps its authored import position", 5 + 6, 11)
+    check("explicit Base is not injected twice", double(5), 10)
+    check("explicit priority is preserved through deeper imports", report(5), 10)
+}
