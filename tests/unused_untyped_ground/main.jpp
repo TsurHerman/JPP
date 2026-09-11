@@ -1,0 +1,2 @@
+bad(x, xx::int64) = zig{ blk: { _ = "x"; break :blk xx; } }
+main() = 0

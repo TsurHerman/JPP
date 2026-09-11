@@ -52,9 +52,10 @@ class with no method of its own),
 
 The declaration and type-value boundary cases are `declaration_names`,
 `type_values`, `type_bindings`, `undeclared_order`, `unused_input`,
-`unused_ground`, and `unbound_where`. They separate lexical definitions
-from fresh variables, require intentional anonymous inputs, and preserve
-comptime type identity through binding and calls. `order_type_only` and
+`unused_ground`, `unused_untyped_ground`, and `unbound_where`. They separate
+lexical definitions from fresh variables, allow unused annotated inputs
+while rejecting unused unannotated names, and preserve comptime type
+identity through binding and calls. `order_type_only` and
 `order_bool` reject invalid order queries/answers; `order_negative` checks
 negative facts and context position. `pointwise_gap` rejects dominance with
 an incomparable coordinate; `gate_conjunction` checks every conjunct.
@@ -86,7 +87,7 @@ an export list from inventing a definition.
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
 | 15 | Library resolution: `using Test` from `Base/`, tree shadows Base | all check-based cases (implicitly) | explicit shadowing case (a tree module named Test) |
 | 17 | Defined signature names require lexical definitions/imports | `declaration_names`, `undeclared_order`, `undefined_export` | user-defined type/constant declarations after that surface exists |
-| 18 | Fresh binders must be used; anonymous inputs state deliberate disregard | `unused_input`, `unused_ground`; existing constant fixtures use anonymous slots | richer pattern syntax |
+| 18 | Annotated inputs may be unused; unannotated fresh binders must be used or anonymous | `unused_ground` (positive), `unused_input`, `unused_untyped_ground` (negative); existing constant fixtures also use anonymous slots | richer pattern syntax |
 | 19 | Type values and bound return types survive calls | `type_values`, `type_bindings`; machinery pack test | general static value selectors |
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
 

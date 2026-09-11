@@ -358,15 +358,16 @@ pub fn requireValue(comptime scope: anytype, comptime name: []const u8) type {
 }
 
 /// Declaration lookup is lexical; dispatch remains caller-contextual. A fresh
-/// name binds an input. An ignored input must be anonymous, making an accidental
-/// generic rule (for example a misspelled class name) a declaration error.
+/// name binds an input. An explicit annotation gives it a signature role even
+/// when the body ignores its value. Only unused, unannotated fresh names error:
+/// they can accidentally turn a misspelled class constraint into a generic rule.
 pub fn declarationQual(comptime scope: anytype, comptime name: []const u8, comptime q: Qual, comptime used: bool) Qual {
     if (declaredValue(scope, name)) |V| {
         if (q != .bare and !(q == .exact and q.exact == type))
             @compileError("jpp: defined value '" ++ name ++ "' cannot be rebound by an input annotation.");
         return .{ .type_value = V };
     }
-    if (!used) @compileError("jpp: unused input '" ++ name ++ "'; use '_' or a type-only input, or define/import the intended value.");
+    if (!used and q == .bare) @compileError("jpp: unused input '" ++ name ++ "'; annotate it, use '_', or define/import the intended value.");
     return q;
 }
 

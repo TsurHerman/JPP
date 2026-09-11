@@ -42,7 +42,7 @@ Status of the major features:
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
-| declarations distinguish defined values, fresh binders, and anonymous inputs | RUNS (declaration_names; negative: undeclared_order, unused_input, unused_ground) |
+| declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs | RUNS (declaration_names, unused_ground; negative: undeclared_order, unused_input, unused_untyped_ground) |
 | exact type values, type-domain inputs, type-returning calls, and bound return types | RUNS (type_values, type_bindings) |
 | the type-only `<:` word: defined class/type facts, negative facts, general rules | RUNS (order_refines, order_variables, order_negative; negative: order_type_only, order_bool) |
 | `<:` is consulted PAIRWISE between candidates — no transitive closure; a chain conducts only through classes carrying a method, and the caller can supply a missing link | RUNS (lattice, lattice_bridge; negative: lattice_gap) |
@@ -260,10 +260,18 @@ export <:
 
 Removing `using preds` makes `Signed` and `Wide` fresh variables. Because
 the body uses neither, this is an **unused-input error**, not an order fact.
-This check applies to every word, including methods not called. Use `_`
-for any ignored input, `::int64` for an ignored integer, `::type` for an
-ignored type value, and `<:Signed` for an ignored input gated by Signed.
-A name used in a return annotation or a constraint is also meaningful.
+This check applies to unused, **unannotated** fresh names in every word,
+including methods not called. An explicit type or predicate annotation
+already gives an input a role in the signature; the body need not read its
+value. `f(x::int64) = 42` is a valid constant function on integers, whether
+its body is ordinary jpp or a ground. Repeated type variables and predicate
+gates also retain their constraints when the values are unused.
+
+Anonymous inputs remain an option: `_` for any input, `::int64` for an
+integer, `::type` for a type value, and `<:Signed` for an input gated by
+Signed. A name used in a return annotation or a constraint is meaningful
+too. Thus `<:(P::type, Q::type) = false` is an explicit general rule, while
+the unannotated, undefined `Signed`/`Wide` example above still errors.
 
 A predicate word remains callable (`Signed(int64)` tests membership) and
 has a type-level class identity when passed as a value. Exported
@@ -1014,11 +1022,11 @@ print/algebra demo):
   literals as typed data, return inference through jpp bodies AND across
   the ground boundary, predicate gates (including `x<:Pred`), composed
   predicates, and caller-authored `<:` facts refining gated dispatch.
-  Defined signature values require lexical definitions/imports; unused
-  named inputs error, and anonymous domain inputs express intentional
-  disregard. Type values, type results, and bound return types preserve
-  comptime identity through ordinary calls. Private helpers and folder
-  declaration homes are tested as part of the module boundary.
+  Defined signature values require lexical definitions/imports. Unused,
+  unannotated fresh names error; annotated inputs may be unused, and
+  anonymous inputs remain optional. Type values, type results, and bound
+  return types preserve comptime identity through ordinary calls. Private
+  helpers and folder declaration homes are tested as part of the module boundary.
   `context_flip` pins import-order tie-breaking; `lattice_gap` and
   `lattice_bridge` pin pairwise order and a caller-supplied missing edge.
   The negative cases also enforce ambiguity and export-gating errors.

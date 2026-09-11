@@ -17,6 +17,7 @@ rule is written first. Dispatch of the order uses the stratum-0 ladder, so
 ranking these methods does not query the order being defined. `same` is a
 private helper and its comparison is type identity, not order-derived equality.
 
-An intentionally constant general rule would be written
-`<:(::type, ::type) = false`; writing fresh named inputs and ignoring them
-would be a declaration error.
+An intentionally constant general rule can be written
+`<:(P::type, Q::type) = false` or `<:(::type, ::type) = false`.
+The type annotations give the inputs a signature role even when their
+values are ignored. Only unannotated, unused fresh names are rejected.

@@ -18,7 +18,7 @@
 //   where T | where T == S | where T <: Pred | where Pred(T)
 //     (identity, <: equivalence, predicate gate; see README §4)
 //   defined values constrain any signature; fresh names bind inputs.
-//   ignored inputs are anonymous: _, ::type, or <:Predicate.
+//   ignored inputs may be annotated or anonymous: x::type, _, ::type, <:Predicate.
 //   literals default int64 / float64 (julia-ish)
 
 const std = @import("std");

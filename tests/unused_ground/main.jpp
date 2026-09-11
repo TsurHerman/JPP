@@ -1,2 +1,26 @@
-bad(x::int64, xx::int64) = zig{ blk: { _ = "x"; break :blk xx; } }
-main() = 0
+using Test
+
+# x participates in the signature. Neither the string nor xx uses its value.
+second(x::int64, xx::int64) = zig{ blk: { _ = "x"; break :blk xx; } }
+
+# The same rule applies across the ground boundary: both are constant methods.
+constant(x::int64)::int64 = zig{ 11 }
+constant(x::float64) = 22
+constant(_) = 0
+
+Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
+gated(x<:Integer) = 3
+gated(_) = 0
+sameKind(a::T, b::T) where T = true
+ignoredType(T::type) = 4
+
+main() = {
+    check("unused typed ground input", second(7, 9), 9)
+    check("ground constant has an integer domain", constant(1), 11)
+    check("ordinary constant has a float domain", constant(1.0), 22)
+    check("other types use the fallback", constant(true), 0)
+    check("unused predicate input keeps its gate", gated(1), 3)
+    check("predicate still excludes floats", gated(1.0), 0)
+    check("unused values retain a repeated type constraint", sameKind(1, 2), true)
+    check("unused type-valued input", ignoredType(int64), 4)
+}

@@ -22,9 +22,11 @@ a feature; preserve the ratified semantics unless the task changes them.
   ambiguity errors at calls with competing maxima in the winning module.
 - A defined/imported name in a signature refers to its existing value; a
   fresh name binds an input. Never manufacture class identities from
-  undefined names. Ignored inputs use `_`, `::type`, or another anonymous
-  domain annotation. Type values retain their identity in comptime pack
-  fields; an integer value and its type are different call arguments.
+  undefined names. Annotated inputs may be unused: their annotation gives
+  them a signature role. Only unused, unannotated fresh names error;
+  anonymous inputs remain an option. Type values retain their identity in
+  comptime pack fields; an integer value and its type are different call
+  arguments.
 - Private helpers are lexical; exported words fuse through caller context.
   Preserve a method's declaration home when aggregating folders.
 - The `<:` order is authored and queried pairwise between candidates.
