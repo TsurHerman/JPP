@@ -6,11 +6,11 @@ second(x::int64, xx::int64) = zig{ blk: { _ = "x"; break :blk xx; } }
 # The same rule applies across the ground boundary: both are constant methods.
 constant(x::int64)::int64 = zig{ 11 }
 constant(x::float64) = 22
-constant(_) = 0
+constant(::Any) = 0
 
 Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
 gated(x<:Integer) = 3
-gated(_) = 0
+gated(::Any) = 0
 sameKind(a::T, b::T) where T = true
 ignoredType(T::type) = 4
 

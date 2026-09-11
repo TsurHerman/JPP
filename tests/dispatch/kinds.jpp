@@ -5,5 +5,5 @@ export kind, pick
 kind(::int64) = 1
 kind(::float64) = 2
 
-pick(_) = 0
+pick(::Any) = 0
 pick(::int64) = 1

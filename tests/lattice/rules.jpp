@@ -3,7 +3,7 @@
 using preds
 export kind, tiny, utiny
 
-kind(_) = 0
+kind(::Any) = 0
 kind(::T) where T <: Numeric = 1
 kind(::T) where T <: Small = 2
 kind(::T) where T <: Signed = 3

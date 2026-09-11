@@ -4,26 +4,26 @@ using preds
 export describe, kindof, pairup, terse
 
 # the full ladder on one word, in one module: bare 1, gated 2, exact 3.
-describe(_) = 0
+describe(::Any) = 0
 describe(::T) where T <: Integer = 1
 describe(::T) where T <: Float = 2
 describe(::int64) = 3
 
 # same rules with no exact rung, so the GATE is what answers.
-kindof(_) = 0
+kindof(::Any) = 0
 kindof(::T) where T <: Integer = 1
 kindof(::T) where T <: Float = 2
 
 # the gate composes with repeated-binder identity: a::T, b::T still
 # demands one type, and the gate then demands that type be an integer.
-pairup(_, _) = 0
+pairup(::Any, ::Any) = 0
 pairup(::T, ::T) where T <: Integer = 1
 
 # THE SHORT SPELLING, same ladder. `x<:Integer` is sugar for
 # `x::T where Integer(T)` with T fresh, so these must land on exactly
 # the rungs their long-form twins above landed on: still under the
 # exact rung, still over bare.
-terse(_) = 0
+terse(::Any) = 0
 terse(<:Integer) = 1
 terse(<:Float) = 2
 terse(::int64) = 3

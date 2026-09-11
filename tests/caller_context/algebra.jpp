@@ -1,3 +1,4 @@
-# ZERO imports — meaning arrives entirely from the caller
+# Current gap: + has no lexical dependency declaration here.
+# The case proves caller-provided arithmetic; see design/word_contracts.md.
 export double
 double(x) = x + x

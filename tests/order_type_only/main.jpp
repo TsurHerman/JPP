@@ -1,3 +1,3 @@
 export <:
-<:(_, _) = true
+<:(::type, ::type) = true
 main() = <:(1, 2)

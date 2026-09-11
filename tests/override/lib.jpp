@@ -1,3 +1,4 @@
-# imports NOTHING — whoever calls probe decides what tag means
+# Current gap: no declaration/import states the dependency on tag.
+# This fixture proves context selection; see design/word_contracts.md.
 export probe
 probe(x) = tag(x)

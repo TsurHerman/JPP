@@ -42,7 +42,7 @@ Status of the major features:
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
-| declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs | RUNS (declaration_names, unused_ground; negative: undeclared_order, unused_input, unused_untyped_ground) |
+| declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs; explicit `::Any` | RUNS (declaration_names, unused_ground, any; negative: undeclared_order, unused_input, unused_untyped_ground, unused_anonymous) |
 | exact type values, type-domain inputs, type-returning calls, and bound return types | RUNS (type_values, type_bindings) |
 | the type-only `<:` word: defined class/type facts, negative facts, general rules | RUNS (order_refines, order_variables, order_negative; negative: order_type_only, order_bool) |
 | `<:` is consulted PAIRWISE between candidates — no transitive closure; a chain conducts only through classes carrying a method, and the caller can supply a missing link | RUNS (lattice, lattice_bridge; negative: lattice_gap) |
@@ -56,6 +56,7 @@ Status of the major features:
 | repeated type binder = identity; `where T == S` = mutual direct relation; all predicate conjuncts participate in dominance | RUNS (type_bindings, where_gate, gate_conjunction; negative: pointwise_gap) |
 | tiering & hot-swap, symbol-name-as-cache-key, sessions | RATIFIED (soprobe touches the dlsym venue) |
 | memory model, threading, stdlib strategy, tensors, macros, ledger tooling | OPEN (§11) |
+| explicit callable dependency contracts, separate from implementations | OPEN — [research proposal](design/word_contracts.md); calls currently lack this lexical check |
 
 ---
 
@@ -128,6 +129,13 @@ Status of the major features:
   outrank even the callee's own imports. Generic code (`sum` calling
   `+`) sees the caller's extensions. Context is a compile-time
   specialization parameter, monomorphized away — never a runtime value.
+  **Current gap:** an unqualified body call is emitted as a word name even
+  when the declaring module neither defines nor imports that word.
+  `caller_context` and `override` currently exercise this behavior; they
+  do not establish a checked dependency interface. The proposed correction
+  is a visible callable contract with context-selected implementations,
+  not a caller inventing a lexical definition. Contract semantics remain
+  OPEN; see [the research note](design/word_contracts.md).
 - **Compiled instances are keyed by `(function, argument types, context
   methods actually reached)`.** All keys static. Editing a module
   invalidates exactly the instances that reached it — invalidation flows
@@ -267,11 +275,18 @@ value. `f(x::int64) = 42` is a valid constant function on integers, whether
 its body is ordinary jpp or a ground. Repeated type variables and predicate
 gates also retain their constraints when the values are unused.
 
-Anonymous inputs remain an option: `_` for any input, `::int64` for an
+Anonymous inputs remain an option: `::Any` for any input, `::int64` for an
 integer, `::type` for a type value, and `<:Signed` for an input gated by
 Signed. A name used in a return annotation or a constraint is meaningful
 too. Thus `<:(P::type, Q::type) = false` is an explicit general rule, while
 the unannotated, undefined `Signed`/`Wide` example above still errors.
+Bare `_` is also an unused unannotated input and errors. `x::Any` may
+keep a name without using it. Both spellings retain each concrete input's
+type and value; `Any` introduces no boxing or erased runtime representation.
+It has the same dispatch rank as a used unannotated binder. An `::Any`
+return annotation permits the inferred concrete result. This universal
+input domain does not insert facts into the independently authored `<:`
+order; `Any` as a value denotes that particular type value.
 
 A predicate word remains callable (`Signed(int64)` tests membership) and
 has a type-level class identity when passed as a value. Exported
@@ -283,6 +298,7 @@ proves set inclusion nor adds members to the predicate's definition.
 | declaration | accepted argument |
 |---|---|
 | `f(X) = X` | any input, bound to fresh `X` |
+| `f(::Any) = 0` or `f(x::Any) = 0` | any input, explicitly allowed to be unused |
 | `f(::int64) = 1` | an integer value |
 | `f(::type) = 2` | any type value |
 | `f(int64) = 3` | the specific type value `int64` |
@@ -1016,7 +1032,9 @@ print/algebra demo):
   `report(21)` changes from 42 to the sentinel 1000, while the
   unmodified `*` keeps `square(21)` at 441. The ledger's proposed
   "algebra requires from context: +, *" report is RATIFIED, unbuilt;
-  it would expose the implicit contract from the footprint closure.
+  it would report dependencies from the footprint closure. Such a report
+  is not a checked callable contract; that boundary is now under explicit
+  design review in [word contracts](design/word_contracts.md).
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across
@@ -1024,7 +1042,8 @@ print/algebra demo):
   predicates, and caller-authored `<:` facts refining gated dispatch.
   Defined signature values require lexical definitions/imports. Unused,
   unannotated fresh names error; annotated inputs may be unused, and
-  anonymous inputs remain optional. Type values, type results, and bound
+  anonymous inputs use an annotation (`::Any` for the unrestricted case).
+  Type values, type results, and bound
   return types preserve comptime identity through ordinary calls. Private
   helpers and folder declaration homes are tested as part of the module boundary.
   `context_flip` pins import-order tie-breaking; `lattice_gap` and
@@ -1043,6 +1062,11 @@ print/algebra demo):
 
 ## 11. Open
 
+- **Callable dependency contracts:** require a source-visible surface for
+  body calls while preserving caller-first implementation selection.
+  Research favors typed declarations without mandatory catch-all bodies;
+  syntax, contract identity/fusion, and generic call obligations are not
+  yet ratified or implemented. [Options and acceptance cases](design/word_contracts.md).
 - **Next phase (declared):** the boundary-testing phase — write the
   promise catalog (`tests/README.md`) into executable claims. The
   negative-compile harness RUNS (`expect.err` in a case folder:

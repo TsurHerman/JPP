@@ -23,10 +23,10 @@ a feature; preserve the ratified semantics unless the task changes them.
 - A defined/imported name in a signature refers to its existing value; a
   fresh name binds an input. Never manufacture class identities from
   undefined names. Annotated inputs may be unused: their annotation gives
-  them a signature role. Only unused, unannotated fresh names error;
-  anonymous inputs remain an option. Type values retain their identity in
-  comptime pack fields; an integer value and its type are different call
-  arguments.
+  them a signature role. Unused, unannotated inputs error, including `_`;
+  use `::Any` for an unrestricted anonymous input. Type values retain their
+  identity in comptime pack fields; an integer value and its type are
+  different call arguments.
 - Private helpers are lexical; exported words fuse through caller context.
   Preserve a method's declaration home when aggregating folders.
 - The `<:` order is authored and queried pairwise between candidates.

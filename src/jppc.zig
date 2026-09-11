@@ -593,15 +593,17 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
         o.add("\nconst G{d} = struct {{\n", .{k});
         o.add("    pub fn Ret(comptime B: type) type {{\n", .{});
         if (d.ret) |r| {
-            if (!boundTypeName(d, r)) o.add("        _ = B;\n", .{});
-            o.add("        return ", .{});
+            o.add("        const declared = ", .{});
             emitBoundType(o, d, r);
-            o.add(";\n", .{});
-        } else {
-            if (groundUsesAny(d, g)) o.add("        const bound: B = undefined;\n", .{}) else o.add("        _ = B;\n", .{});
-            emitGroundPrelude(o, d, g);
-            o.add("        return @TypeOf({s});\n", .{g});
+            o.add(";\n        if (declared != jpp.Any) return declared;\n", .{});
         }
+        if (groundUsesAny(d, g)) {
+            o.add("        const bound: B = undefined;\n", .{});
+        } else if (d.ret == null or !boundTypeName(d, d.ret.?)) {
+            o.add("        _ = B;\n", .{});
+        }
+        emitGroundPrelude(o, d, g);
+        o.add("        return @TypeOf({s});\n", .{g});
         o.add("    }}\n", .{});
         o.add("    pub fn run(bound: anytype) Ret(@TypeOf(bound)) {{\n", .{});
         emitGroundPrelude(o, d, g);
@@ -632,7 +634,9 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
             for (e.params, 0..) |prm, pi| {
                 if (pi > 0) o.add(",", .{});
                 o.add(" .{{ .name = \"{s}\", .qual = ", .{prm.name});
-                if (!prm.anonymous)
+                if (prm.anonymous)
+                    o.add("jpp.declarationQual(STATIC, null, ", .{})
+                else
                     o.add("jpp.declarationQual(STATIC, \"{s}\", ", .{prm.name});
                 if (prm.pred != null) {
                     o.add(".{{ .tvar = \"{s}\" }}", .{prm.name});
@@ -645,7 +649,7 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
                 } else {
                     o.add(".bare", .{});
                 }
-                if (!prm.anonymous) o.add(", {})", .{paramUsed(e, prm.name)});
+                o.add(", {})", .{!prm.anonymous and paramUsed(e, prm.name)});
                 o.add(" }}", .{});
             }
             o.add(" }},", .{});

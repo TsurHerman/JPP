@@ -2,7 +2,7 @@ using Test
 export typeof, accepts, same, <:, typed, grounded, groundType
 typeof(::T) where T = T
 same(P::type, Q::type)::bool = zig{ P == Q }
-accepts(_, _) = false
+accepts(::Any, ::Any) = false
 accepts(P::type, Q::type) where P == Q = true
 <:(int32, uint32) = true
 <:(uint32, int32) = true

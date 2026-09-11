@@ -1,6 +1,6 @@
 using Test
 export category, relay, echo, choose, same, choosePair, <:
-category(_) = 0
+category(::Any) = 0
 category(::int64) = 1
 category(::type) = 2
 category(int64) = 3

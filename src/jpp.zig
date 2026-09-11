@@ -17,6 +17,10 @@
 
 const std = @import("std");
 
+/// The universal input domain. Binding retains the concrete field type; Any
+/// does not introduce boxing or erase the type of a runtime value.
+pub const Any = struct {};
+
 // --- test support (used by Base/Test.jpp's grounds) ----------------------------------
 // the program judges itself: checks record failures here; the generated
 // harness prints the verdict and exits 0/1. DCE'd when unused.
@@ -154,7 +158,7 @@ fn qualOk(comptime q: Qual, comptime f: std.builtin.Type.StructField) bool {
     const T = f.type;
     return switch (q) {
         .type_value => |V| T == type and f.is_comptime and f.defaultValue().? == V,
-        .exact => |E| T == E,
+        .exact => |E| E == Any or T == E,
         .pred => |P| P(T),
         .bare, .tvar => true,
     };
@@ -319,6 +323,7 @@ pub fn Word(comptime name: []const u8) type {
 }
 
 pub fn builtinType(comptime name: []const u8) ?type {
+    if (std.mem.eql(u8, name, "Any")) return Any;
     const names = .{ "int64", "int32", "int16", "int8", "uint64", "uint32", "uint16", "uint8", "float64", "float32", "bool", "nothing", "string", "type" };
     const types = .{ i64, i32, i16, i8, u64, u32, u16, u8, f64, f32, bool, void, []const u8, type };
     inline for (names, types) |n, T| if (std.mem.eql(u8, name, n)) return T;
@@ -359,15 +364,20 @@ pub fn requireValue(comptime scope: anytype, comptime name: []const u8) type {
 
 /// Declaration lookup is lexical; dispatch remains caller-contextual. A fresh
 /// name binds an input. An explicit annotation gives it a signature role even
-/// when the body ignores its value. Only unused, unannotated fresh names error:
-/// they can accidentally turn a misspelled class constraint into a generic rule.
-pub fn declarationQual(comptime scope: anytype, comptime name: []const u8, comptime q: Qual, comptime used: bool) Qual {
-    if (declaredValue(scope, name)) |V| {
-        if (q != .bare and !(q == .exact and q.exact == type))
-            @compileError("jpp: defined value '" ++ name ++ "' cannot be rebound by an input annotation.");
-        return .{ .type_value = V };
+/// when the body ignores its value. Unused, unannotated slots error, including
+/// anonymous ones; a misspelled class must not silently become a generic rule.
+pub fn declarationQual(comptime scope: anytype, comptime name: ?[]const u8, comptime q: Qual, comptime used: bool) Qual {
+    if (name) |n| {
+        if (declaredValue(scope, n)) |V| {
+            if (q != .bare and !(q == .exact and q.exact == type))
+                @compileError("jpp: defined value '" ++ n ++ "' cannot be rebound by an input annotation.");
+            return .{ .type_value = V };
+        }
     }
-    if (!used and q == .bare) @compileError("jpp: unused input '" ++ name ++ "'; annotate it, use '_', or define/import the intended value.");
+    if (!used and q == .bare) {
+        const label = if (name) |n| "'" ++ n ++ "'" else "(anonymous)";
+        @compileError("jpp: unused input " ++ label ++ "; give it an explicit type (such as ::Any), or define/import the intended value.");
+    }
     return q;
 }
 
@@ -515,7 +525,7 @@ const ground_policy = struct {
 fn slotRank(comptime q: Qual) u32 {
     return switch (q) {
         .type_value => 4,
-        .exact => 3,
+        .exact => |T| if (T == Any) 1 else 3,
         .pred => 2,
         .bare, .tvar => 1,
     };
@@ -838,8 +848,8 @@ fn flatRet(comptime ctx: anytype, comptime flat: Flat, comptime B: type) type {
 }
 
 fn methodRet(comptime xctx: anytype, comptime m: Method, comptime B: type) type {
-    if (m.ret_variable) |v| return typeOfVar(m.signature, B, v) orelse @compileError("jpp: unbound return type variable.");
-    if (m.ret) |T| return T; // declared wins
+    const declared: ?type = if (m.ret_variable) |v| typeOfVar(m.signature, B, v) orelse @compileError("jpp: unbound return type variable.") else m.ret;
+    if (declared) |T| if (T != Any) return T; // Any permits the inferred concrete result
     return switch (m.body) {
         .ground => |G| G.Ret(B), // inferred across the boundary (@TypeOf mirror)
         .ops => |flat| flatRet(xctx, flat, B),
@@ -972,6 +982,8 @@ fn triAll(comptime acc: Tri, comptime x: Tri) Tri {
 }
 
 pub fn qualLeq(comptime ctx: anytype, comptime a: Qual, comptime b: Qual) Tri {
+    if (b == .exact and b.exact == Any) return .yes;
+    if (a == .exact and a.exact == Any) return qualLeq(ctx, .bare, b);
     return switch (b) {
         .bare, .tvar => .yes,
         .type_value => |S| switch (a) {
@@ -1022,7 +1034,7 @@ pub fn sigMeet(comptime a: []const Slot, comptime b: []const Slot) ?[]const Slot
         if (a.len != b.len) return null;
         var out: [a.len]Slot = undefined;
         for (a, b, 0..) |sa, sb, i| {
-            const q: Qual = switch (sa.qual) {
+            const q: Qual = if (sa.qual == .exact and sa.qual.exact == Any) sb.qual else if (sb.qual == .exact and sb.qual.exact == Any) sa.qual else switch (sa.qual) {
                 .type_value => |T| switch (sb.qual) {
                     .type_value => |S| if (T == S) sa.qual else return null,
                     .exact => |S| if (S == type) sa.qual else return null,
@@ -1627,4 +1639,29 @@ test "an explicit surface negative is not replaced by a legacy positive" {
     try std.testing.expect(!comptime typesEquiv(ctx, i32, u32));
     try std.testing.expect(!call(ctx, "<:", .{ i32, u32 }));
     try std.testing.expect(call(ctx, "<:", .{ u32, i32 }));
+}
+
+test "Any inclusion and intersection agree with concrete pack construction" {
+    const all = [_]Slot{.{ .name = "v", .qual = .{ .exact = Any } }};
+    const integer = [_]Slot{.{ .name = "v", .qual = .{ .exact = i64 } }};
+    const literal = [_]Slot{.{ .name = "v", .qual = .{ .type_value = Any } }};
+    const pred = [_]Slot{.{ .name = "v", .qual = .{ .pred = isNum } }};
+    try std.testing.expectEqual(Tri.yes, comptime sigLeq(.{}, &integer, &all));
+    try std.testing.expectEqual(Tri.yes, comptime sigLeq(.{}, &literal, &all));
+    try std.testing.expectEqual(Tri.yes, comptime sigLeq(.{}, &pred, &all));
+    try std.testing.expectEqual(Tri.no, comptime sigLeq(.{}, &all, &integer));
+    try std.testing.expectEqual(Tri.unknown, comptime sigLeq(.{}, &all, &pred));
+    inline for (.{ integer, literal, pred }) |narrow| {
+        const left = comptime sigMeet(&all, &narrow).?;
+        const right = comptime sigMeet(&narrow, &all).?;
+        inline for (.{ @as(i64, 7), @as(f64, 1.5), true, Any, i64 }) |value| {
+            const Raw = @TypeOf(.{value});
+            const expected = comptime construct(&narrow, Raw);
+            try std.testing.expect(expected == comptime construct(left, Raw));
+            try std.testing.expect(expected == comptime construct(right, Raw));
+        }
+    }
+    const raw = .{i64};
+    const B = comptime construct(&all, @TypeOf(raw)).?;
+    try std.testing.expect(bindValues(&all, B, raw).v == i64);
 }

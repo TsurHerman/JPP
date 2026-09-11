@@ -28,9 +28,9 @@ build step judges here (a program cannot self-judge its own refusal
 to exist); compiling successfully FAILS the case.
 
 Cases: `dispatch` (selection + the specificity ladder, as values),
-`caller_context` (a library with zero imports computes — the caller
-supplies meaning), `override` (position shadowing, reaching inside an
-oblivious library), `depth_override` (surgical override through two
+`caller_context` (caller-provided arithmetic; lexical dependency checking
+remains a gap), `override` (position shadowing through a library),
+`depth_override` (surgical override through two
 modules), `context_flip` (opposite orders, flipped winner),
 `folder_modules` (aggregate, takeover, dotted addressing),
 `where_gate` (predicate gates on `where`, the gated binder's rung, gate
@@ -52,10 +52,11 @@ class with no method of its own),
 
 The declaration and type-value boundary cases are `declaration_names`,
 `type_values`, `type_bindings`, `undeclared_order`, `unused_input`,
-`unused_ground`, `unused_untyped_ground`, and `unbound_where`. They separate
-lexical definitions from fresh variables, allow unused annotated inputs
-while rejecting unused unannotated names, and preserve comptime type
-identity through binding and calls. `order_type_only` and
+`unused_ground`, `unused_untyped_ground`, `unused_anonymous`, `any`, and
+`unbound_where`. They separate lexical definitions from fresh variables,
+allow unused annotated inputs while rejecting unused unannotated inputs
+(including `_`), and preserve comptime type identity through binding and
+calls. `order_type_only` and
 `order_bool` reject invalid order queries/answers; `order_negative` checks
 negative facts and context position. `pointwise_gap` rejects dominance with
 an incomparable coordinate; `gate_conjunction` checks every conjunct.
@@ -87,9 +88,14 @@ an export list from inventing a definition.
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
 | 15 | Library resolution: `using Test` from `Base/`, tree shadows Base | all check-based cases (implicitly) | explicit shadowing case (a tree module named Test) |
 | 17 | Defined signature names require lexical definitions/imports | `declaration_names`, `undeclared_order`, `undefined_export` | user-defined type/constant declarations after that surface exists |
-| 18 | Annotated inputs may be unused; unannotated fresh binders must be used or anonymous | `unused_ground` (positive), `unused_input`, `unused_untyped_ground` (negative); existing constant fixtures also use anonymous slots | richer pattern syntax |
+| 18 | Annotated inputs may be unused; anonymous unrestricted inputs use `::Any` | `unused_ground`, `any` (positive); `unused_input`, `unused_untyped_ground`, `unused_anonymous` (negative) | richer pattern syntax |
 | 19 | Type values and bound return types survive calls | `type_values`, `type_bindings`; machinery pack test | general static value selectors |
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
+
+Call dependency contracts remain OPEN: the existing caller-context cases
+prove selection and propagation, but not lexical call validity. The
+[research proposal](../design/word_contracts.md) separates those tests from
+the additional contract tests needed before the boundary can be claimed.
 
 ## Where machinery tests live
 
