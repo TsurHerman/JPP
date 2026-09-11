@@ -1134,6 +1134,10 @@ print/algebra demo):
 
 ## 11. Open
 
+- **Generality implementation sequence:** tuples and packs, named arguments,
+  varargs, static type application, record/type families, and library
+  promotion. The [staged plan](design/generality_plan.md) records current
+  machinery gaps, decisions still needed, and test-folder acceptance cases.
 - **Callable dependency contracts:** require a source-visible surface for
   body calls while preserving caller-first implementation selection.
   Research favors typed declarations without mandatory catch-all bodies;
