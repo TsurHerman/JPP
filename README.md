@@ -920,11 +920,10 @@ Boundary contract:
     view, which exists only per instantiation — so anything
     presupposing a complete meaning (ambiguity checks, coverage,
     sealed tables) belongs to (word, context), never to this struct.
-  - Historical (validated by `spike/` + generated code, now
-    superseded): v1 emitted per-method structs with
-    `rank/matches/Ret/call` functions. The spike proved the lowering;
-    the five-facts data shape is the ratified direction, spike rework
-    pending.
+  - Historical: v1 emitted per-method structs with
+    `rank/matches/Ret/call` functions. Its emitter and demos are retained in
+    git history. The active compiler uses the five-facts data shape;
+    `spike/jpp.zig` retains the old encoding solely for the tail-call probe.
 
   Module -> Zig struct (a file) with `@"name"` MultiMethod decls;
   context -> comptime tuple of module structs; surface call

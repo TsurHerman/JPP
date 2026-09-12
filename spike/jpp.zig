@@ -1,4 +1,6 @@
-// jpp.zig — the runtime library of the transpiler. THE only magic:
+// Historical encoding retained for tailcalls.zig only. The active runtime is
+// src/jpp.zig; this probe helper's summed ranks are not current jpp semantics.
+// Original encoding:
 //   call(ctx, "f", args) = resolve(ctx, "f", typeof(args)).call(ctx, args)
 //
 // encoding conventions (what the transpiler emits):

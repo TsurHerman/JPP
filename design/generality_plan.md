@@ -58,8 +58,8 @@ a cached process result for an old generated file is not fresh validation.
 Verification on 2026-09-12: `zig build test demo probes --summary all` passed
 all 246 build steps, covering 97 language cases (including 41 expected compile
 rejections and 11 expected frontend rejections) and 45 machinery/probe tests.
-`zig test src/ast.zig` passed all three AST tests; the historical emitter also
-passed `zig build-exe src/emit.zig -fno-emit-bin` after its AST compatibility update.
+`zig test src/ast.zig` passed all three AST tests. The obsolete emitter and
+hand-transpiled demos were subsequently removed; the research probes remain.
 
 ## 3. Varargs and forwarding
 

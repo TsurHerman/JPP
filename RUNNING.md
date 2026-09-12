@@ -69,7 +69,6 @@ pack syntax, and module paths; they do not reach Zig compilation.
 | `src/jpp.zig` | the machinery: methods-as-data interpreters, dispatch, `<:` order, collapse — executes at COMPTIME inside generated code; machinery tests live inline |
 | `src/jppc.zig` | the transpiler: lexer -> parser -> ANF -> data-literal printer -> module graph -> driver; parsing/normalization stay file-local, dispatch stays in jpp.zig |
 | `src/ast.zig` | the ratified three-layer AST model (Expr/Method/FlatBody); jppc does not consume it yet — acknowledged debt |
-| `src/emit.zig` | v1 emitter, superseded by the five-facts data shape; history |
 | `tests/` | the language cases: each folder a tree; programs are root modules that define `main` (see `tests/README.md`) |
 | `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Any, Test and Tuple; source modules can shadow matching bundled paths. Zig's `std` is only inside `zig{}` |
 | `design/` | rewritten design notebook: modules, packs, contracts, type families, numerics, binary artifacts and implementation sequence |
@@ -87,8 +86,11 @@ pack syntax, and module paths; they do not reach Zig compilation.
 | `vecprobe.zig` | parametric type-words: pattern binding, unification, re-application provenance (5) |
 | `soprobe.zig` | dlopen/dlsym symbol probing — the symbol-name-as-cache-key venue |
 | `tailcalls.zig` + `tailprobe*.zig` | guaranteed tail calls through the encoding; documents the comptime mutual-recursion landmine (§11) — slow to compile by design of the experiment |
-| `jpp.zig` + `ints/floats/reals/checked/lib/main.zig` | the ORIGINAL hand-transpiled spike (pre data-shape); superseded by src/jpp.zig but kept as the historical reference implementation |
-| `emit.zig` -> `gen_double.zig`/`gen_main.zig` | v1 emitter round-trip; historical |
+| `jpp.zig` | historical method-struct encoding still used by `tailcalls.zig`; not the active runtime |
+
+The obsolete v1 emitter, its generated harness, hand-transpiled demos, and
+old `.jpp` design sketches were removed. They remain available in git history;
+the retained probes each exercise a distinct mechanism.
 
 ## Developing with GPT-6 Astra
 

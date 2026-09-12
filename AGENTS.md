@@ -59,8 +59,9 @@ a feature; preserve the ratified semantics unless the task changes them.
   method-wide sequential binding environment. Rebinding and forward uses
   are frontend errors; mutable assignment and callable locals are unbuilt.
 - `src/ast.zig` describes the intended AST but is not yet consumed by
-  jppc. `src/emit.zig` and the original hand-transpiled spike are historical.
-  Use `RUNNING.md` to distinguish these from the validated probes.
+  jppc. `spike/jpp.zig` retains the historical encoding needed by the
+  tail-call probe; it is not the active runtime. The obsolete emitter and
+  hand-transpiled demos live in git history. See `RUNNING.md` for the probes.
 - Regenerate `gen/` and `tests/.gen/` through the build. Edit their source
   inputs rather than generated files; do not commit build artifacts.
 
