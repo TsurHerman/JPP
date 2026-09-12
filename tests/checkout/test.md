@@ -1,7 +1,7 @@
 # Checkout: a modular application case study
 
-**RUNS.** Eighteen source modules, two independent application contexts,
-thirteen baskets, and 105 assertions. This case tests whether useful domain
+**RUNS.** Twenty source modules, two independent application contexts,
+twenty baskets, and 161 assertions. This case tests whether useful domain
 code remains understandable as modules call through other modules. The
 policies are fictional; the arithmetic domain is bounded nonnegative integer
 cents, quantities, and grams. This is a quote calculator, not a payment system.
@@ -32,15 +32,17 @@ retail                         member
                   │    └── shipping.carrier
                   └── tax → money
 
-model = aggregate of line, basket, priced, quote
+model = aggregate of line, physical, digital, basket, priced, quote
 arithmetic = aggregate of logic, rounding
 Base = explicit foundation import; Base.Arithmetic selects only arithmetic
 ```
 
-`Line` is an ordinary structural predicate over native record types. The
-two-line basket binds one shared type and checks that predicate. Constructors
-and accessors cross the Zig boundary; pricing, discounts, rounding, delivery,
-and tax calculations remain jpp calls. Ground code supplies primitive
+`Line` composes the ordinary structural predicates `Physical` and `Digital`,
+defined in separate files with their own constructors and accessors. A basket
+captures zero or more inputs, checking Line independently for each; its tuple
+may contain different concrete record types. `priceBasket` splats that tuple
+into a shrinking `priceLines` reduction with an explicit empty identity.
+Pricing, discounts, rounding, delivery, and tax calculations remain jpp calls. Ground code supplies primitive
 arithmetic, selection, record storage, and receipt printing.
 
 One deep path is `quote → priceBasket → netLine → lineDiscount → rateAmount →
@@ -54,7 +56,7 @@ changes delivery policy. Neither library imports the member application.
 The default discount is 10% for a line containing at least ten units. The
 member policy gives 5% below ten units and 15% from ten units. Discounts round
 per line to the nearest cent, ties upward. Freight is 350 cents plus 75 cents
-per started kilogram, waived for an empty quote or when discounted goods
+per started kilogram, waived when no physical weight remains, for an empty quote, or when discounted goods
 reach the applicable threshold: 10,000 cents retail, 5,000 member. Fictional
 tax is 20% of net goods plus freight, rounded once.
 
@@ -63,6 +65,9 @@ tax is 20% of net goods plus freight, rounded once.
 | 2 × 1,299 cents at 250 g; 1 × 2,500 cents at 800 g | 5,098 | 0 | 6,718 | 255 | 6,412 |
 | 10 × 1,299 cents at 250 g; 2 × 2,500 cents at 800 g | 17,990 | 1,299 | 20,029 | 2,199 | 18,949 |
 | Both quantities zero | 0 | 0 | 0 | 0 | 0 |
+| Zero lines | 0 | 0 | 0 | 0 | 0 |
+| Two digital books at 499 cents | 998 | 0 | 1,198 | 50 | 1,138 |
+| Physical 1,000; digital 2 × 500; physical 3 × 200 | 2,600 | 0 | 3,630 | 130 | 3,474 |
 
 Additional cases pin exact and just-below freight and bulk thresholds,
 discounts applied before the freight threshold, and per-line rounding
@@ -79,7 +84,7 @@ all six fields plus `gross − discount = net` and
 | One policy import changes both discounts and freight deep in the same library graph. | Caller context is useful without policy parameters on every helper. Defaults have real meanings here. |
 | `quote` now names prices, net goods, freight, tax, and total in one body; `netLine` and `priceBasket` also bind intermediate results. | Immutable bindings replace helpers used solely for carrying results. They alias existing ANF values, preserving evaluation once and in source order. |
 | The quote constructor has six required named fields; construction and access use the surface. | Names make tax and freight distinguishable at the call site; only the underlying domain records still need grounds. |
-| The basket is fixed at two lines. | Variadic packs or traversal are needed before claiming a general cart. Putting its entire loop in a ground would bypass jpp dispatch and weaken the experiment. |
+| A basket can have zero, one, or many heterogeneous lines. | Rest capture and shrinking recursion keep per-line pricing in jpp dispatch; a whole-cart ground loop is unnecessary. |
 
 The current direction is explicit foundation/domain imports and explicit exported
 extension points. Base's facade selects its public interface. The export-only
@@ -87,14 +92,14 @@ tunnel and imported re-exports now run, and all calls are lexically checked.
 Checkout has meaningful fallback policies; declaration_tunnel separately tests
 an interface that requires a caller implementation.
 
-Basket storage is `(a, b)` with positional projection. The public basket contract
-still requires two lines of one bound type; heterogeneous/variable-size carts
-will arrive in the varargs slice. The quote constructor is named-only and its
+Basket storage is an ordinary positional pack captured by `items<:Line...`.
+The short predicate annotation admits different Line types; `items::T... where T`
+would instead require one uniform type. The quote constructor is named-only and its
 result is an ordinary structural record, with no handwritten Zig wrapper.
 
 `choose` evaluates both value arguments before selection; it is not lazy
 control flow. Counts, cents, and grams still share `int64`; input validation,
-overflow policy, unit types, and arbitrary basket sizes remain outside this
+overflow policy, unit types, and runtime-sized collections remain outside this
 example's tested domain.
 
 The initial Base exports same-type int64/float64 arithmetic and int64 `div`.

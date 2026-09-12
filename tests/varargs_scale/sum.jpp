@@ -1,0 +1,6 @@
+using Base
+export sum
+sum() = 0
+sum(x) = x
+sum(x, y) = x + y
+sum(x, y, z, rest...) = sum(x + y, z, rest...)

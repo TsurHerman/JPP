@@ -1,0 +1,15 @@
+export Digital, digital, unitPrice, unitCount, unitGrams
+
+digital(asset::string, price_cents::int64, count::int64) = zig{
+    .{ .asset = asset, .price_cents = price_cents, .count = count }
+}
+Digital(T::type)::bool = zig{ blk: {
+    if (@typeInfo(T) != .@"struct") break :blk false;
+    if (!@hasField(T, "asset") or !@hasField(T, "price_cents") or !@hasField(T, "count")) break :blk false;
+    break :blk @TypeOf(@field(@as(T, undefined), "asset")) == []const u8 and
+        @TypeOf(@field(@as(T, undefined), "price_cents")) == i64 and
+        @TypeOf(@field(@as(T, undefined), "count")) == i64;
+} }
+unitPrice(item<:Digital) = item.price_cents
+unitCount(item<:Digital) = item.count
+unitGrams(<:Digital) = 0

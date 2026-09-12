@@ -111,7 +111,7 @@ pub const Def = union(enum) {
 
 /// Methods take ONE semantic pack: positional and named fields, including
 /// actual static values. Selectors do not create a second method table or pack.
-/// This intended model includes future rest and static-application syntax.
+/// Rest capture is implemented; static-application syntax remains future work.
 pub const Method = struct {
     name: []const u8, // "+", "promote", "double" — verbatim (@"name" decl key)
     params: []const Slot = &.{}, // one pattern over the whole pack
@@ -122,8 +122,9 @@ pub const Method = struct {
 
 /// one grammar for both positions (ratified): brace slots and value slots
 /// are the same shape. Specificity compares the same supplied coordinates:
-/// fixed type value > exact input type > predicate > bare > rest coverage.
-/// Never sum ranks. Named coordinates align by name, positionals by index.
+/// fixed coverage precedes rest coverage; within either, type value > exact
+/// input type > predicate > bare. Never sum ranks. Named coordinates align by
+/// name, positionals by index; structural shape breaks otherwise equal ties.
 pub const Slot = struct {
     name: ?[]const u8, // null = anonymous (::arm64, {Integer})
     qual: Qual,
@@ -188,7 +189,6 @@ pub const OpKind = union(enum) {
     call: FlatCall, // the unit of computation
     pack: []const Entry,
     project: struct { value: ValRef, field: []const u8 },
-    splat: ValRef,
     select: Select, // ternary — arms are regions, not eager operands
     ground: Ground, // zig{} in expression position
 };
@@ -201,7 +201,7 @@ pub const FlatCall = struct {
 pub const Entry = struct {
     label: ?[]const u8 = null, // null = positional; otherwise a named field
     value: ValRef,
-    splat: bool = false, // future syntax, expanded from the known pack shape
+    splat: enum { none, positional, named } = .none, // expand in its written section
 };
 
 pub const Select = struct {

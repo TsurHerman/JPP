@@ -1,12 +1,13 @@
 using Base.Arithmetic
-using model.basket
 using model.line
 using model.priced
 using pricing.lines
 export priceBasket
 
-priceBasket(bag) = {
-    a = firstItem(bag)
-    b = secondItem(bag)
-    pricedCart(grossLine(a) + grossLine(b), netLine(a) + netLine(b), gramsLine(a) + gramsLine(b))
+priceBasket(bag) = priceLines(bag...)
+priceLines() = pricedCart(0, 0, 0)
+priceLines(item<:Line, rest<:Line...) = {
+    remaining = priceLines(rest...)
+    pricedCart(grossLine(item) + grossGoods(remaining),
+        netLine(item) + netGoods(remaining), gramsLine(item) + parcelGrams(remaining))
 }

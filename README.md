@@ -54,6 +54,7 @@ Status of the major features:
 | specificity policy as shadowable word; stratum-0 self-reference break | VALIDATED (probe + machinery) |
 | selectors `{}`, value dispatch, runtime enum bridge, int range arms | VALIDATED (probes) — surface supports exact type values; general value selectors remain unbuilt |
 | tuples/records, static projections, two-section named calls, name-aligned dispatch and bound-instance convergence | RUNS (pack_values, pack_static, named_arguments, named_specificity, named_instances, named_context) |
+| positional/named rest capture, splats, elementwise predicates, uniform rest types, and shrinking reductions | RUNS (varargs, varargs_dispatch, varargs_forward, varargs_scale, checkout; rejection cases) |
 | parametric type-words, pattern binding, re-application provenance | VALIDATED (probe) |
 | comptime `for` generating methods (staged codegen), promotion/convert corpus, braces in surface | RATIFIED — design notebook; surface unbuilt |
 | repeated type binder = identity; `where T == S` = mutual direct relation; all predicate conjuncts participate in dominance | RUNS (type_bindings, where_gate, gate_conjunction; negative: pointwise_gap) |
@@ -257,9 +258,14 @@ F{a::int32, B<:Integer, mode}(c::T1, d<:Real, rest...; eps::float64)::R where P(
   `T==S` (Julia is identity; jpp identity of types is repeating the
   binder).
 - **Body**: expression block (value = last expression) or ground axiom
-  (`zig{}`, `c{}`, `llvm{}` — no context dispatch inside).
-- **Specificity per slot**: exact type value 4, exact input type 3,
-  predicate 2, bare 1, variadic 0 (future);
+  (`zig{}`, `c{}`, `llvm{}` — no context dispatch inside). Every function
+  can use a multiline `{ ... }` body; main has no special body grammar.
+  Parameter lists and calls can span lines too. Short compositions can remain
+  single expressions (`varargs_forward` exercises a multiline library function).
+- **Specificity per supplied slot**: fixed coverage precedes rest coverage;
+  within either, exact type value 4, exact input type 3, predicate 2, bare 1.
+  If all supplied coordinates tie, a strictly narrower structural pack shape
+  can decide (including fixed empty shape versus rest);
   pointwise dominance decides (§9 policy word); incomparable-or-equal
   maxima break by context position across modules, and are a comptime
   ambiguity error AT THE CALL when they share the winning module
@@ -272,8 +278,9 @@ F{a::int32, B<:Integer, mode}(c::T1, d<:Real, rest...; eps::float64)::R where P(
 already defined in the declaring module, explicitly imported from an export,
 or supplied as a builtin type denotes that existing value in a signature.
 A fresh name introduces an input variable, regardless of capitalization.
-An export must name a local definition; an export list alone cannot create
-a value (`undefined_export`). Re-export-only declarations remain unbuilt.
+An export declares the word's identity and forwards public imported methods
+when available. Otherwise it is a declaration-only dependency with no invented
+implementation (`undefined_export`, `declaration_tunnel`, `reexport_chain`).
 A caller's later context does not create lexical definitions. The lookup
 is performed by the comptime machinery using emitted declaration metadata;
 the transpiler stays file-local and never computes an effective context.
@@ -434,30 +441,38 @@ to specialization. A static result does not erase a call's preceding runtime
 effects. General static arithmetic, brace syntax, and callable aliases are later
 work. See [packs](design/packs.md) for the field and dispatch decision tables.
 
-Variadic and tuples (ratified; rest/splat surface remains unbuilt):
+Variadic and tuples (RUNS):
 
-- `f{TT...}` / `f(args...)` in definition position: remaining slots bind
-  as ONE tuple. Call-side splat `t...` is the inverse.
-- Tuple utilities (`len{TT}`, `first{TT}`, `beheaded{TT}`) take the
-  tuple as a single slot; only genuinely variadic functions (`promote`)
-  bind with `{TT...}`. Bridging the two is always an explicit splat:
-  `promote{beheaded{TT}...}`.
-- `()` is the empty tuple; it splats to zero arguments. `beheaded` of a
-  1-tuple is `()`, not `nothing`.
-- Variadic recursion discipline: a variadic method must not cover the
-  arity owned by specific rules (see core's `promote{TT...}`: cases
-  `len == 1` and `len >= 3` only — binary rules own 2, and a missing
-  binary rule errors at the call site naming both types).
+- `f(xs...)` captures remaining positional inputs as one tuple;
+  `f(; opts...)` captures remaining named inputs as one named record. One rest
+  is allowed per section and must be last in that section.
+- `f(xs...; opts...)` forwards both sections. Splats also work in pack values:
+  `(head, xs...)` and `(; required = value, opts...)`. A splat operand evaluates
+  once before routing; its shape must be known statically. A positional splat
+  accepts only positional fields, a named splat only named fields. There is no
+  cross-fill or last-wins overwrite; duplicate expanded names are errors.
+- `xs::T... where T` binds one shared element type; `xs<:Numeric...` instead
+  checks Numeric for each element and permits heterogeneous types. An empty
+  uniform rest needs another T witness. An empty independently typed/predicate
+  rest is vacuous; two overlapping empty rests gain no preference from their
+  element constraints.
+- `len(xs)`, `first(xs)`, and `tail(xs)` take a tuple as one argument. `()`
+  splats to zero arguments; tail of a singleton is `()`. Brace syntax remains
+  unbuilt and will use the same pack semantics.
+- Reductions need explicit zero/one/binary domains, followed by a shrinking
+  three-or-more case. A missing binary operation must diagnose that operation,
+  not recurse into the same variadic fallback (`varargs_binary_gap`).
+- Compare actual supplied coordinates pointwise, with fixed coverage before
+  rest coverage. Rest element constraints use the ordinary ladder and authored
+  pairwise order. Shape only breaks ties; it cannot cure a crossing coordinate.
 
-- Specificity ladder, both positions: **exact > predicate > bare >
-  variadic**.
 - **Methods are unary (ratified).** A method takes ONE argument: a
   struct (the pack). `f(a, b)` constructs the anonymous pack `(a, b)`
   and applies f to it; the parameter list is a PATTERN over the pack's
   fields; dispatch is structural dispatch on the pack's single type
   (instance key: method × context × pack type). A variadic method
-  matches ANY pack — destructuring is the extractor vocabulary (`len`,
-  `first`, `beheaded`, field access), ordinary comptime library code.
+  can constrain its rest elements; destructuring uses ordinary tuple/record
+  operations (`len`, `first`, `tail`, field access).
   Splat is a cast, not a computation: `f(t)` wraps t as a one-field
   pack, `f(t...)` uses t AS the pack. Consequences: named fields are
   keyword arguments that PARTICIPATE IN DISPATCH (julia's kwargs
@@ -475,9 +490,10 @@ Variadic and tuples (ratified; rest/splat surface remains unbuilt):
   is grammatically impossible. Named args permute freely among
   THEMSELVES (a record is a set); the method's declared order is the
   canonical form. The call-site protocol: (1) the transpiler emits the
-  RAW pack exactly as written — positionals as numeric field names
-  `.@"0"`, `.@"1"`, named verbatim (the frontend rejects duplicate
-  named entries before emission); (2) each candidate method's
+  operand sequence exactly as written; the machinery expands splats into the
+  RAW pack — positionals as numeric field names
+  `.@"0"`, `.@"1"`, named verbatim (the frontend rejects duplicate explicit
+  names; expansion rejects duplicates introduced by splats); (2) each candidate method's
   BINDER attempts to construct its parameter struct from the raw pack —
   calling a method IS constructing its parameter struct, the signature
   IS the pack constructor; failure (unknown name, cross-fill, arity) is
@@ -812,8 +828,9 @@ Boundary contract:
   least one, computed on per-pack PROJECTIONS (exact type value 4,
   exact input type 3, predicate 2 —
   including ranges and single-binder where-conjuncts, bare 1,
-  variadic-covered 0; tuple by position, record by name, selectors as
-  ordinary slots). At equal predicate rank, an absent edge means
+  with fixed coverage before rest coverage; tuple by position, record by
+  name, selectors as ordinary slots). A strictly narrower structural pack shape
+  breaks otherwise equal supplied coordinates. At equal predicate rank, an absent edge means
   incomparable, not equal. One better coordinate cannot compensate for
   another incomparable coordinate (`pointwise_gap`). For conjunctions,
   every required gate must have a direct witness from the other method's
@@ -1113,13 +1130,14 @@ print/algebra demo):
   it would report dependencies from the footprint closure. Such a report
   is not a checked callable contract; that boundary is now under explicit
   design review in [word contracts](design/word_contracts.md).
-- [Checkout](tests/checkout/test.md) is a larger RUNS case: eighteen source
-  modules price thirteen two-line baskets in retail/member contexts.
+- [Checkout](tests/checkout/test.md) is a larger RUNS case: twenty source
+  modules price twenty baskets in retail/member contexts.
   Arithmetic comes from explicit Base imports; the member policy changes
   discounts and freight through deeper imports. Basket storage is a tuple and
   the quote is assembled through required named fields with surface projection.
   Local bindings name intermediate results; export-only dependencies now RUN.
-  The two-line public basket contract remains until varargs are implemented.
+  The basket accepts zero/one/many heterogeneous physical and digital lines;
+  recursive pricing shrinks its tuple while preserving caller policies.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across
@@ -1136,7 +1154,8 @@ print/algebra demo):
   The negative cases also enforce ambiguity and export-gating errors.
 - V1 scope cuts (deliberate): no selectors/braces or `M.f` delegation
   in the surface (validated in machinery/probes), no promotion,
-  no varargs, splats, keyword defaults, or nominal record declaration syntax;
+  no keyword defaults or nominal record declaration syntax; splats/rests
+  currently require statically shaped packs, not runtime-length collections;
   reduced internal AST (alignment with src/ast.zig's three layers = debt),
   no spans/hashes emitted yet. General value literals/patterns in
   signatures, type constructors with selectors, and arbitrary static

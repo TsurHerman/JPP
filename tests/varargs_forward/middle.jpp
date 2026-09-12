@@ -1,0 +1,13 @@
+using leaf
+export forward
+
+forward(
+    xs...;
+    opts...
+) = {
+    forwarded = target(
+        xs...;
+        opts...
+    )
+    forwarded
+}

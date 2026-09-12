@@ -11,4 +11,7 @@ main() = {
     verifyQuote("member / free delivery", quote(basket(line(3000, 1, 500), line(3000, 1, 500))), 6000, 300, 5700, 0, 1140, 6840)
     verifyQuote("member / discount before threshold", quote(basket(line(2500, 1, 500), line(2500, 1, 500))), 5000, 250, 4750, 425, 1035, 6210)
     verifyQuote("member / round each line", quote(basket(line(110, 1, 500), line(110, 1, 500))), 220, 12, 208, 425, 127, 760)
+    verifyQuote("member / zero lines", quote(basket()), 0, 0, 0, 0, 0, 0)
+    verifyQuote("member / digital only", quote(basket(digital("book", 499, 2))), 998, 50, 948, 0, 190, 1138)
+    verifyQuote("member / three mixed lines", quote(basket(line(1000, 1, 500), digital("book", 500, 2), line(200, 3, 100))), 2600, 130, 2470, 425, 579, 3474)
 }

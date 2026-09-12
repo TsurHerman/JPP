@@ -27,7 +27,7 @@ RUNS — verified 2026-09-12:
   specialization, ordinary runtime fields contribute only their types. Preserve
   static fields through projection and forwarding without deleting effects.
 - Settle current named-field comparison and the next varargs decision table in
-  [packs.md](packs.md). Varargs remain unbuilt.
+  [packs.md](packs.md). The next section records rest implementation.
 
 Evidence: declaration_tunnel, override, undeclared_call, undeclared_unused_call,
 undeclared_gate, undefined_export, base_folder, folder_modules, folder_collision,
@@ -41,12 +41,12 @@ RUNS — verified 2026-09-12:
 - Tuple, named-record, and mixed pack values share a representation with calls.
   Grouping, empty, singleton, heterogeneous values, and named identity are explicit.
 - Static positional and named projections; ordinary Tuple utilities.
-- Required named inputs bind by name and participate in dispatch. No cross-fill,
-  defaults, splats, or rest capture yet.
+- Required named inputs bind by name and participate in dispatch, without
+  cross-fill. Defaults remain unbuilt; the next slice adds splats and rest capture.
 - Preserve source evaluation order while canonicalizing value identity and bound
   method instances. Compare matching coordinates across declaration permutations.
 - Checkout uses tuple basket storage, named quote construction, and surface field
-  access. It retains its two-line public basket contract until varargs land.
+  access. The varargs slice below expands its original two-line basket contract.
 
 Evidence: pack_values, pack_static, named_arguments, named_specificity,
 named_context, named_instances, type-witness mismatch and malformed pack cases,
@@ -63,15 +63,50 @@ hand-transpiled demos were subsequently removed; the research probes remain.
 
 ## 3. Varargs and forwarding
 
-Next implementation slice. Implement the decision table in packs.md first,
-then one trailing positional rest and call-side splat, followed by named-rest
-capture. Apply specificity to actual supplied coordinates and accepted pack
-shape. Preserve empty-tail unification and ambiguity rules.
+RUNS — verified 2026-09-12:
 
-Use shrinking reductions with explicit empty identities and separate one/two/many
-arity domains. A missing binary promotion must fail rather than recurse forever.
-Evolve checkout to zero/one/many heterogeneous physical and digital lines. Measure
-0, 1, 2, 8 and 32-element cases; runtime-sized collections are separate work.
+- One trailing positional rest and one trailing named rest; call-side and
+  pack-value splats with section and duplicate-name checks.
+- Pointwise comparison of actual supplied coordinates; fixed coverage before
+  rest, then element constraints. Structural shape breaks tied coordinates.
+- Uniform T rests require a witness even when empty; short predicate annotations
+  check each captured element independently. Static fields survive forwarding.
+- `varargs_scale` exercises shrinking reductions at 0, 1, 2, 8 and 32 elements.
+  `varargs_binary_gap` rejects a missing binary implementation without recursion.
+- Checkout now has zero/one/many heterogeneous physical and digital lines,
+  independently defined record types, recursive pricing, and unchanged caller
+  policies. Digital-only carts incur no freight.
+- `varargs_forward` uses multiline library parameters, calls and a block body;
+  main has no special grammar. Forwarding preserves effects and bound identity.
+
+Verification: `zig build test demo probes --summary all` passed all 291 build
+steps: 119 language cases (56 expected compile rejections and 14 frontend
+rejections) and 48 machinery/probe tests. `zig test src/ast.zig` passed all three
+AST tests. Checkout checks 20 baskets through 20 source modules and 161 assertions.
+The final type-witness regression also corrected native-body lookup: T denotes
+the element type, including an explicit empty-rest witness, rather than the
+captured tuple's type.
+
+Local compilation sample (2026-09-12, Zig 0.16.0, Darwin arm64):
+each arity uses an isolated source tree containing the reduction and forwarding
+modules plus one root program from `tests/varargs_scale`. Times are one wall-clock
+sample per size with a shared warm Zig cache, using `zig build-exe -ODebug`.
+Each produced executable ran and checked its sum. Debug sizes include metadata;
+these are not sealed-build size estimates.
+
+| Arguments | Transpile (s) | Zig compile (s) | Debug binary (KiB) |
+|---:|---:|---:|---:|
+| 0 | 0.467 | 0.988 | 1868.4 |
+| 1 | 0.016 | 0.972 | 1868.9 |
+| 2 | 0.016 | 0.978 | 1870.1 |
+| 8 | 0.017 | 1.183 | 1897.3 |
+| 32 | 0.018 | 4.016 | 2080.3 |
+
+Process startup and filesystem work are included. These single local samples
+show that the 32-element reduction compiles and terminates; they do not establish
+a general scaling law for deeper module graphs or runtime-sized collections.
+
+Runtime-sized collections and keyword defaults remain separate work.
 
 ## 4. Static computation and callable types
 

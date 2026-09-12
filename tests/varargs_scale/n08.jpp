@@ -1,0 +1,3 @@
+using forward
+using Base.Test
+main() = check("8-element reduction", total(1, 2, 3, 4, 5, 6, 7, 8), 36)

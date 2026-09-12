@@ -53,6 +53,11 @@ a feature; preserve the ratified semantics unless the task changes them.
   Preserve source evaluation order; match positionals by index and names by name,
   without cross-fill. Compare named specificity by name, not declaration index.
   Explicit static fields retain values; incidental source literals stay data.
+  Each section allows one trailing rest. Splats require statically shaped packs
+  and never cross sections or overwrite fields. Fixed coverage outranks rest;
+  compare rest element constraints pointwise, then use structural shape only
+  for otherwise tied coordinates. Uniform T needs a witness when empty;
+  short predicate rest annotations check each element independently.
   `design/` is a design notebook, not runnable regression fixtures.
 - Local `name = expression` bindings are immutable aliases of ANF values.
   Preserve evaluation once and in source order, type identity, and the

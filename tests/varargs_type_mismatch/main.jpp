@@ -1,0 +1,3 @@
+export f
+f(xs::T...; T::type) where T = T
+main() = f(1; T = float64)

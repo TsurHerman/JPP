@@ -4,4 +4,4 @@ using shipping.carrier
 export shippingCharge, freeShippingThreshold
 
 freeShippingThreshold() = 10000
-shippingCharge(net_cents::int64, grams::int64) = choose(isZero(net_cents), 0, choose(atLeast(net_cents, freeShippingThreshold()), 0, carrierFee(grams)))
+shippingCharge(net_cents::int64, grams::int64) = choose(isZero(grams), 0, choose(isZero(net_cents), 0, choose(atLeast(net_cents, freeShippingThreshold()), 0, carrierFee(grams))))

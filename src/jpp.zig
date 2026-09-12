@@ -42,10 +42,13 @@ pub const Section = enum { positional, named };
 pub const Slot = struct {
     name: []const u8,
     section: Section = .positional,
+    rest: bool = false,
+    elementwise: bool = false, // short predicate annotation checks each captured element
     qual: Qual,
 };
 
 pub const ValRef = union(enum) {
+    bound_type: []const u8, // a uniform type binding, including empty-rest witnesses
     param_type: usize, // a where-bound type, obtained from an input field
     type_value: type,
     param: usize, //  bound pack field, by slot index
@@ -62,6 +65,7 @@ pub const Op = struct {
     args: []const ValRef,
     // Empty labels are positional. Written order is retained through ANF.
     labels: []const []const u8 = &.{},
+    splats: []const enum { none, positional, named } = &.{},
     field: []const u8 = "", // project: one operand, statically named field
 };
 pub const Flat = struct { ops: []const Op, result: ValRef };
@@ -87,6 +91,7 @@ pub const Method = struct {
     declaration_home: ?type = null, // preserved when a folder merges methods
     name: []const u8,
     signature: []const Slot,
+    shape: ?[]const Slot = null, // original shape when comparing supplied coordinates
     ret_variable: ?[]const u8 = null,
     ret: ?type = null, // declared return; null = inferred (bodies AND grounds)
     body: Body,
@@ -100,7 +105,7 @@ pub const Method = struct {
 fn hasTypeBinding(comptime m: Method, comptime name: []const u8) bool {
     for (m.signature) |slot| {
         if (slot.qual == .tvar and std.mem.eql(u8, slot.qual.tvar, name)) return true;
-        if (slot.qual == .exact and slot.qual.exact == type and std.mem.eql(u8, slot.name, name)) return true;
+        if (!slot.rest and slot.qual == .exact and slot.qual.exact == type and std.mem.eql(u8, slot.name, name)) return true;
     }
     return false;
 }
@@ -108,6 +113,8 @@ fn hasTypeBinding(comptime m: Method, comptime name: []const u8) bool {
 pub fn MultiMethod(comptime word: []const u8, comptime list: []const Method) type {
     for (list) |m| {
         for (m.signature, 0..) |slot, i| {
+            for (m.signature[0..i]) |previous| if (previous.rest and previous.section == slot.section)
+                @compileError("jpp: rest input must be last in its section.");
             for (m.signature[0..i]) |previous| if (std.mem.eql(u8, slot.name, previous.name) and
                 !(slot.section == .positional and previous.section == .positional and slot.qual == .type_value and previous.qual == .type_value))
                 @compileError("jpp: duplicate input '" ++ slot.name ++ "'; use distinct inputs and an explicit type constraint.");
@@ -121,6 +128,7 @@ pub fn MultiMethod(comptime word: []const u8, comptime list: []const Method) typ
         if (std.mem.eql(u8, word, "<:")) {
             if (m.signature.len != 2) @compileError("jpp: '<:' requires two type-value inputs.");
             for (m.signature) |slot| {
+                if (slot.rest) @compileError("jpp: '<:' requires two fixed type-value inputs.");
                 if (slot.qual == .pred or (slot.qual == .exact and slot.qual.exact != type))
                     @compileError("jpp: '<:' input domains must be type values.");
             }
@@ -206,83 +214,115 @@ fn qualOk(comptime q: Qual, comptime f: std.builtin.Type.StructField) bool {
     };
 }
 
+/// Route a supplied coordinate to its fixed slot or its section's rest.
+fn slotFor(comptime sig: []const Slot, comptime name: []const u8) ?usize {
+    if (positionOf(name)) |position| {
+        var ordinal: usize = 0;
+        for (sig, 0..) |slot, i| {
+            if (slot.section != .positional) continue;
+            if (slot.rest or ordinal == position) return i;
+            ordinal += 1;
+        }
+    } else {
+        for (sig, 0..) |slot, i| {
+            if (slot.section == .named and !slot.rest and std.mem.eql(u8, slot.name, name)) return i;
+        }
+        for (sig, 0..) |slot, i| if (slot.section == .named and slot.rest) return i;
+    }
+    return null;
+}
+
+fn variableKey(comptime name: []const u8) []const u8 {
+    return "#type#" ++ name;
+}
+
+pub fn boundType(comptime B: type, comptime name: []const u8) type {
+    if (@hasField(B, variableKey(name))) return @field(@as(B, undefined), variableKey(name));
+    if (@hasField(B, name)) return @field(@as(B, undefined), name);
+    @compileError("jpp: unbound type variable '" ++ name ++ "'.");
+}
+
 /// raw call-site pack type -> bound pack type (declared slot order) or null.
 pub fn construct(comptime sig: []const Slot, comptime Raw: type) ?type {
     comptime {
         @setEvalBranchQuota(1_000_000);
         const rf = @typeInfo(Raw).@"struct".fields;
-        if (rf.len != sig.len) return null;
-        var types = [_]?type{null} ** (sig.len + 1); // +1: zig disallows zero-len undefined arrays cleanly
-        var attrs: [sig.len]std.builtin.Type.StructField.Attributes = @splat(.{});
+        var names: [sig.len * 2][]const u8 = undefined;
+        var ts: [sig.len * 2]type = undefined;
+        var attrs: [sig.len * 2]std.builtin.Type.StructField.Attributes = @splat(.{});
+        var vars: []const []const u8 = &.{};
+        for (sig) |slot| {
+            if (slot.qual == .tvar and !slot.elementwise and !containsWord(vars, slot.qual.tvar))
+                vars = vars ++ .{slot.qual.tvar};
+        }
+        var bindings: [sig.len]?type = @splat(null);
         for (rf) |f| {
-            if (positionOf(f.name)) |p| {
-                if (p >= sig.len or sig[p].section != .positional) return null;
-                if (types[p] != null) return null;
-                if (!qualOk(sig[p].qual, f)) return null;
-                types[p] = f.type;
-                if (f.is_comptime) attrs[p] = .{ .@"comptime" = true, .default_value_ptr = f.default_value_ptr };
-            } else {
-                const idx = for (sig, 0..) |s, i| {
-                    if (s.section == .named and std.mem.eql(u8, s.name, f.name)) break i;
-                } else return null;
-                if (types[idx] != null) return null;
-                if (!qualOk(sig[idx].qual, f)) return null;
-                types[idx] = f.type;
-                if (f.is_comptime) attrs[idx] = .{ .@"comptime" = true, .default_value_ptr = f.default_value_ptr };
+            const i = slotFor(sig, f.name) orelse return null;
+            const slot = sig[i];
+            if (!qualOk(slot.qual, f)) return null;
+            for (vars, 0..) |v, vi| {
+                const value = if (slot.qual == .tvar and !slot.elementwise and std.mem.eql(u8, slot.qual.tvar, v))
+                    f.type
+                else if (!slot.rest and slot.qual == .exact and slot.qual.exact == type and std.mem.eql(u8, slot.name, v))
+                    f.defaultValue() orelse return null
+                else
+                    continue;
+                if (bindings[vi]) |previous| {
+                    if (previous != value) return null;
+                } else bindings[vi] = value;
             }
         }
-        if (sig.len == 0) return @Struct(.auto, null, &.{}, &.{}, &.{});
-        var names: [sig.len][]const u8 = undefined;
-        var ts: [sig.len]type = undefined;
-        for (sig, 0..) |s, i| {
-            names[i] = s.name;
-            for (names[0..i]) |previous| if (std.mem.eql(u8, previous, s.name)) {
+        for (sig, 0..) |slot, i| {
+            names[i] = slot.name;
+            for (names[0..i]) |previous| if (std.mem.eql(u8, previous, slot.name)) {
                 names[i] = std.fmt.comptimePrint("__fixed{d}", .{i});
                 break;
             };
-            ts[i] = types[i] orelse return null;
-        }
-        // repeated tvar = identity: A::T, B::T requires typeof(A) is typeof(B)
-        var bn: [16][]const u8 = undefined;
-        var bt: [16]type = undefined;
-        var nb: usize = 0;
-        for (sig, 0..) |s, i| {
-            switch (s.qual) {
-                .tvar => |v| {
-                    // An explicit type-valued input can witness this same
-                    // binder, in either declaration order and either section.
-                    for (sig, 0..) |witness, wi| {
-                        if (witness.qual == .exact and witness.qual.exact == type and std.mem.eql(u8, witness.name, v)) {
-                            const selected = @as(*const type, @ptrCast(@alignCast(attrs[wi].default_value_ptr.?))).*;
-                            if (selected != ts[i]) return null;
-                        }
-                    }
-                    const existing: ?usize = for (0..nb) |bi| {
-                        if (std.mem.eql(u8, bn[bi], v)) break bi;
-                    } else null;
-                    if (existing) |bi| {
-                        if (bt[bi] != ts[i]) return null;
-                    } else {
-                        bn[nb] = v;
-                        bt[nb] = ts[i];
-                        nb += 1;
-                    }
-                },
-                else => {},
+            var infos: []const ValueInfo = &.{};
+            var labels: []const []const u8 = &.{};
+            for (rf) |f| {
+                if (slotFor(sig, f.name).? != i) continue;
+                infos = infos ++ .{fieldInfo(f)};
+                labels = labels ++ .{if (slot.section == .named) f.name else ""};
+            }
+            if (slot.rest) {
+                ts[i] = namedInfoPack(infos, labels, true);
+            } else {
+                if (infos.len != 1) return null;
+                ts[i] = infos[0].T;
+                if (infos[0].value) |ptr| attrs[i] = .{ .@"comptime" = true, .default_value_ptr = ptr };
             }
         }
-        return @Struct(.auto, null, &names, &ts, &attrs);
+        for (vars, 0..) |v, vi| {
+            const T = bindings[vi] orelse return null; // an empty rest cannot invent T
+            names[sig.len + vi] = variableKey(v);
+            ts[sig.len + vi] = type;
+            attrs[sig.len + vi] = .{ .@"comptime" = true, .default_value_ptr = &T };
+        }
+        return @Struct(.auto, null, names[0 .. sig.len + vars.len], ts[0 .. sig.len + vars.len], attrs[0 .. sig.len + vars.len]);
     }
 }
 
-/// value routing raw -> bound (machinery, not per-method code).
+/// Value routing follows the same coordinate map as construction.
 pub fn bindValues(comptime sig: []const Slot, comptime B: type, raw: anytype) B {
-    _ = sig; // positional routing follows the canonical bound field order
     var out: B = undefined;
-    inline for (@typeInfo(@TypeOf(raw)).@"struct".fields) |f| {
-        const target = comptime if (positionOf(f.name)) |p| @typeInfo(B).@"struct".fields[p].name else f.name;
-        if (comptime !@typeInfo(B).@"struct".fields[std.meta.fieldIndex(B, target).?].is_comptime)
-            @field(out, target) = @field(raw, f.name);
+    inline for (sig, 0..) |slot, i| {
+        const f = @typeInfo(B).@"struct".fields[i];
+        if (comptime slot.rest) {
+            var rest: f.type = undefined;
+            comptime var ordinal: usize = 0;
+            inline for (@typeInfo(@TypeOf(raw)).@"struct".fields) |source| {
+                if (comptime slotFor(sig, source.name).? != i) continue;
+                const name = comptime if (slot.section == .named) source.name else std.fmt.comptimePrint("{d}", .{ordinal});
+                if (comptime !source.is_comptime) @field(rest, name) = @field(raw, source.name);
+                ordinal += 1;
+            }
+            @field(out, f.name) = rest;
+        } else if (comptime !f.is_comptime) {
+            inline for (@typeInfo(@TypeOf(raw)).@"struct".fields) |source| {
+                if (comptime slotFor(sig, source.name).? == i) @field(out, f.name) = @field(raw, source.name);
+            }
+        }
     }
     return out;
 }
@@ -489,6 +529,7 @@ fn gatesLeq(comptime ctx: anytype, comptime a: []const Gate, comptime b: []const
 
 fn typeOfVar(comptime sig: []const Slot, comptime B: type, comptime name: []const u8) ?type {
     comptime {
+        if (@hasField(B, variableKey(name))) return boundType(B, name);
         for (sig, 0..) |s, i| {
             const f = @typeInfo(B).@"struct".fields[i];
             if (std.mem.eql(u8, s.name, name) and f.type == type) return f.defaultValue().?;
@@ -518,8 +559,17 @@ fn eqsOk(comptime ctx: anytype, comptime m: Method, comptime B: type) bool {
 fn gatesOk(comptime ctx: anytype, comptime m: Method, comptime B: type) bool {
     comptime {
         for (m.gates) |g| {
-            const T = typeOfVar(m.signature, B, g.tvar) orelse return false;
-            if (!call(ctx, g.word, .{T})) return false;
+            const each: ?usize = for (m.signature, 0..) |slot, i| {
+                if (slot.elementwise and slot.qual == .tvar and std.mem.eql(u8, slot.qual.tvar, g.tvar)) break i;
+            } else null;
+            if (each) |i| {
+                for (@typeInfo(fieldTypeAt(B, i)).@"struct".fields) |f| {
+                    if (!call(ctx, g.word, .{f.type})) return false;
+                }
+            } else {
+                const T = typeOfVar(m.signature, B, g.tvar) orelse return false;
+                if (!call(ctx, g.word, .{T})) return false;
+            }
         }
         return true;
     }
@@ -544,6 +594,56 @@ fn alignedSlot(comptime a: []const Slot, comptime i: usize, comptime b: []const 
     return null;
 }
 
+fn positionalMinimum(comptime sig: []const Slot) usize {
+    var n: usize = 0;
+    for (sig) |s| if (s.section == .positional and !s.rest) {
+        n += 1;
+    };
+    return n;
+}
+
+fn hasRest(comptime sig: []const Slot, comptime section: Section) bool {
+    for (sig) |s| if (s.section == section and s.rest) return true;
+    return false;
+}
+
+fn requiredName(comptime sig: []const Slot, comptime name: []const u8) bool {
+    for (sig) |s| if (s.section == .named and !s.rest and std.mem.eql(u8, s.name, name)) return true;
+    return false;
+}
+
+fn shapeLeq(comptime a: []const Slot, comptime b: []const Slot) bool {
+    const amin = positionalMinimum(a);
+    const bmin = positionalMinimum(b);
+    if (amin < bmin) return false;
+    if (!hasRest(b, .positional) and (hasRest(a, .positional) or amin != bmin)) return false;
+    for (b) |s| if (s.section == .named and !s.rest and !requiredName(a, s.name)) return false;
+    if (!hasRest(b, .named)) {
+        if (hasRest(a, .named)) return false;
+        for (a) |s| if (s.section == .named and !s.rest and !requiredName(b, s.name)) return false;
+    }
+    return true;
+}
+
+fn shapeNarrower(comptime a: []const Slot, comptime b: []const Slot) bool {
+    return shapeLeq(a, b) and !shapeLeq(b, a);
+}
+
+// Give a policy the actual coordinates, retaining original shape and coverage.
+fn suppliedMethod(comptime m: Method, comptime Raw: type) Method {
+    var out = m;
+    var sig: []const Slot = &.{};
+    for (@typeInfo(Raw).@"struct".fields) |f| {
+        var slot = m.signature[slotFor(m.signature, f.name).?];
+        // Positional names are irrelevant; named-rest labels belong to the call.
+        if (slot.section == .named) slot.name = f.name;
+        sig = sig ++ .{slot};
+    }
+    out.shape = m.signature;
+    out.signature = sig;
+    return out;
+}
+
 // STRATUM 0: the bare ladder — rank-only dominance, no edge refinement,
 // no policy word. the machinery's own words resolve HERE, because the
 // order must never consult itself (the recursion-break pattern, third
@@ -561,7 +661,7 @@ const stratum0_policy = struct {
                 if (ra < rb) return false;
                 if (ra > rb) strictly = true;
             }
-            return strictly;
+            return strictly or shapeNarrower(a.shape orelse a.signature, b.shape orelse b.signature);
         }
     }
 };
@@ -604,7 +704,7 @@ const ground_policy = struct {
                     if (!ba) strictly = true;
                 }
             }
-            return strictly;
+            return strictly or shapeNarrower(a.shape orelse a.signature, b.shape orelse b.signature);
         }
     }
 };
@@ -625,14 +725,15 @@ fn slotRank(comptime q: Qual) u32 {
 fn effRank(comptime m: Method, comptime i: usize) u32 {
     comptime {
         const s = m.signature[i];
+        const coverage: u32 = if (s.rest) 0 else 4;
         switch (s.qual) {
             .tvar => |v| {
                 for (m.gates) |g| {
-                    if (std.mem.eql(u8, g.tvar, v)) return 2;
+                    if (std.mem.eql(u8, g.tvar, v)) return coverage + 2;
                 }
-                return 1;
+                return coverage + 1;
             },
-            else => return slotRank(s.qual),
+            else => return coverage + slotRank(s.qual),
         }
     }
 }
@@ -891,7 +992,7 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
             var dominated = false;
             for (0..n) |j| {
                 if (i == j) continue;
-                if (P.moreSpecific(ctx, cands[j].m, cands[i].m)) {
+                if (P.moreSpecific(ctx, suppliedMethod(cands[j].m, Raw), suppliedMethod(cands[i].m, Raw))) {
                     dominated = true;
                     break;
                 }
@@ -901,7 +1002,8 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
             if (first_max == null) {
                 first_max = cands[i]; // gather order = context order = position
             } else if (cands[i].home == first_max.?.home or
-                (cands[i].unit != null and cands[i].unit == first_max.?.unit)) {
+                (cands[i].unit != null and cands[i].unit == first_max.?.unit))
+            {
                 same_home_clash = true;
             }
         }
@@ -933,6 +1035,7 @@ fn candidatesText(comptime ctx: anytype, comptime word: []const u8) []const u8 {
                         .bare => {},
                         .tvar => |v| msg = msg ++ "::" ++ v,
                     }
+                    if (s.rest) msg = msg ++ "...";
                 }
                 msg = msg ++ ")";
                 for (m.gates, 0..) |g, k| {
@@ -973,6 +1076,7 @@ fn fieldInfo(comptime f: std.builtin.Type.StructField) ValueInfo {
 
 fn refInfo(comptime r: ValRef, comptime B: type, comptime locals: []const ValueInfo) ValueInfo {
     return switch (r) {
+        .bound_type => |name| staticInfo(boundType(B, name)),
         .param_type => |p| staticInfo(fieldTypeAt(B, p)),
         .type_value => |V| staticInfo(V),
         .param => |p| fieldInfo(@typeInfo(B).@"struct".fields[p]),
@@ -1056,11 +1160,45 @@ pub fn tupleTail(value: anytype) TailType(@TypeOf(value)) {
     return out;
 }
 
+const ExpandedEntry = struct { source: usize, field: ?[]const u8 = null, label: []const u8, info: ValueInfo };
+
+fn expandedEntries(comptime op: Op, comptime B: type, comptime locals: []const ValueInfo) []const ExpandedEntry {
+    comptime {
+        var entries: []const ExpandedEntry = &.{};
+        for (op.args, 0..) |r, i| {
+            const info = refInfo(r, B, locals);
+            const splat = if (op.splats.len == 0) .none else op.splats[i];
+            if (splat == .none) {
+                entries = entries ++ .{ExpandedEntry{ .source = i, .label = if (op.labels.len == 0) "" else op.labels[i], .info = info }};
+            } else {
+                if (@typeInfo(info.T) != .@"struct") @compileError("jpp: splat requires a statically shaped tuple or record.");
+                for (@typeInfo(info.T).@"struct".fields, 0..) |f, fi| {
+                    const positional = positionOf(f.name) != null;
+                    if ((splat == .positional) != positional) @compileError("jpp: splat cannot cross positional and named sections.");
+                    if (positional and positionOf(f.name).? != fi) @compileError("jpp: positional splat requires contiguous tuple fields.");
+                    entries = entries ++ .{ExpandedEntry{
+                        .source = i,
+                        .field = f.name,
+                        .label = if (positional) "" else f.name,
+                        .info = projectedInfo(info, f.name),
+                    }};
+                }
+            }
+        }
+        return entries;
+    }
+}
+
 fn argPack(comptime op: Op, comptime B: type, comptime locals: []const ValueInfo) type {
     comptime {
-        var infos: [op.args.len]ValueInfo = undefined;
-        for (op.args, 0..) |r, j| infos[j] = refInfo(r, B, locals);
-        return namedInfoPack(&infos, op.labels, op.kind == .pack);
+        const entries = expandedEntries(op, B, locals);
+        var infos: [entries.len]ValueInfo = undefined;
+        var labels: [entries.len][]const u8 = undefined;
+        for (entries, 0..) |entry, i| {
+            infos[i] = entry.info;
+            labels[i] = entry.label;
+        }
+        return namedInfoPack(&infos, &labels, op.kind == .pack);
     }
 }
 
@@ -1147,6 +1285,7 @@ pub fn RetOf(comptime ctx: anytype, comptime word: []const u8, comptime Raw: typ
 
 fn refValue(comptime r: ValRef, bound: anytype, locals: anytype) refInfo(r, @TypeOf(bound), &packInfo(@TypeOf(locals))).T {
     return switch (r) {
+        .bound_type => |name| boundType(@TypeOf(bound), name),
         .param_type => |p| fieldTypeAt(@TypeOf(bound), p),
         .type_value => |V| V,
         .param => |p| fieldAt(bound, p),
@@ -1183,10 +1322,13 @@ fn exec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) flatRet(ctx,
             } else {
                 const Raw = argPack(op, B, &infos);
                 var raw: Raw = undefined;
-                inline for (op.args, 0..) |r, j| {
-                    const name = comptime entryName(op.labels, j);
+                inline for (comptime expandedEntries(op, B, &infos), 0..) |entry, j| {
+                    const name = comptime if (entry.label.len == 0) std.fmt.comptimePrint("{d}", .{j}) else entry.label;
                     const f = comptime @typeInfo(Raw).@"struct".fields[std.meta.fieldIndex(Raw, name).?];
-                    if (comptime !f.is_comptime) @field(raw, name) = refValue(r, bound, locals);
+                    if (comptime !f.is_comptime) {
+                        const source = refValue(op.args[entry.source], bound, locals);
+                        @field(raw, name) = if (comptime entry.field) |field| @field(source, field) else source;
+                    }
                 }
                 const value = if (comptime op.kind == .pack) raw else call(ctx, op.callee, raw);
                 if (comptime infos[i].value == null) @field(locals, std.fmt.comptimePrint("{d}", .{i})) = value;
@@ -1283,13 +1425,17 @@ pub fn qualLeq(comptime ctx: anytype, comptime a: Qual, comptime b: Qual) Tri {
 /// sig_a <= sig_b (pack-set inclusion), pointwise over aligned slots.
 pub fn sigLeq(comptime ctx: anytype, comptime a: []const Slot, comptime b: []const Slot) Tri {
     comptime {
-        if (a.len != b.len) return .no; // no defaults yet: arity must agree
+        @setEvalBranchQuota(1_000_000);
+        if (!shapeLeq(a, b)) return .no;
         var acc: Tri = .yes;
-        for (a, 0..) |sa, i| {
-            const j = alignedSlot(a, i, b) orelse return .no;
-            const sb = b[j];
-            acc = triAll(acc, qualLeq(ctx, sa.qual, sb.qual));
-            if (acc == .no) return .no;
+        for (0..positionalMinimum(a) + @intFromBool(hasRest(a, .positional))) |i| {
+            const name = std.fmt.comptimePrint("{d}", .{i});
+            acc = triAll(acc, qualLeq(ctx, a[slotFor(a, name).?].qual, b[slotFor(b, name).?].qual));
+        }
+        for (a) |slot| {
+            if (slot.section != .named) continue;
+            const name = if (slot.rest) "#unknown#" else slot.name;
+            acc = triAll(acc, qualLeq(ctx, slot.qual, b[slotFor(b, name).?].qual));
         }
         return acc;
     }
@@ -1303,47 +1449,76 @@ fn conj(comptime P: fn (type) bool, comptime Q: fn (type) bool) fn (type) bool {
     }.h;
 }
 
-/// slot-wise meet: the INTERSECTION signature (julia's suggested fix is
-/// exactly this, printed). null = provably empty intersection.
+fn qualMeet(comptime a: Qual, comptime b: Qual) ?Qual {
+    return switch (a) {
+        .type_value => |T| switch (b) {
+            .type_value => |S| if (T == S) a else return null,
+            .exact => |S| if (S == type) a else return null,
+            .pred => |Q| if (Q(type)) a else return null,
+            .bare, .tvar => a,
+        },
+        .exact => |T| switch (b) {
+            .type_value => if (T == type) b else return null,
+            .exact => |S| if (T == S) a else return null,
+            .pred => |Q| if (Q(T)) a else return null,
+            .bare, .tvar => a,
+        },
+        .pred => |P| switch (b) {
+            .type_value => if (P(type)) b else return null,
+            .exact => |S| if (P(S)) b else return null,
+            .pred => |Q| if (P == Q) a else Qual{ .pred = conj(P, Q) },
+            .bare, .tvar => a,
+        },
+        .bare, .tvar => b,
+    };
+}
+
+/// Structural intersection, including an empty-only overlap of disjoint rests.
+/// Gates and repeated-variable correlations need Method-level analysis.
 pub fn sigMeet(comptime a: []const Slot, comptime b: []const Slot) ?[]const Slot {
     comptime {
-        if (a.len != b.len) return null;
-        var out: [a.len]Slot = undefined;
-        for (a, 0..) |sa, i| {
-            const j = alignedSlot(a, i, b) orelse return null;
-            const sb = b[j];
-            const q: Qual = switch (sa.qual) {
-                .type_value => |T| switch (sb.qual) {
-                    .type_value => |S| if (T == S) sa.qual else return null,
-                    .exact => |S| if (S == type) sa.qual else return null,
-                    .pred => |Q| if (Q(type)) sa.qual else return null,
-                    .bare, .tvar => sa.qual,
-                },
-                .exact => |T| switch (sb.qual) {
-                    .type_value => if (T == type) sb.qual else return null,
-                    .exact => |S| if (T == S) sa.qual else return null,
-                    .pred => |Q| if (Q(T)) sa.qual else return null,
-                    .bare, .tvar => sa.qual,
-                },
-                .pred => |P| switch (sb.qual) {
-                    .type_value => if (P(type)) sb.qual else return null,
-                    .exact => |S| if (P(S)) sb.qual else return null,
-                    .pred => |Q| if (P == Q) sa.qual else Qual{ .pred = conj(P, Q) },
-                    .bare, .tvar => sa.qual,
-                },
-                .bare, .tvar => sb.qual,
-            };
-            out[i] = .{ .name = sa.name, .section = sa.section, .qual = q };
+        @setEvalBranchQuota(1_000_000);
+        const amin = positionalMinimum(a);
+        const bmin = positionalMinimum(b);
+        if ((!hasRest(a, .positional) and amin < bmin) or (!hasRest(b, .positional) and bmin < amin)) return null;
+        var out: []const Slot = &.{};
+        const count = @max(amin, bmin);
+        for (0..count) |i| {
+            const name = std.fmt.comptimePrint("{d}", .{i});
+            const sa = a[slotFor(a, name) orelse return null];
+            const sb = b[slotFor(b, name) orelse return null];
+            out = out ++ .{Slot{ .name = name, .qual = qualMeet(sa.qual, sb.qual) orelse return null }};
         }
-        const frozen = out;
-        return &frozen;
+        if (hasRest(a, .positional) and hasRest(b, .positional)) {
+            const name = std.fmt.comptimePrint("{d}", .{count});
+            if (qualMeet(a[slotFor(a, name).?].qual, b[slotFor(b, name).?].qual)) |q|
+                out = out ++ .{Slot{ .name = "#rest#", .rest = true, .qual = q }};
+        }
+        for (a ++ b) |slot| {
+            if (slot.section != .named or slot.rest or requiredName(out, slot.name)) continue;
+            const sa = a[slotFor(a, slot.name) orelse return null];
+            const sb = b[slotFor(b, slot.name) orelse return null];
+            out = out ++ .{Slot{ .name = slot.name, .section = .named, .qual = qualMeet(sa.qual, sb.qual) orelse return null }};
+        }
+        if (hasRest(a, .named) and hasRest(b, .named)) {
+            if (qualMeet(a[slotFor(a, "#unknown#").?].qual, b[slotFor(b, "#unknown#").?].qual)) |q|
+                out = out ++ .{Slot{ .name = "#named-rest#", .section = .named, .rest = true, .qual = q }};
+        }
+        return out;
     }
+}
+
+fn hasAnyRest(comptime sig: []const Slot) bool {
+    return hasRest(sig, .positional) or hasRest(sig, .named);
 }
 
 /// ledger primitive: is (a, b) an ambiguous pair? (neither contains the
 /// other, intersection not provably empty.) .unknown widens the lint.
 pub fn ambiguousPair(comptime ctx: anytype, comptime a: []const Slot, comptime b: []const Slot) Tri {
     comptime {
+        // Inclusion alone cannot certify rest preference: empty captures have
+        // no element witness. Actual calls use suppliedMethod and full gates.
+        if (hasAnyRest(a) or hasAnyRest(b)) return if (sigMeet(a, b) == null) .no else .unknown;
         if (sigLeq(ctx, a, b) == .yes or sigLeq(ctx, b, a) == .yes) return .no;
         if (sigMeet(a, b) == null) return .no; // disjoint — no overlap to fight over
         if (sigLeq(ctx, a, b) == .unknown or sigLeq(ctx, b, a) == .unknown) return .unknown;
@@ -1356,6 +1531,7 @@ pub fn ambiguousPair(comptime ctx: anytype, comptime a: []const Slot, comptime b
 pub fn resolves(comptime ctx: anytype, comptime c: []const Slot, comptime a: []const Slot, comptime b: []const Slot) Tri {
     comptime {
         const m = sigMeet(a, b) orelse return .yes; // nothing to resolve
+        if (hasAnyRest(a) or hasAnyRest(b) or hasAnyRest(c)) return .unknown;
         var acc = triAll(sigLeq(ctx, c, a), sigLeq(ctx, c, b));
         acc = triAll(acc, sigLeq(ctx, m, c));
         return acc;
@@ -1919,4 +2095,62 @@ test "an explicit surface negative is not replaced by a legacy positive" {
     try std.testing.expect(!comptime typesEquiv(ctx, i32, u32));
     try std.testing.expect(!call(ctx, "<:", .{ i32, u32 }));
     try std.testing.expect(call(ctx, "<:", .{ u32, i32 }));
+}
+
+test "rest dispatch compares supplied coordinates then accepted shape" {
+    const empty: Method = .{ .name = "choose", .signature = &.{}, .body = .{ .ground = GroundStr("empty") } };
+    const any: Method = .{ .name = "choose", .signature = &.{.{ .name = "xs", .rest = true, .qual = .bare }}, .body = .{ .ground = GroundStr("rest") } };
+    const ints: Method = .{ .name = "choose", .signature = &.{.{ .name = "xs", .rest = true, .qual = .{ .exact = i64 } }}, .body = .{ .ground = GroundStr("ints") } };
+    const floats: Method = .{ .name = "choose", .signature = &.{.{ .name = "xs", .rest = true, .qual = .{ .exact = f64 } }}, .body = .{ .ground = GroundStr("floats") } };
+    const fixed: Method = .{ .name = "choose", .signature = &.{.{ .name = "x", .qual = .bare }}, .body = .{ .ground = GroundStr("fixed") } };
+    const Raw0 = @TypeOf(.{});
+    const Raw1 = struct { i64 };
+    const Raw2 = struct { i64, i64 };
+    try std.testing.expect(comptime ground_policy.moreSpecific(.{}, suppliedMethod(empty, Raw0), suppliedMethod(any, Raw0)));
+    try std.testing.expect(comptime ground_policy.moreSpecific(.{}, suppliedMethod(fixed, Raw1), suppliedMethod(ints, Raw1)));
+    try std.testing.expect(comptime ground_policy.moreSpecific(.{}, suppliedMethod(ints, Raw2), suppliedMethod(any, Raw2)));
+    try std.testing.expect(comptime !ground_policy.moreSpecific(.{}, suppliedMethod(ints, Raw0), suppliedMethod(floats, Raw0)));
+    try std.testing.expect(comptime !ground_policy.moreSpecific(.{}, suppliedMethod(floats, Raw0), suppliedMethod(ints, Raw0)));
+    const crossing: Method = .{ .name = "choose", .signature = &.{
+        .{ .name = "x", .qual = .bare }, .{ .name = "xs", .rest = true, .qual = .bare },
+    }, .body = .{ .ground = GroundStr("crossing") } };
+    try std.testing.expect(comptime !ground_policy.moreSpecific(.{}, suppliedMethod(crossing, Raw2), suppliedMethod(ints, Raw2)));
+    try std.testing.expect(comptime !ground_policy.moreSpecific(.{}, suppliedMethod(ints, Raw2), suppliedMethod(crossing, Raw2)));
+}
+
+test "rest binding preserves sections, uniform witnesses, and static fields" {
+    const sig = [_]Slot{
+        .{ .name = "xs", .rest = true, .qual = .{ .tvar = "T" } },
+        .{ .name = "T", .section = .named, .qual = .{ .exact = type } },
+        .{ .name = "opts", .section = .named, .rest = true, .qual = .bare },
+    };
+    // Explicit type values must be static; declare the witness accordingly.
+    const StaticRaw = struct { @"0": i64, comptime T: type = i64, comptime flag: bool = true, z: i64 };
+    const B = comptime construct(&sig, StaticRaw).?;
+    const bound = bindValues(&sig, B, StaticRaw{ .@"0" = 7, .z = 9 });
+    try std.testing.expectEqual(@as(i64, 7), bound.xs.@"0");
+    try std.testing.expectEqual(@as(i64, 9), bound.opts.z);
+    try std.testing.expect(comptime @typeInfo(@TypeOf(bound.opts)).@"struct".fields[0].is_comptime);
+    try std.testing.expect(comptime boundType(B, "T") == i64);
+    const Empty = struct { comptime T: type = i64 };
+    try std.testing.expect(comptime construct(&sig, Empty) != null);
+    const unbound = [_]Slot{.{ .name = "xs", .rest = true, .qual = .{ .tvar = "T" } }};
+    try std.testing.expect(comptime construct(&unbound, @TypeOf(.{})) == null);
+    try std.testing.expect(comptime construct(&unbound, struct { i64, f64 }) == null);
+}
+
+test "signature ledger preserves empty rest intersections without certifying preference" {
+    const ints = [_]Slot{.{ .name = "xs", .rest = true, .qual = .{ .exact = i64 } }};
+    const floats = [_]Slot{.{ .name = "xs", .rest = true, .qual = .{ .exact = f64 } }};
+    const any = [_]Slot{.{ .name = "xs", .rest = true, .qual = .bare }};
+    const fixed = [_]Slot{.{ .name = "x", .qual = .{ .exact = i64 } }};
+    try std.testing.expect(comptime sigLeq(.{}, &fixed, &ints) == .yes);
+    try std.testing.expect(comptime sigLeq(.{}, &ints, &fixed) == .no);
+    try std.testing.expect(comptime sigMeet(&ints, &floats).?.len == 0);
+    try std.testing.expect(comptime sigMeet(&fixed, &floats) == null);
+    try std.testing.expect(comptime ambiguousPair(.{}, &ints, &any) == .unknown);
+    const named = [_]Slot{.{ .name = "x", .section = .named, .qual = .{ .exact = i64 } }};
+    const named_rest = [_]Slot{.{ .name = "opts", .section = .named, .rest = true, .qual = .bare }};
+    try std.testing.expect(comptime sigLeq(.{}, &named, &named_rest) == .yes);
+    try std.testing.expect(comptime sigMeet(&named, &named_rest).?.len == 1);
 }

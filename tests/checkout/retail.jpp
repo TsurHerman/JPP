@@ -11,5 +11,9 @@ main() = {
     verifyQuote("retail / below delivery threshold", quote(basket(line(4999, 1, 500), line(5000, 1, 500))), 9999, 0, 9999, 425, 2085, 12509)
     verifyQuote("retail / below bulk quantity", quote(basket(line(100, 9, 100), line(2500, 0, 800))), 900, 0, 900, 425, 265, 1590)
     verifyQuote("retail / exact bulk quantity", quote(basket(line(100, 10, 100), line(2500, 0, 800))), 1000, 100, 900, 425, 265, 1590)
+    verifyQuote("retail / zero lines", quote(basket()), 0, 0, 0, 0, 0, 0)
+    verifyQuote("retail / one physical line", quote(basket(line(1000, 1, 500))), 1000, 0, 1000, 425, 285, 1710)
+    verifyQuote("retail / digital only", quote(basket(digital("book", 499, 2))), 998, 0, 998, 0, 200, 1198)
+    verifyQuote("retail / three mixed lines", quote(basket(line(1000, 1, 500), digital("book", 500, 2), line(200, 3, 100))), 2600, 0, 2600, 425, 605, 3630)
     check("order has a real line record", Line(int64), false)
 }

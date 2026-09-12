@@ -25,7 +25,7 @@ const std = @import("std");
 
 // ---------------------------------------------------------------- tokens
 
-const TokKind = enum { ident, int, float, str, lparen, rparen, lbrace, rbrace, comma, dcolon, subtype, eq, eqeq, semi, nl, ground, kw_using, kw_export, kw_where, op, dot, eof };
+const TokKind = enum { ident, int, float, str, lparen, rparen, lbrace, rbrace, comma, dcolon, subtype, eq, eqeq, semi, nl, ground, kw_using, kw_export, kw_where, op, dot, ellipsis, eof };
 
 const Tok = struct { kind: TokKind, text: []const u8, pos: usize };
 
@@ -140,7 +140,12 @@ fn lex(src: []const u8, toks: []Tok) LexError![]Tok {
                     i += 1;
                 } else return error.BadChar;
             },
-            '.' => toks[n] = .{ .kind = .dot, .text = ".", .pos = start },
+            '.' => {
+                if (i + 2 < src.len and src[i + 1] == '.' and src[i + 2] == '.') {
+                    toks[n] = .{ .kind = .ellipsis, .text = "...", .pos = start };
+                    i += 2;
+                } else toks[n] = .{ .kind = .dot, .text = ".", .pos = start };
+            },
             ':' => {
                 if (i + 1 < src.len and src[i + 1] == ':') {
                     toks[n] = .{ .kind = .dcolon, .text = "::", .pos = start };
@@ -179,12 +184,13 @@ const Node = union(enum) {
     block: []*Node,
 };
 
-const Arg = struct { label: []const u8 = "", value: *Node };
+const Splat = enum { none, positional, named };
+const Arg = struct { label: []const u8 = "", splat: Splat = .none, value: *Node };
 
 // `pred` is the slot-position form `x<:Integer`. README §4: it is sugar
 // for `x::T where Integer(T)` with T fresh, so it lowers to a binder
 // plus a gate and needs nothing new from the machinery.
-const Param = struct { name: []const u8, named: bool = false, anonymous: bool = false, ty: ?[]const u8, pred: ?[]const u8 = null };
+const Param = struct { name: []const u8, named: bool = false, rest: bool = false, anonymous: bool = false, ty: ?[]const u8, pred: ?[]const u8 = null };
 
 const Where = struct {
     vars: []const []const u8,
@@ -316,7 +322,11 @@ const Parser = struct {
                 _ = p.next();
                 pred = (try p.expect(.ident)).text;
             }
-            try params.append(p.a, .{ .name = pn, .named = named, .anonymous = anonymous, .ty = ty, .pred = pred });
+            const rest = p.peek().kind == .ellipsis;
+            if (rest) _ = p.next();
+            for (params.items) |previous| if (previous.named == named and previous.rest)
+                return bindingError(error.RestMustBeLast, pn);
+            try params.append(p.a, .{ .name = pn, .named = named, .rest = rest, .anonymous = anonymous, .ty = ty, .pred = pred });
             p.skipNlOnlyNewlinesBeforeBody();
             if (p.peek().kind == .comma) {
                 _ = p.next();
@@ -443,13 +453,24 @@ const Parser = struct {
                 if (p.peek().kind == .rparen) break;
             }
             var label: []const u8 = "";
-            if (named) {
-                label = (try p.expect(.ident)).text;
-                _ = try p.expect(.eq);
+            const labelled = named and p.peek().kind == .ident and p.toks[p.i + 1].kind == .eq;
+            if (labelled) {
+                label = p.next().text;
+                _ = p.next();
                 for (args.items) |arg| if (std.mem.eql(u8, label, arg.label)) return bindingError(error.DuplicateNamedArgument, label);
                 p.skipNlOnlyNewlinesBeforeBody();
             }
-            try args.append(p.a, .{ .label = label, .value = try p.parseExpr(0) });
+            const value = try p.parseExpr(0);
+            var splat: Splat = .none;
+            if (p.peek().kind == .ellipsis) {
+                if (labelled) return bindingError(error.LabelledSplat, label);
+                _ = p.next();
+                splat = if (named) .named else .positional;
+                separated = true;
+            } else if (named and !labelled) {
+                _ = try p.expect(.eq);
+            }
+            try args.append(p.a, .{ .label = label, .splat = splat, .value = value });
             p.skipNlOnlyNewlinesBeforeBody();
             if (p.peek().kind == .comma) {
                 separated = true;
@@ -540,8 +561,8 @@ fn isTVar(d: Def, name: []const u8) bool {
 
 // ---------------------------------------------------------------- normalizer (ANF)
 
-const VR = union(enum) { param_type: usize, name: []const u8, param: usize, local: usize, lit_i: i64, lit_f: f64, lit_s: []const u8, lit_b: bool };
-const OpIR = struct { kind: enum { call, pack, project } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, field: []const u8 = "" };
+const VR = union(enum) { bound_type: []const u8, param_type: usize, name: []const u8, param: usize, local: usize, lit_i: i64, lit_f: f64, lit_s: []const u8, lit_b: bool };
+const OpIR = struct { kind: enum { call, pack, project } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, splats: []const Splat = &.{}, field: []const u8 = "" };
 const FlatIR = struct { ops: []OpIR, result: VR };
 const Local = struct { name: []const u8, value: VR };
 
@@ -573,11 +594,14 @@ fn flattenEntries(a: std.mem.Allocator, entries: []Arg, def: Def, ops: *std.Arra
     var result = op;
     result.args = try a.alloc(VR, entries.len);
     const labels = try a.alloc([]const u8, entries.len);
+    const splats = try a.alloc(Splat, entries.len);
     for (entries, 0..) |arg, i| {
         result.args[i] = try flattenNode(a, arg.value, def, ops, locals);
         labels[i] = arg.label;
+        splats[i] = arg.splat;
     }
     result.labels = labels;
+    result.splats = splats;
     try ops.append(a, result);
     return .{ .local = ops.items.len - 1 };
 }
@@ -601,9 +625,7 @@ fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpI
                 if (std.mem.eql(u8, p.name, name)) return .{ .param = i };
             }
             if (isTVar(def, name)) {
-                for (def.params, 0..) |p, i| {
-                    if (p.ty) |t| if (std.mem.eql(u8, t, name)) return .{ .param_type = i };
-                }
+                return .{ .bound_type = name };
             }
             if (hasBinding(def.body.?, name)) return bindingError(error.ForwardBinding, name);
             return .{ .name = name };
@@ -670,6 +692,7 @@ fn emitFloat(o: *Out, v: f64) void {
 
 fn emitVR(o: *Out, r: VR) void {
     switch (r) {
+        .bound_type => |name| o.add(".{{ .bound_type = \"{s}\" }}", .{name}),
         .param_type => |p| o.add(".{{ .param_type = {d} }}", .{p}),
         .name => |n| o.add(".{{ .type_value = jpp.requireValue(STATIC, \"{s}\") }}", .{n}),
         .param => |p| o.add(".{{ .param = {d} }}", .{p}),
@@ -787,7 +810,7 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
             o.add("    .{{ .declaration_home = this_module, .name = \"{s}\", .signature = &.{{", .{emitted_name});
             for (e.params, 0..) |prm, pi| {
                 if (pi > 0) o.add(",", .{});
-                o.add(" .{{ .name = \"{s}\", .section = .{s}, .qual = ", .{ prm.name, if (prm.named) "named" else "positional" });
+                o.add(" .{{ .name = \"{s}\", .section = .{s}, .rest = {}, .elementwise = {}, .qual = ", .{ prm.name, if (prm.named) "named" else "positional", prm.rest, prm.rest and prm.pred != null });
                 if (prm.anonymous)
                     o.add("jpp.declarationQual(STATIC, null, ", .{})
                 else
@@ -845,6 +868,8 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
                 for (flat.ops) |op| {
                     o.add("        .{{ .kind = .{s}, .callee = \"{s}\", .field = \"{s}\", .labels = &.{{", .{ @tagName(op.kind), if (op.kind == .call) try localWord(a, m, op.callee) else "", op.field });
                     for (op.labels) |label| o.add("\"{s}\",", .{label});
+                    o.add(" }}, .splats = &.{{", .{});
+                    for (op.splats) |splat| o.add(".{s},", .{@tagName(splat)});
                     o.add(" }}, .args = &.{{ ", .{});
                     for (op.args, 0..) |r, ri| {
                         if (ri > 0) o.add(", ", .{});
@@ -920,19 +945,9 @@ fn boundTypeName(d: Def, name: []const u8) bool {
 }
 
 fn emitBoundType(o: *Out, d: Def, name: []const u8) void {
-    for (d.params) |p| {
-        if (p.ty) |t| {
-            if (isTVar(d, name) and std.mem.eql(u8, t, name)) {
-                o.add("@TypeOf(@field(@as(B, undefined), \"{s}\"))", .{p.name});
-                return;
-            }
-            if (std.mem.eql(u8, p.name, name) and std.mem.eql(u8, t, "type")) {
-                o.add("@field(@as(B, undefined), \"{s}\")", .{p.name});
-                return;
-            }
-        }
-    }
-    o.add("jpp.requireValue(STATIC, \"{s}\")", .{name});
+    if (boundTypeName(d, name)) {
+        o.add("jpp.boundType(B, \"{s}\")", .{name});
+    } else o.add("jpp.requireValue(STATIC, \"{s}\")", .{name});
 }
 
 fn groundUsesAny(d: Def, g: [:0]const u8) bool {
@@ -954,14 +969,10 @@ fn emitGroundPrelude(o: *Out, d: Def, g: [:0]const u8) void {
     if (d.where_clause) |w| {
         for (w.vars) |v| {
             if (!groundUses(g, v)) continue;
-            for (d.params) |p| {
-                if (p.ty) |t| {
-                    if (std.mem.eql(u8, t, v)) {
-                        o.add("        const {s} = @TypeOf(@field(bound, \"{s}\"));\n", .{ v, p.name });
-                        break;
-                    }
-                }
-            }
+            const is_parameter = for (d.params) |p| {
+                if (std.mem.eql(u8, p.name, v)) break true;
+            } else false;
+            if (!is_parameter) o.add("        const {s} = jpp.boundType(@TypeOf(bound), \"{s}\");\n", .{ v, v });
         }
     }
 }

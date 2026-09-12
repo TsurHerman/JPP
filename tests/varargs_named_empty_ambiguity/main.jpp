@@ -1,0 +1,4 @@
+export f
+f(; opts::int64...) = 1
+f(; opts::float64...) = 2
+main() = f()

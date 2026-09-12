@@ -80,13 +80,13 @@ types, predicate rank, and the authored Base order. `any_override` and
 `any_shadow` check caller overrides and source-tree replacement;
 `any_order_gap` and `any_unimported` reject hidden order and builtin names.
 
-[checkout](checkout/test.md) is an application case study: eighteen source
-modules, thirteen baskets in two contexts, and 105 assertions covering
+[checkout](checkout/test.md) is an application case study: twenty source
+modules, twenty baskets in two contexts, and 161 assertions covering
 discounts, rounding, delivery, tax, records, and accounting identities.
 It uses explicit Base imports, immutable bindings, tuple basket storage, named
 quote construction and surface field access. Domain imports and deep policy
-overrides remain explicit. The basket public API is still a fixed pair; varargs
-and nominal record declarations remain unbuilt.
+overrides remain explicit. Rest capture now supports zero/one/many heterogeneous
+physical and digital lines. Nominal record declarations remain unbuilt.
 
 `base_import` compares explicit Base, caller overrides, import position,
 and priority through deeper imports. `base_shadow` replaces the
@@ -103,7 +103,7 @@ type and record values, discarded results, and nested blocks. Frontend cases
 
 | # | Promise (README ref) | Covered today | Boundary tests to write |
 |---|---|---|---|
-| 1 | Specificity ladder: exact type value > exact input type > pred > bare; dominance, never sum (§4, §9) | `type_values` (type value versus input type); `dispatch` (exact/predicate); `where_gate` (long and short predicate spellings, authored Any fallback); `any` (predicate above bare); `pointwise_gap`, `gate_conjunction`; machinery tests (bar lattice, full ladder) | per-slot projections with variadics |
+| 1 | Specificity ladder: exact type value > exact input type > pred > bare; dominance, never sum (§4, §9) | `type_values` (type value versus input type); `dispatch` (exact/predicate); `where_gate` (long and short predicate spellings, authored Any fallback); `any` (predicate above bare); `pointwise_gap`, `gate_conjunction`; machinery tests (bar lattice, full ladder) | — |
 | 2 | Ambiguity: same-module crossing = comptime error at the call; intersection cures (§9) | `ambiguity`, `where_gate_clash`, `pointwise_gap`, `order_cycle` (negative cases); machinery tests | — |
 | 3 | Ordered context: position breaks ties; flip flips (§1, §9) | `override`, `context_flip`; machinery tests | — |
 | 4 | Context accumulation: caller ahead, callee STATIC behind (§1) | `depth_override`, `caller_context`, `equality_scope` | direct extendAll-ordering test |
@@ -113,7 +113,7 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 8 | Exports gate everything (§1) | `export_gate`, `private_downstream` (negative); `private_helpers`; machinery tests (fixture) | `M.f` qualification path once surface lands |
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
 | 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` and precedence); `base_import`, `base_shadow`, `base_missing`, `base_mixed`; `checkout` (Base arithmetic); machinery tests (`+` shadowed) | more widths and promotion |
-| 10 | Binder: packs, named args (§4) | named_arguments, named_specificity, named_context, named_instances; binderprobe | varargs and defaults |
+| 10 | Binder: packs, named args (§4) | named_arguments, named_specificity, named_context, named_instances; varargs, varargs_dispatch, varargs_forward; binderprobe | defaults |
 | 11 | Enum bridge (§4) | enumprobe (spike) | surface selectors |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: facade, wildcard, dotted (§1) | folder_modules, folder_scope, cycle_folder, private_helpers | binary artifact boundaries |
@@ -150,6 +150,26 @@ New pack promises:
   frontend grammar and duplicate-label boundaries. `pack_missing_field`,
   `pack_out_of_bounds`, `pack_non_record`, `pack_empty_tail`: invalid projection
   and tuple operations fail during compilation.
+
+Rest/splat promises:
+
+- `varargs`: positional/named capture and construction, type values, uniform T
+  versus independent predicate membership, empty witnesses, and named identity.
+- `varargs_dispatch`: fixed/rest coverage, named coordinates, authored order,
+  and shape tie-breaking; `varargs_empty_ambiguity` and `varargs_crossing` reject
+  empty-rest and crossing maxima.
+- `varargs_forward`: deep overrides, static forwarding, producer order, bound
+  identity, and multiline library functions (the grammar is shared with main).
+- `varargs_scale`: separate 0/1/2/8/32-element reductions; `varargs_binary_gap`
+  pins the missing binary-operation diagnostic.
+- `varargs_empty_unbound`, `varargs_uniform_mixed`, `varargs_type_mismatch`,
+  `varargs_predicate_reject`, `varargs_sections_mismatch`, `varargs_named_type`:
+  failed element constraints and type witnesses. `varargs_named_empty_ambiguity`
+  checks the empty named-rest boundary. `varargs_type_pack_witness` rejects
+  treating a rest of type values as one where-bound type.
+- `splat_non_pack`, `splat_named_to_positional`, `splat_positional_to_named`,
+  `splat_duplicate`: expansion boundaries; `varargs_not_last`,
+  `varargs_two_named`, `splat_labelled`: frontend grammar boundaries.
 
 Module promises now include `base_folder`, explicit facade/wildcard cases,
 `folder_collision`, and `cycle_*` cases. Mutual imports share public dispatch

@@ -1,0 +1,30 @@
+using Base
+export choose, select, empty, named, narrow, Numeric, Integral, <:
+choose(xs<:Any...) = 1
+choose(xs::int64...) = 2
+choose(x<:Any) = 3
+empty(xs<:Any...) = 1
+empty() = 2
+select(xs<:Any...) = 1
+select(xs<:Numeric...) = 2
+select(xs<:Integral...) = 3
+Numeric(T::type)::bool = zig{ T == i64 or T == f64 }
+Integral(T::type)::bool = zig{ T == i64 }
+<:(Integral, Numeric) = true
+<:(Integral, Any) = true
+<:(Numeric, Any) = true
+named(; rest<:Any...) = 1
+named(; x<:Any, rest<:Any...) = 2
+narrow(xs<:Any...; options<:Any...) = 1
+narrow(xs<:Any...) = 2
+main() = {
+    check("fixed slot outranks typed rest", choose(1), 3)
+    check("typed rest refines bare rest", choose(1, 2), 2)
+    check("heterogeneous rest fallback", choose(1, 2.5), 1)
+    check("fixed empty shape outranks rest", empty(), 2)
+    check("empty named shape breaks tied coordinates", narrow(1, 2), 2)
+    check("open named shape when fields supplied", narrow(1; x = 2), 1)
+    check("required named coordinate outranks capture", named(; z = 2, x = 1), 2)
+    check("authored order compares captured element predicates", select(1, 2), 3)
+    check("mixed elements share a predicate without uniformity", select(1, 2.5), 2)
+}

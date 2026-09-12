@@ -1,0 +1,4 @@
+using Base
+export target, adjust
+target(xs...; factor::int64, opts...) = (; data = xs, result = adjust(factor), opts...)
+adjust(x) = x

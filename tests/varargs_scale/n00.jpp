@@ -1,0 +1,3 @@
+using forward
+using Base.Test
+main() = check("0-element reduction", total(), 0)

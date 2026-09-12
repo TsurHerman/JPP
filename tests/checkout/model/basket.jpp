@@ -1,7 +1,5 @@
 using model.line
-export basket, firstItem, secondItem
+export basket
 
-# The two-line public contract remains; storage is now an ordinary tuple.
-basket(a::T, b::T) where T <: Line = (a, b)
-firstItem(bag) = bag.0
-secondItem(bag) = bag.1
+# Each element must be a Line; different elements need not share a type.
+basket(items<:Line...) = items

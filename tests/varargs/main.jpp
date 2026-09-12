@@ -1,0 +1,49 @@
+using Base
+export gather, uniform, witness, classify
+
+gather(xs...) = xs
+uniform(xs::T...) where T = T
+witness(xs::T...; T::type) where T = T
+both(xs::T...; opts::T...) where T = T
+zero(xs::T...)::T where T = zig{ @as(T, 0) }
+groundWitness(xs::T...; T::type)::T where T = zig{ @as(T, 0) }
+nativeType()::type = zig{ struct { comptime dimension: i64 = 3, data: i64 } }
+makeNative(T::type, x::int64) = zig{ T{ .data = x } }
+assertStatic(value)::nothing = zig{ {
+    if (!@typeInfo(@TypeOf(value)).@"struct".fields[0].is_comptime) @compileError("rest lost static integer");
+} }
+classify(T::type)::bool = zig{ T == i64 or T == f64 }
+accepted(xs<:classify...) = len(xs)
+options(; required::int64, rest...) = (; required = required, rest...)
+kind(::T) where T = T
+same(A::type, B::type)::bool = zig{ A == B }
+main() = {
+    check("empty capture", len(gather()), 0)
+    check("one capture", gather(7).0, 7)
+    check("heterogeneous capture", gather(7, 2.5, int64).1, 2.5)
+    check("type value retained in capture", gather(7, float64).1, float64)
+    check("uniform type binding", uniform(1, 2, 3), int64)
+    check("named rest witnesses empty positional rest", both(; selected = 2), int64)
+    check("positional rest witnesses empty named rest", both(2.5), float64)
+    check("one type shared across both rests", both(1; selected = 2), int64)
+    check("native return annotation uses rest element type", zero(2.5, 3.5), 0.0)
+    check("native empty witness shares one type binding", groundWitness(; T = int64), 0)
+    source = makeNative(nativeType(), 17)
+    retained = gather((source.dimension, source.data)...)
+    assertStatic(retained)
+    check("non-type static value survives rest and splat", retained.0, 3)
+    check("ordinary data survives beside static rest field", retained.1, 17)
+    check("explicit empty witness", witness(; T = float64), float64)
+    check("explicit nonempty witness", witness(1, 2; T = int64), int64)
+    check("short rest predicate allows mixed elements", accepted(1, 2.5), 2)
+    check("short rest predicate permits empty", accepted(), 0)
+    check("tuple splat", gather((1, 2)..., 3).2, 3)
+    check("empty tuple splat", len(gather(()...)), 0)
+    check("singleton expansion constructs a pack", len(((7,)...)), 1)
+    check("pack construction splats", (0, (1, 2)..., 3).2, 2)
+    check("named rest routes unknown fields", options(; z = 9, required = 2, a = 7).a, 7)
+    check("empty named rest", options(; required = 2).required, 2)
+    check("named pack expansion", (; (; a = 3)..., b = 4).b, 4)
+    check("named capture canonical identity", kind(options(; required = 2, a = 7, z = 9)), kind(options(; z = 9, a = 1, required = 8)))
+    check("different static fields distinguish values", same(kind(gather(int64)), kind(gather(float64))), false)
+}

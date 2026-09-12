@@ -1,8 +1,8 @@
 # One pack for calls, data, and specialization
 
-Status: RUNS for tuples, named inputs, and static-field preservation — verified by
-the complete suite on 2026-09-12. Varargs rules below are RATIFIED for the next
-slice and have no active syntax yet.
+Status: RUNS for tuples, named inputs, rest capture, splats, and static-field
+preservation — verified by the complete suite on 2026-09-12. See the
+[implementation plan](generality_plan.md) for validation and compilation costs.
 
 ## Values and calls
 
@@ -17,6 +17,9 @@ slice and have no active syntax yet.
 | `f(x; factor = y)` | Apply f to that two-section call pack |
 | `f(x; factor::float64) = ...` | Required named input, participating in dispatch |
 | `value.0`, `value.tax` | Static positional/name projection |
+| `f(xs...; opts...) = ...` | Positional tuple rest and named record rest |
+| `f(prefix, xs...; label = value, opts...)` | Expand statically shaped packs into their own sections |
+| `(prefix, xs...)`, `(; label = value, opts...)` | The same expansion constructs data packs |
 
 A tuple does not promote its elements. Named value identity depends on field
 names, types, and static values, independent of written field order. Positionals
@@ -57,8 +60,10 @@ and reject runtime-derived dimensions where a type requires a static selector.
 ## Matching and preference
 
 Positionals bind by index, names by name, with no cross-fill. Required slots
-must be present, unknown names do not match, and duplicate named fields are a
-frontend error. Defaults and rest capture are not part of this slice.
+must be present; unknown names require a named rest. Duplicate explicit names
+are frontend errors; duplicates introduced by splats fail during expansion.
+Defaults remain unbuilt. Each section permits one trailing rest. Splats accept
+only fields belonging to their written section and never overwrite a field.
 
 Specificity compares the same call coordinates. Reordering named declarations
 must not pair a constraint on tax with one on freight. Exact/predicate/bare
@@ -71,9 +76,10 @@ Keyword permutation and changed runtime data reuse a bound method instance.
 Different static values can select different instances. Tests must observe this
 at the bound method, rather than mistaking a call-site wrapper for its body.
 
-## Decisions for the varargs slice
+## Varargs rules
 
-A rest input captures a tuple; call-side splat is its inverse. Statically shaped
+A positional rest captures a tuple; a named rest captures a canonical named
+record. Call-side splat is the inverse. Statically shaped
 packs come first; runtime-length arrays are a separate memory/iteration feature.
 Compare supplied coordinates pointwise. Fixed coverage outranks rest coverage;
 within two rest-covered coordinates, compare their element constraints using
@@ -94,6 +100,17 @@ cannot repair an incomparable argument coordinate.
 | Named constraints cross in quality | Neither compensates for the other |
 | Two identical named sets in different declaration orders | Same coordinates; order supplies no preference |
 
-Implement this table with positive and negative cases before enabling varargs.
+`varargs_dispatch` and the `varargs_*` rejection cases exercise this table.
+`xs::T... where T` requires all captured elements to share T, across both
+sections and any explicit witness. `xs<:Predicate...` checks each element
+independently, permitting mixed types and vacuous empty capture. Captured static
+fields retain their actual values through forwarding. `varargs_forward` also
+proves multiline library bodies, parameter lists, and calls work like main.
+
+The native signature ledger handles structural rest inclusion/intersection,
+including the empty overlap of disjoint typed rests. Whole-signature ambiguity
+lint remains conservative (`unknown`) for rest overlaps; actual calls resolve
+using supplied coordinates and full method gates.
+
 A reduction needs explicit zero/one/many domains and shrinking recursion; an
 unsupported binary pair must not fall into a self-repeating variadic fallback.

@@ -1,0 +1,5 @@
+using Base
+export f
+f(x<:Any, xs<:Any...) = 1
+f(xs::int64...) = 2
+main() = f(1, 2)

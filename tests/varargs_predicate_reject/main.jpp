@@ -1,0 +1,5 @@
+using Base
+export f
+Numeric(T::type)::bool = zig{ T == i64 or T == f64 }
+f(xs<:Numeric...) = 1
+main() = f(1, true)

@@ -1,19 +1,7 @@
-export Line, line, unitPrice, unitCount, unitGrams
+using model.physical
+using model.digital
+export Line, line, digital, unitPrice, unitCount, unitGrams
 
-# Records cross the ground boundary as native values with their concrete type.
-line(price_cents::int64, count::int64, unit_grams::int64) = zig{
-    .{ .price_cents = price_cents, .count = count, .unit_grams = unit_grams }
-}
-
-Line(T::type)::bool = zig{ blk: {
-    if (@typeInfo(T) != .@"struct") break :blk false;
-    inline for (.{ "price_cents", "count", "unit_grams" }) |field| {
-        if (!@hasField(T, field)) break :blk false;
-        if (@TypeOf(@field(@as(T, undefined), field)) != i64) break :blk false;
-    }
-    break :blk true;
-} }
-
-unitPrice(item) = zig{ item.price_cents }
-unitCount(item) = zig{ item.count }
-unitGrams(item) = zig{ item.unit_grams }
+# One interface composes independently defined physical and digital lines.
+Line(T::type) = either(Physical(T), Digital(T))
+either(a::bool, b::bool)::bool = zig{ a or b }

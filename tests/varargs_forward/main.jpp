@@ -1,0 +1,19 @@
+using api
+using Base
+export adjust
+adjust(x) = x * 10
+mark(x::int64) = zig{ blk: { const S = struct { var trace: i64 = 0; }; S.trace = S.trace * 10 + x; break :blk S.trace; } }
+kind(::T) where T = T
+boundPack(xs<:Any...; opts<:Any...)::type = zig{ @TypeOf(bound) }
+main() = {
+    r = forward((mark(1), mark(2))...; (; z = mark(3))..., factor = mark(4))
+    check("splat producer evaluated once in source order", r.data.0, 1)
+    check("second tuple producer", r.data.1, 12)
+    check("named splat producer", r.z, 123)
+    check("caller override survives rest forwarding", r.result, 12340)
+    typed = forward(int64, float64; factor = 2, shape = int64)
+    check("static tuple element survives deep forwarding", typed.data.1, float64)
+    check("static named field survives deep forwarding", typed.shape, int64)
+    check("keyword permutations converge at bound pack", boundPack(1; a = 2, z = int64), boundPack(9; z = int64, a = 8))
+    check("splatted and direct calls share bound identity", boundPack((1,)...; (; a = 2, z = int64)...), boundPack(9; z = int64, a = 8))
+}
