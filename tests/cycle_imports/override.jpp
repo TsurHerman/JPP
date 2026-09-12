@@ -1,0 +1,2 @@
+export gamma
+gamma() = 99

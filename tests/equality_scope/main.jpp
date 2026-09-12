@@ -1,3 +1,3 @@
 using rules
-using Test
+using Base.Test
 main() = check("equality gate sees home imports", accepts(int32, uint32), true)

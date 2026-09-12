@@ -2,7 +2,7 @@
 # the order word picks the specific fact over the general rule.
 using order
 using rules
-using Test
+using Base.Test
 
 main() = {
     check("specific fact beats general rule", g(1), 2)

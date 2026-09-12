@@ -1,8 +1,8 @@
-using Any
+using Base.Any
 using preds
 using order
 using rules
-using Test
+using Base.Test
 
 main() = {
     check("gate on a DEFINED join", kind(ubyte()), 1)

@@ -1,5 +1,5 @@
-using Any
-using Test
+using Base.Any
+using Base.Test
 
 # x participates in the signature. Neither the string nor xx uses its value.
 second(x::int64, xx::int64) = zig{ blk: { _ = "x"; break :blk xx; } }

@@ -3,7 +3,7 @@
 using ints
 using floats
 using algebra
-using Test
+using Base.Test
 
 main() = {
     check("caller supplies meaning", double(21), 42)

@@ -1,6 +1,6 @@
 # any
 
-`using Any` imports an ordinary predicate from `Base/Any.jpp`:
+`using Base.Any` imports an ordinary predicate from `Base/Any.jpp`:
 `Any(::type)::bool = true`. It is callable like any other word and has a
 class identity when passed as a value. `<:Any` preserves the concrete
 bound value and type, including type values, and has the ordinary

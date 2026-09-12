@@ -1,0 +1,16 @@
+using Base
+export scale, record, typed, kind
+scale(x; factor::float64) = x * factor
+record(; tax::int64, freight::int64) = (; tax = tax, freight = freight)
+typed(; selected::type, value::selected) where selected = value
+kind(::T) where T = T
+mark(x::int64) = zig{ blk: { const S = struct { var value: i64 = 0; }; S.value = S.value * 10 + x; break :blk S.value; } }
+main() = {
+    check("required named argument", scale(3.0; factor = 2.0), 6.0)
+    check("permuted named values route by name", record(; freight = 500, tax = 1069).tax, 1069)
+    check("named type binder", typed(; value = 4, selected = int64), 4)
+    check("named type binder changes result", kind(typed(; selected = float64, value = 4.5)), float64)
+    r = record(; freight = mark(1), tax = mark(2))
+    check("named effects follow call spelling", r.freight, 1)
+    check("routing follows applicability", r.tax, 12)
+}

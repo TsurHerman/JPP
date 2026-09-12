@@ -6,7 +6,7 @@ using tweaked
 using ints
 using stats
 using algebra
-using Test
+using Base.Test
 
 main() = {
     check("tweaked: SAME report(21), sentinel answer", report(21), 1000)

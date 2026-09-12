@@ -1,0 +1,3 @@
+using Base.Arithmetic
+export score
+score(; bonus::int64, value::int64) = (value + bonus) * 2

@@ -1,5 +1,6 @@
+using Base.Arithmetic
 using model.quote
-using Test
+using Base.Test
 export verifyQuote
 
 verifyQuote(label::string, quoted, gross::int64, discount::int64, net::int64, freight::int64, tax::int64, total::int64) = {

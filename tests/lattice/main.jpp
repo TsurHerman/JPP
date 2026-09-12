@@ -1,11 +1,11 @@
-using Any
+using Base.Any
 # VALIDATES: predicates + authored edges express a LATTICE, not a tree.
 # each call lands on a different depth of the diamond, and the two
 # incomparable middle classes (Small, Signed) are separated only by
 # which predicates the argument's type actually answers.
 using order
 using rules
-using Test
+using Base.Test
 
 main() = {
     check("bottom of the diamond", kind(tiny()), 4)

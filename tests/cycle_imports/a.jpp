@@ -1,0 +1,5 @@
+using b
+export alpha, left
+helper() = 11
+alpha() = beta()
+left() = helper()

@@ -3,7 +3,7 @@
 # where_gate_clash case); with `Wide <: Signed` the lower gate wins.
 using wide_below
 using rules
-using Test
+using Base.Test
 
 main() = {
     check("declared edge refines the gates", g(1), 1)

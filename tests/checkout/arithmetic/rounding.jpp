@@ -1,3 +1,4 @@
+using Base.Arithmetic
 export roundQuotient, ceilQuotient
 
 # Nonnegative numerator, positive denominator. Ties round upward.

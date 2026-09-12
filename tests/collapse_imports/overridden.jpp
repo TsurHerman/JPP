@@ -1,6 +1,6 @@
 using policy
 using facade
-using Test
+using Base.Test
 main() = {
     check("caller override survives three import boundaries", probe(7), 107)
     check("discovery still does not hoist the exact deeper method", surface(7), 7)

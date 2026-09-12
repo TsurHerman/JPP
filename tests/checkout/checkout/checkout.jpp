@@ -1,3 +1,4 @@
+using Base
 using model.priced
 using model.quote
 using pricing.cart
@@ -12,5 +13,6 @@ quote(bag) = {
     freight = shippingCharge(net, parcelGrams(priced))
     tax_cents = taxCharge(net, freight)
     total = net + freight + tax_cents
-    quoteRecord(gross, gross - net, net, freight, tax_cents, total)
+    quoteRecord(; gross = gross, discount = gross - net, net = net,
+        freight = freight, tax = tax_cents, total = total)
 }

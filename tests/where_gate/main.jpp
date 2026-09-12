@@ -1,4 +1,4 @@
-using Any
+using Base.Any
 # VALIDATES: `where T <: Integer` is a predicate gate on qualification,
 # carried as method data, and a gated binder sits on the PREDICATE rung —
 # so exact still beats it. Any is also a predicate; its authored order
@@ -6,7 +6,7 @@ using Any
 # imports `preds`: a library's gate resolves through the library's own
 # static context, so gates do not leak a requirement onto callers.
 using rules
-using Test
+using Base.Test
 
 main() = {
     check("exact outranks the gate", describe(1), 3)

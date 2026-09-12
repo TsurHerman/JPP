@@ -1,0 +1,4 @@
+using policy
+using Base
+using facade
+main() = check("caller named override survives depth", probe(7; bonus = 3), 20)

@@ -2,7 +2,7 @@
 # nothing about the two gates changed — only the authored order did.
 using signed_below
 using rules
-using Test
+using Base.Test
 
 main() = {
     check("the opposite edge flips the winner", g(1), 2)

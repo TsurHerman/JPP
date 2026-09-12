@@ -1,5 +1,0 @@
-# tensors.jpp — decision stub, design pending (waits on memory model).
-# decided: 0-based indexing, row-major (C order). see README, deviation #4.
-# direction (README §11, from MimIR %tensor + julia broadcast): shapes as
-# comptime values in the type; ops build lazy shaped expression objects;
-# fusion at materialization; map_reduce/einsum as the normal form.

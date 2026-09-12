@@ -1,0 +1,7 @@
+using package
+using package.worker
+using Base.Test
+main() = {
+    check("facade and full unit share one authored method", exposed(), 42)
+    check("explicit member import exposes its public unit", hidden(), 42)
+}

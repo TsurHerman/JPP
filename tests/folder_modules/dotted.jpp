@@ -1,0 +1,10 @@
+using governed.governed
+using governed.raw
+using nested.deeper.leaf
+using Base.Test
+
+main() = {
+    check("facade file retains its dotted address", best(), 42)
+    check("sibling files retain their dotted address", raw(), 21)
+    check("deep leaf keeps its dotted address", deep(), 63)
+}

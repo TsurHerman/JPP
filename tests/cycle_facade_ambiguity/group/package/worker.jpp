@@ -1,0 +1,4 @@
+using group.package
+using Base.Any
+export crossed
+crossed(<:Any, ::int64) = 2

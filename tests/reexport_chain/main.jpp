@@ -1,0 +1,3 @@
+using Base
+using api
+main() = check("reexport retains the original private home", exposed(7), 8)

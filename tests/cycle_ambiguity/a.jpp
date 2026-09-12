@@ -1,0 +1,4 @@
+using b
+using Base.Any
+export crossed
+crossed(::int64, <:Any) = 1

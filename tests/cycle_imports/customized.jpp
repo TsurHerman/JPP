@@ -1,0 +1,8 @@
+using override
+using c
+using a
+using Base.Test
+main() = {
+    check("caller override precedes the shared unit", alpha(), 99)
+    check("importing two members deduplicates their unit", left(), 11)
+}

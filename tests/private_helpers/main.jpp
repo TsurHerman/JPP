@@ -1,6 +1,6 @@
 using lib
 using folder
-using Test
+using Base.Test
 export hidden
 hidden(::int64) = 99
 main() = {

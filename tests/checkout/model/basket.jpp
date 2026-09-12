@@ -1,8 +1,7 @@
 using model.line
 export basket, firstItem, secondItem
 
-# Two lines make the current lack of variadic packs/iteration visible.
-basket(a::T, b::T) where T <: Line = makeBasket(a, b)
-makeBasket(a::T, b::T) where T = zig{ .{ .first = a, .second = b } }
-firstItem(bag) = zig{ bag.first }
-secondItem(bag) = zig{ bag.second }
+# The two-line public contract remains; storage is now an ordinary tuple.
+basket(a::T, b::T) where T <: Line = (a, b)
+firstItem(bag) = bag.0
+secondItem(bag) = bag.1

@@ -14,7 +14,9 @@ works. Report documentation conflicts and update status when implementing
 a feature; preserve the ratified semantics unless the task changes them.
 
 - `src/jppc.zig` is the active transpiler: lex, parse, read, normalize,
-  and print Zig data literals. Keep it file-local and context-blind.
+  and print Zig data literals. Keep parsing/normalization file-local and call
+  semantics context-blind; module graph assembly handles paths, facades, and
+  import-cycle units.
 - `src/jpp.zig` owns dispatch, binding, context accumulation, specificity,
   and the order word. These execute at Zig comptime in generated code.
 - Preserve caller-first accumulated context, pointwise dominance rather
@@ -36,12 +38,22 @@ a feature; preserve the ratified semantics unless the task changes them.
   a missing edge is a language promise, not a resolver bug.
   Mutual pairs do not imply a transitive equivalence relation. Keep losing
   candidates needed for other dominance decisions during context collapse.
-- `Base/` supplies library modules; the source tree can shadow their names.
-  Modules implicitly import the small `Base` arithmetic interface after
-  explicit imports, unless `using Base` is already written. Base itself
-  bootstraps without that implicit import. All ordinary context rules apply;
-  there is no special fallback tier. `Any` remains explicitly imported.
-  `design/` contains future syntax, not runnable regression fixtures.
+- `Base/` supplies qualified library modules. Imports are explicit: `using Base`
+  selects Base/Base.jpp's facade, including Any; `using Base.Arithmetic` narrows
+  the interface. Source paths can shadow bundled paths. `using Folder` uses
+  Folder/Folder.jpp when present; `using Folder.*` gathers siblings excluding that
+  facade. Otherwise folders aggregate automatically. Mutual imports form one
+  public dispatch unit; private visibility remains file-local.
+- `export word` without local methods re-exports public imported implementations,
+  or declares a required word when none exist. It supplies no dummy candidate.
+  Check lexical calls/gates even in unused bodies; caller context cannot repair
+  a missing declaration. Preserve raw LOCAL methods and original homes through
+  re-export cycles. Typed universal contracts remain unbuilt.
+- Tuple/record construction and required named calls share one pack model.
+  Preserve source evaluation order; match positionals by index and names by name,
+  without cross-fill. Compare named specificity by name, not declaration index.
+  Explicit static fields retain values; incidental source literals stay data.
+  `design/` is a design notebook, not runnable regression fixtures.
 - Local `name = expression` bindings are immutable aliases of ANF values.
   Preserve evaluation once and in source order, type identity, and the
   method-wide sequential binding environment. Rebinding and forward uses
@@ -61,8 +73,8 @@ changing a mechanism covered by those probes.
 
 Each language case is a folder under `tests/`, with a `test.md` explaining
 the promise. Root modules defining `main` are separate programs with fresh
-contexts. Use `using Test` and `check` for assertions. A case with
-`expect.err` must fail compilation with the specified diagnostic substring;
+contexts. Use `using Base.Test` (or `using Base`) and `check` for assertions.
+A case with `expect.err` must fail compilation with the specified diagnostic substring;
 making it compile is a regression. Add meaningful coverage for changed
 behavior and update the promise catalog when needed. Documentation-only
 changes need a consistency review, not a repeated full test run.

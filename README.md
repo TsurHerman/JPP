@@ -27,7 +27,7 @@ otherwise, assume RATIFIED — decided, not built**:
   syntax yet: the transpiler can't parse it, the semantics engine
   already speaks it.
 - **RATIFIED** — decided design, recorded here, unbuilt. The
-  `design/*.jpp` sketches are written in this future surface.
+  `design/` notebook distinguishes future work from runnable tests.
 - **OPEN** — research (§11).
 
 Status of the major features:
@@ -40,7 +40,7 @@ Status of the major features:
 | predicate gates `where T <: Integer` (sugar for `Integer(T)`); predicates are ordinary words qualed on `::type` | RUNS (where_gate) |
 | predicates DEFINED from predicates (joins/meets), so `where` needs no boolean combinators | RUNS (pred_join) |
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
-| a small implicit `Base` import; arithmetic remains ordinary library code | RUNS (base_import, base_shadow; negative: base_missing, base_mixed) |
+| explicit Base namespace/facade, recursive folder imports, wildcard siblings, and public import-cycle units | RUNS (base_folder, folder_modules, cycle_imports, cycle_folder; facade and privacy negatives) |
 | immutable local bindings name ANF values without repeating calls | RUNS (local_bindings, checkout; binding_* frontend rejection cases) |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
@@ -53,13 +53,13 @@ Status of the major features:
 | delegation `M.f` (select in M, propagate caller) | VALIDATED (machinery) — no surface |
 | specificity policy as shadowable word; stratum-0 self-reference break | VALIDATED (probe + machinery) |
 | selectors `{}`, value dispatch, runtime enum bridge, int range arms | VALIDATED (probes) — surface supports exact type values; general value selectors remain unbuilt |
-| binder: two-section packs, named args dispatching, spelling convergence | VALIDATED (probe) — no surface |
+| tuples/records, static projections, two-section named calls, name-aligned dispatch and bound-instance convergence | RUNS (pack_values, pack_static, named_arguments, named_specificity, named_instances, named_context) |
 | parametric type-words, pattern binding, re-application provenance | VALIDATED (probe) |
-| comptime `for` generating methods (staged codegen), promotion/convert corpus, braces in surface | RATIFIED — design/*.jpp only |
+| comptime `for` generating methods (staged codegen), promotion/convert corpus, braces in surface | RATIFIED — design notebook; surface unbuilt |
 | repeated type binder = identity; `where T == S` = mutual direct relation; all predicate conjuncts participate in dominance | RUNS (type_bindings, where_gate, gate_conjunction; negative: pointwise_gap) |
 | tiering & hot-swap, symbol-name-as-cache-key, sessions | RATIFIED (soprobe touches the dlsym venue) |
 | memory model, threading, stdlib strategy, tensors, macros, ledger tooling | OPEN (§11) |
-| explicit callable dependency contracts, separate from implementations | OPEN — [research proposal](design/word_contracts.md); calls currently lack this lexical check |
+| export-only word declarations, imported re-exports, and lexical call/gate checks | RUNS (declaration_tunnel, reexport_chain, override; undeclared and missing-implementation negatives); typed contracts remain OPEN |
 
 ---
 
@@ -90,40 +90,35 @@ Status of the major features:
   caller's. The entitlement dial: `using` takes standing to shadow the
   selection; `M.f` waives selection at one call site (meaning inside
   still flows down).
-- **Folders are modules (ratified, validated in the suite).** A folder
-  containing `.jpp` files IS a module named after the folder: `using
-  ground` aggregates the exported words of the files inside — real
-  word-merging, methods concatenated in child order (`jpp.MergedWord`;
-  data makes merging concatenation), the aggregate's STATIC folding in
-  the children's. Files remain addressable by dotted path (`using
-  ground.ints`); sub-folders nest the rule. TAKEOVER: if
-  `<dir>/<dir>.jpp` exists, no aggregate is synthesized — that file IS
-  the folder's module and governs what the folder exposes (python's
-  `__init__`, rust's `mod.rs`, jpp-shaped). A PROGRAM is a tree-root
-  module that defines `main` (filename is free). The generated
-  harness starts a fresh context at each such module — that is how
-  two worlds share libraries without leaking `using` lists.
-- **Base is the jpp library (ratified).** `Base/` is a second source
-  root joined into every tree; modules keep their file names
-  (`Base/Test.jpp` → `using Test`). A tree module of the same name
-  shadows it. Zig's `std` exists only inside `zig{}` — a different
-  name, a different plane.
-- **A small implicit Base import (RUNS).** Each source module except `Base`
-  receives `using Base` after its explicit imports. An explicit `using Base`
-  retains its written position and is not added again. `Base` itself has
-  only its authored imports, allowing it to bootstrap. A source-tree
-  `Base.jpp` can replace the library's `Base/Base.jpp` in full.
-  Arithmetic remains ordinary exported library code, governed by existing
-  fusion, specificity, and caller-first accumulation. This includes normal
-  import priority: an inherited Base entry can precede a deeper module's
-  imports, just like any other caller import; there is no special fallback
-  tier. Callers put their intended overrides ahead of Base.
-  The initial interface exports `+`, `-`, `*`, `/`, and `div`. Same-type
-  `int64` addition, subtraction, and multiplication wrap; `float64` operations
-  use ordinary floating arithmetic. `/` returns `float64` for either pair;
-  `div(int64, int64)` truncates toward zero. Other widths and mixed-type
-  promotion remain unbuilt. `Any` and its authored order still require
-  `using Any`; other Base-directory modules also remain explicit imports.
+- **Folders expose packages (RUNS).** A file `folder/worker.jpp` is
+  `folder.worker`. `using folder` uses `folder/folder.jpp` as its facade when
+  present, exposing that file's exports. Otherwise it aggregates the folder.
+  `using folder.*` explicitly collects the other files and subfolder interfaces,
+  excluding the facade itself. Subfolder facades control their own interfaces.
+  Individual files remain addressable; `folder.folder` names the facade explicitly.
+  Same-source `folder.jpp` plus `folder/` is an ambiguous path and is rejected.
+  A root file defining `main` is a program; each program starts a fresh context.
+- **Base is an explicit namespace (RUNS).** Write `using Base` to import the
+  public interface selected by `Base/Base.jpp`. It uses `Base.*` and re-exports
+  arithmetic, Any and its authored order, Tuple utilities, and check. Narrow
+  imports such as `using Base.Arithmetic` or `using Base.Test` are also available.
+  No import is inserted automatically. A file must declare its own dependencies;
+  a program's imports do not repair a library's undeclared calls.
+  A source `Base/Any.jpp` replaces that bundled leaf. A source-root `Base.jpp`
+  replaces the bundled root interface; this is cross-root shadowing, not a
+  same-source file/folder collision. `Base.Arithmetic` supplies `+`, `-`, `*`,
+  `/`, and `div`; Base no longer ambiguously names an arithmetic leaf.
+  Int64 +, - and * wrap; float64 arithmetic is ordinary floating arithmetic.
+  `/` returns float64 for either same-type pair; int64 div truncates toward zero.
+  Mixed promotion and other widths remain unbuilt. All imports retain ordinary
+  caller-first context priority; put an intended caller override ahead of Base.
+- **Mutual imports form one unit (RUNS).** Import cycles, including longer
+  cycles through folders, share one public dispatch position. Importing an ordinary
+  member exposes the unit's public words; a facade still restricts its package
+  interface to authored exports, even when it participates in a cycle. Competing maxima in that unit are
+  ambiguous at the call, independently of entry member. Private visibility
+  remains file-local, and original method homes survive composition. This is
+  module-graph connectivity, unrelated to the pairwise `<:` relation.
 - **Exports gate everything (ratified).** A word callable from outside
   its module — by fusion (`using`) OR by qualification (`M.f`) — must
   be labeled `export`. One closed interface per module; internals
@@ -133,7 +128,13 @@ Status of the major features:
   source. This permits private helpers to run without allowing caller
   shadowing or downstream capture. Folder aggregation preserves each
   method's declaration home for body execution and predicate applicability
-  (`private_helpers`, `private_downstream`, `folder_scope`).
+  (`private_helpers`, `private_downstream`, `folder_scope`). Imports do not
+  automatically re-export their dependencies. An exported word with no local
+  methods forwards public imported implementations; when none exist it is a
+  declaration-only dependency. It never becomes a dummy candidate. Authored
+  local methods remain that file's own contribution. Re-export traversal reads
+  raw authored sets, preserves homes, and handles cyclic declarations finitely.
+  A facade can therefore select its package API without wrapper functions.
 - **Ordered context (ratified, supersedes the hard extension-only
   rule).** A context is an ordered list `[caller's chain..., imports in
   order...]`. Resolution: specificity first; on rank ties, earlier
@@ -148,14 +149,12 @@ Status of the major features:
   outrank even the callee's own imports. Generic code (`sum` calling
   `+`) sees the caller's extensions. Context is a compile-time
   specialization parameter, monomorphized away — never a runtime value.
-  **Current gap:** an unqualified body call is emitted as a word name even
-  when the declaring module neither defines nor imports that word.
-  `override` currently exercises this behavior. `caller_context` now has
-  a source-visible `+` through implicit Base, but general call dependencies
-  still lack a checked interface. The proposed correction
-  is a visible callable contract with context-selected implementations,
-  not a caller inventing a lexical definition. Contract semantics remain
-  OPEN; see [the research note](design/word_contracts.md).
+  **Lexical dependency checking (RUNS):** called words and gate words must be
+  defined, explicitly imported, or declared by export in their source scope.
+  This checks unused bodies too. Emitted REQUIREMENTS data records those names;
+  a caller can select implementations but cannot introduce missing declarations.
+  Export-only words do not prove universal coverage. Stronger argument/result
+  contracts remain OPEN in [word contracts](design/word_contracts.md).
 - **Compiled instances are keyed by `(function, argument types, context
   methods actually reached)`.** All keys static. Editing a module
   invalidates exactly the instances that reached it — invalidation flows
@@ -170,7 +169,7 @@ Status of the major features:
 - `for` at top level runs at comptime and can *generate methods* —
   this is jpp's `eval`: staged codegen, closed by the build. (RATIFIED
   — design surface only; the v1 parser has no `for`. The demo's ground
-  families are written out by hand; `design/*.jpp` uses the loops.)
+  families are written out by hand; the design notebook discusses staged generation.)
 - Functions are comptime values (`for op in (+, -, *) { ... }` — same
   status: ratified, not yet parseable).
 - Integer literals are comptime ints (arbitrary precision, adapt to the
@@ -235,7 +234,7 @@ F{a::int32, B<:Integer, mode}(c::T1, d<:Real, rest...; eps::float64)::R where P(
   comptime fields. Thus `f(int64)` can select a different method from
   `f(float64)` without treating integer data as static selectors. General
   runtime value selection and bridging remain in the future brace surface.
-  Positional tuple, then `;`, then named record (named surface unbuilt).
+  Positional tuple, then `;`, then named record (required named inputs RUN).
   No cross-fill; declared order is canonical.
 - **Return** optional; absent = inferred (body mirrored in context).
 - **`where` — the last gate**: ONE comptime predicate over everything
@@ -307,7 +306,7 @@ each concrete input's type and value, with no boxing or erased runtime
 representation.
 
 **Any is library code, not a builtin type or compiler wildcard (RUNS).**
-`using Any` imports `Base/Any.jpp`, which defines:
+`using Base.Any` (or the Base facade) imports `Base/Any.jpp`, which defines:
 
 ```jpp
 export Any, <:
@@ -419,7 +418,23 @@ from the value arguments; supplied at call site as `f{T}(x)`:
 | `f{Integer}(x)`    | anonymous predicate slot (name unneeded)      |
 | `f{int32}(x)`      | EXACT comptime value — most specific          |
 
-Variadic and tuples (ratified):
+**Tuple and named values (RUNS).** `()` is empty, `(x,)` is a singleton,
+`(x)` remains grouping, and tuples can mix element types without promotion.
+`(; tax = x, freight = y)` constructs a structural named value; `(x; label = y)`
+constructs both sections. Named identity uses field names/types/static values,
+independent of spelling order. Named value storage sorts names; selected bound
+packs use method declaration order. Neither specifies a foreign ABI. `.0` and
+`.name` project static fields. Base.Tuple supplies len, first and tail. Producers
+run once in source order; canonicalization only routes their completed results.
+
+**Static fields (RUNS).** Explicit comptime fields, including native integer
+selectors, retain their actual values through packing, projection, and identity
+forwarding. Runtime data and ordinary source literals contribute only their types
+to specialization. A static result does not erase a call's preceding runtime
+effects. General static arithmetic, brace syntax, and callable aliases are later
+work. See [packs](design/packs.md) for the field and dispatch decision tables.
+
+Variadic and tuples (ratified; rest/splat surface remains unbuilt):
 
 - `f{TT...}` / `f(args...)` in definition position: remaining slots bind
   as ONE tuple. Call-side splat `t...` is the inverse.
@@ -446,12 +461,11 @@ Variadic and tuples (ratified):
   Splat is a cast, not a computation: `f(t)` wraps t as a one-field
   pack, `f(t...)` uses t AS the pack. Consequences: named fields are
   keyword arguments that PARTICIPATE IN DISPATCH (julia's kwargs
-  don't); uniform `fn(ctx, pack)` signatures ease musttail. Named-field
-  specificity rules: parked until kwargs land. This ratifies what the
+  don't); uniform `fn(ctx, pack)` signatures ease musttail. Named constraints compare by field name, independent of declaration order (RUNS). This ratifies what the
   emission already did — `jpp.call(ctx, "f", .{a, b})` was always
   unary.
 - **The pack is two sections; the binder is the semantic layer
-  (ratified, validated: `spike/binderprobe.zig`).** A pack is an
+  (RUNS; also validated by `spike/binderprobe.zig`).** A pack is an
   ordered TUPLE (positional) followed by a RECORD (named). The
   convention holds at call sites and in definitions: positional slots
   are a prefix, `;` opens the named section (julia's kwarg separator —
@@ -462,8 +476,8 @@ Variadic and tuples (ratified):
   THEMSELVES (a record is a set); the method's declared order is the
   canonical form. The call-site protocol: (1) the transpiler emits the
   RAW pack exactly as written — positionals as numeric field names
-  `.@"0"`, `.@"1"`, named verbatim (zig literals reject duplicate
-  names, so double-fill is unwritable); (2) each candidate method's
+  `.@"0"`, `.@"1"`, named verbatim (the frontend rejects duplicate
+  named entries before emission); (2) each candidate method's
   BINDER attempts to construct its parameter struct from the raw pack —
   calling a method IS constructing its parameter struct, the signature
   IS the pack constructor; failure (unknown name, cross-fill, arity) is
@@ -568,7 +582,7 @@ Both are memoized (free via Zig's comptime call cache);
 the same key while in progress answers false (no self-supporting
 derivations; same rule as Rust's inductive trait cycles, arrived at via
 the `recursion_free` pattern from Signals.jl). Prefer domain constraints
-over reflection guards where the rule table is total (see `reals.jpp`
+over reflection guards where the rule table is total (see the future numerics design
 operators: `where A <: Real`, not `exists`-guards).
 
 ## 6. Lowering — braces, `call`, `resolve`
@@ -736,7 +750,7 @@ Boundary contract:
   ints own same/mixed-signedness (`int32+uint64 -> uint64`), floats own
   float×float, `reals` owns cross-domain (ints dissolve into floats).
 - Promotion is not language magic: the promoting operators are ordinary
-  generated methods in `reals.jpp`. A context that doesn't import them
+  generated methods in a future numeric library ([design](design/numerics.md)). A context that doesn't import them
   has no mixed-type arithmetic. Rigor variants (e.g. `strict_promote`)
   are context choices, not forks.
 - In-family `convert` lives with the family; cross-domain in `reals`;
@@ -1084,8 +1098,8 @@ print/algebra demo):
   structs with return inference against runtime parameters), driver
   (defaults: tests/dispatch -> gen/, machinery copied alongside,
   harness generated). Source trees are discovered recursively; folder
-  aggregates, takeover modules, dotted imports, and Base library
-  modules are supported. Generated module filenames and Zig aliases use
+  aggregates, optional facades, sibling wildcards, public cyclic-import units,
+  dotted imports, and the Base namespace are supported. Generated module filenames and Zig aliases use
   the same byte escaping, preserving `Base`/`base` and `a.b`/`a_b` identities
   on case-insensitive filesystems and avoiding driver/runtime collisions
   (`module_encoding`).
@@ -1102,11 +1116,11 @@ print/algebra demo):
   design review in [word contracts](design/word_contracts.md).
 - [Checkout](tests/checkout/test.md) is a larger RUNS case: eighteen source
   modules price thirteen two-line baskets in retail/member contexts.
-  Arithmetic comes from implicit Base; the member policy changes
-  discounts and freight through deeper imports. Native record values cross
-  ground boundaries. Local bindings let the quote pipeline name intermediate
-  results in one body. The case study records ergonomics and limits;
-  export-only dependency declarations remain OPEN.
+  Arithmetic comes from explicit Base imports; the member policy changes
+  discounts and freight through deeper imports. Basket storage is a tuple and
+  the quote is assembled through required named fields with surface projection.
+  Local bindings name intermediate results; export-only dependencies now RUN.
+  The two-line public basket contract remains until varargs are implemented.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across
@@ -1123,8 +1137,8 @@ print/algebra demo):
   The negative cases also enforce ambiguity and export-gating errors.
 - V1 scope cuts (deliberate): no selectors/braces or `M.f` delegation
   in the surface (validated in machinery/probes), no promotion,
-  no named-arg syntax, reduced
-  internal AST (alignment with src/ast.zig's three layers = debt),
+  no varargs, splats, keyword defaults, or nominal record declaration syntax;
+  reduced internal AST (alignment with src/ast.zig's three layers = debt),
   no spans/hashes emitted yet. General value literals/patterns in
   signatures, type constructors with selectors, and arbitrary static
   evaluation depending on runtime data remain unimplemented. The live
@@ -1141,14 +1155,14 @@ print/algebra demo):
 - **Callable dependency contracts:** require a source-visible surface for
   body calls while preserving caller-first implementation selection.
   Research favors typed declarations without mandatory catch-all bodies;
-  syntax, contract identity/fusion, and generic call obligations are not
-  yet ratified or implemented. [Options and acceptance cases](design/word_contracts.md).
+  syntax, contract identity/fusion, and generic call obligations remain
+  unbuilt. Export-only declarations and lexical checking already RUN. [Remaining contract questions](design/word_contracts.md).
 - **Next phase (declared):** the boundary-testing phase — write the
   promise catalog (`tests/README.md`) into executable claims. The
   negative-compile harness RUNS (`expect.err` in a case folder:
   compile must fail and the error must contain the file's text —
   `ambiguity`, `export_gate`). Remaining rows need surface features
-  first (`M.f`, braces, named args). Predicate gates already have
+  next (`M.f`, braces, varargs). Predicate gates already have
   surface coverage. Once the phase completes,
   decide: THREADING model, and the STANDARD LIBRARY
   strategy — stay on zig std inside `zig{}` (grounds call it directly),

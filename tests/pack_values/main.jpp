@@ -1,0 +1,37 @@
+using Base
+export kind, sameType
+kind(::T) where T = T
+sameType(a::T, b::S) where T, S = zig{ T == S }
+mark(x::int64) = zig{ blk: { const S = struct { var value: i64 = 0; }; S.value = S.value * 10 + x; break :blk S.value; } }
+voidValue()::nothing = zig{ {} }
+main() = {
+    check("empty tuple length", len(()), 0)
+    check("singleton distinct from grouping", sameType((1,), (1)), false)
+    check("empty tuple distinct from nothing", sameType((), voidValue()), false)
+    mixed = (11, 2.5, "hi", int64)
+    check("heterogeneous tuple length", len(mixed), 4)
+    check("position zero", mixed.0, 11)
+    check("position one", mixed.1, 2.5)
+    check("position two", mixed.2, "hi")
+    check("static type field", mixed.3, int64)
+    check("first is ordinary library code", first(mixed), 11)
+    check("tail renumbers", tail(mixed).0, 2.5)
+    check("tail keeps type identity", tail(mixed).2, int64)
+    check("singleton tail is empty", len(tail((int64,))), 0)
+    check("nested numeric projection", ((3, 4), (5,)).0.1, 4)
+    check("data does not specialize tuple identity", sameType((1, 2.0), (9, 8.0)), true)
+    check("types do specialize tuple identity", sameType((int64,), (float64,)), false)
+    check("named order is not identity", sameType((; z = 1, a = 2.0), (; a = 3.0, z = 4)), true)
+    check("field names are part of identity", sameType((; a = 1), (; b = 1)), false)
+    check("named field is not a positional field", sameType((; a = 1), (1,)), false)
+    fields = (; z = mark(1), a = mark(2))
+    check("first producer runs first", fields.z, 1)
+    check("second producer runs once after first", fields.a, 12)
+    pair = (mark(3), mark(4))
+    check("tuple producer order", pair.1, 1234)
+    check("projection does not repeat producer", fields.z, 1)
+    both = (7; label = "mixed", kind = float64)
+    check("two-section value positional", both.0, 7)
+    check("two-section value named", both.label, "mixed")
+    check("two-section static named", both.kind, float64)
+}

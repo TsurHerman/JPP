@@ -1,4 +1,3 @@
-# Current gap: no declaration/import states the dependency on tag.
-# This fixture proves context selection; see design/word_contracts.md.
-export probe
+# The exported word is a dependency declaration, with no local candidate.
+export probe, tag
 probe(x) = tag(x)

@@ -1,5 +1,6 @@
-using Any
-using Test
+export <:
+using Base.Any
+using Base.Test
 
 pick(::T) where T = 0
 pick(<:Any) = 1

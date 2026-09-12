@@ -1,6 +1,6 @@
 using narrow
 using lib
-using Test
+using Base.Test
 
 main() = {
     check("caller predicate still accepts integers", pick(7), 2)

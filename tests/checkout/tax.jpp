@@ -1,3 +1,4 @@
+using Base.Arithmetic
 using arithmetic
 using money
 export taxCharge, taxRate

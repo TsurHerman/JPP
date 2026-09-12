@@ -1,7 +1,7 @@
 # world B: the SAME modules, opposite order — the winner flips.
 using second
 using first
-using Test
+using Base.Test
 
 main() = {
     check("second leads: tag answers 2", tag(0), 2)

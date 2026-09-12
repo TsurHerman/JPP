@@ -1,0 +1,5 @@
+export deep, scoped
+
+deep() = 63
+private_value() = 84
+scoped() = private_value()

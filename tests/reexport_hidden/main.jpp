@@ -1,0 +1,2 @@
+using api
+main() = hidden(1)

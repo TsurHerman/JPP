@@ -1,0 +1,3 @@
+using Base
+using facade
+main() = check("library named fallback", probe(7; bonus = 3), 10)

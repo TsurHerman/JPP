@@ -1,4 +1,4 @@
-using Test
+using Base.Test
 
 pack(x::T) where T = zig{ .{ .kind = T, .value = x, .version = @as(i64, 1) } }
 nest(item) = zig{ .{ .item = item } }

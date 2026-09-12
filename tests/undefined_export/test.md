@@ -1,3 +1,5 @@
-# undefined_export
+# An export declares, but does not implement
 
-An export list cannot manufacture a definition. Exporting an absent name must fail before an importing signature can treat it as an existing class value.
+`claims` exports Missing without a body. That creates a usable word identity,
+not a candidate. Calling it with no implementation must still fail. This replaces
+the previous rejection of all declaration-only exports after the tunnel decision.

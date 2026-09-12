@@ -94,7 +94,7 @@ fn lex(src: []const u8, toks: []Tok) LexError![]Tok {
             const start = i;
             while (i < src.len and std.ascii.isDigit(src[i])) i += 1;
             var isf = false;
-            if (i + 1 < src.len and src[i] == '.' and std.ascii.isDigit(src[i + 1])) {
+            if (i + 1 < src.len and src[i] == '.' and std.ascii.isDigit(src[i + 1]) and (n == 0 or toks[n - 1].kind != .dot)) {
                 isf = true;
                 i += 1;
                 while (i < src.len and std.ascii.isDigit(src[i])) i += 1;
@@ -172,15 +172,19 @@ const Node = union(enum) {
     lit_s: []const u8, // raw (escapes preserved verbatim, re-emitted verbatim)
     lit_b: bool,
     ident: []const u8,
-    call: struct { callee: []const u8, args: []*Node },
+    call: struct { callee: []const u8, args: []Arg },
+    pack: []Arg,
+    project: struct { value: *Node, field: []const u8 },
     bind: struct { name: []const u8, value: *Node },
     block: []*Node,
 };
 
+const Arg = struct { label: []const u8 = "", value: *Node };
+
 // `pred` is the slot-position form `x<:Integer`. README §4: it is sugar
 // for `x::T where Integer(T)` with T fresh, so it lowers to a binder
 // plus a gate and needs nothing new from the machinery.
-const Param = struct { name: []const u8, anonymous: bool = false, ty: ?[]const u8, pred: ?[]const u8 = null };
+const Param = struct { name: []const u8, named: bool = false, anonymous: bool = false, ty: ?[]const u8, pred: ?[]const u8 = null };
 
 const Where = struct {
     vars: []const []const u8,
@@ -252,8 +256,11 @@ const Parser = struct {
                     var path = (try p.expect(.ident)).text;
                     while (p.peek().kind == .dot) {
                         _ = p.next();
-                        const seg = try p.expect(.ident);
+                        const seg = p.next();
+                        const wildcard = seg.kind == .op and std.mem.eql(u8, seg.text, "*");
+                        if (seg.kind != .ident and !wildcard) return error.Parse;
                         path = try std.fmt.allocPrint(p.a, "{s}.{s}", .{ path, seg.text });
+                        if (wildcard) break;
                     }
                     try usings.append(p.a, path);
                 },
@@ -278,14 +285,6 @@ const Parser = struct {
             }
             p.skipNl();
         }
-        // Ordinary import syntax supplies the foundation; dispatch still
-        // belongs entirely to the comptime machinery. Base bootstraps itself.
-        if (!std.mem.eql(u8, name, "Base")) {
-            const explicit_base = for (usings.items) |u| {
-                if (std.mem.eql(u8, u, "Base")) break true;
-            } else false;
-            if (!explicit_base) try usings.append(p.a, "Base");
-        }
         return .{ .name = name, .usings = usings.items, .exports = exports.items, .defs = defs.items };
     }
 
@@ -293,30 +292,36 @@ const Parser = struct {
         const name = p.next().text;
         _ = try p.expect(.lparen);
         var params = try std.ArrayList(Param).initCapacity(p.a, 8);
-        if (p.peek().kind != .rparen) {
-            while (true) {
-                if (p.peek().kind != .ident and p.peek().kind != .dcolon and p.peek().kind != .subtype) return error.Parse;
-                const spelling = if (p.peek().kind == .ident) p.next().text else "_";
-                const anonymous = std.mem.eql(u8, spelling, "_");
-                const pn = if (anonymous) try std.fmt.allocPrint(p.a, "__slot{d}", .{params.items.len}) else spelling;
-                var ty: ?[]const u8 = null;
-                var pred: ?[]const u8 = null;
-                if (p.peek().kind == .dcolon) {
-                    _ = p.next();
-                    ty = (try p.expect(.ident)).text;
-                } else if (p.peek().kind == .subtype) {
-                    // `::` takes a TYPE, `<:` takes a PREDICATE — rank is
-                    // read off the symbol, so the two never share one
-                    _ = p.next();
-                    pred = (try p.expect(.ident)).text;
-                }
-                try params.append(p.a, .{ .name = pn, .anonymous = anonymous, .ty = ty, .pred = pred });
-                if (p.peek().kind == .comma) {
-                    _ = p.next();
-                    continue;
-                }
-                break;
+        var named = false;
+        p.skipNlOnlyNewlinesBeforeBody();
+        while (p.peek().kind != .rparen) {
+            if (p.peek().kind == .semi) {
+                if (named) return bindingError(error.DuplicateNamedSection, ";");
+                named = true;
+                _ = p.next();
+                p.skipNlOnlyNewlinesBeforeBody();
+                if (p.peek().kind == .rparen) break;
             }
+            if (p.peek().kind != .ident and p.peek().kind != .dcolon and p.peek().kind != .subtype) return error.Parse;
+            const spelling = if (p.peek().kind == .ident) p.next().text else "_";
+            const anonymous = std.mem.eql(u8, spelling, "_");
+            if (named and anonymous) return bindingError(error.NamedInputNeedsName, spelling);
+            const pn = if (anonymous) try std.fmt.allocPrint(p.a, "__slot{d}", .{params.items.len}) else spelling;
+            var ty: ?[]const u8 = null;
+            var pred: ?[]const u8 = null;
+            if (p.peek().kind == .dcolon) {
+                _ = p.next();
+                ty = (try p.expect(.ident)).text;
+            } else if (p.peek().kind == .subtype) {
+                _ = p.next();
+                pred = (try p.expect(.ident)).text;
+            }
+            try params.append(p.a, .{ .name = pn, .named = named, .anonymous = anonymous, .ty = ty, .pred = pred });
+            p.skipNlOnlyNewlinesBeforeBody();
+            if (p.peek().kind == .comma) {
+                _ = p.next();
+                p.skipNlOnlyNewlinesBeforeBody();
+            } else if (p.peek().kind != .semi) break;
         }
         _ = try p.expect(.rparen);
         var ret: ?[]const u8 = null;
@@ -392,18 +397,68 @@ const Parser = struct {
     }
 
     fn parseExpr(p: *Parser, min_prec: u8) anyerror!*Node {
-        var lhs = try p.parsePrimary();
+        var lhs = try p.parsePostfix();
         while (p.peek().kind == .op) {
             const prec = opPrec(p.peek().text) orelse return error.Parse;
             if (prec < min_prec) break;
             const op = p.next().text;
             const rhs = try p.parseExpr(prec + 1);
-            const args = try p.a.alloc(*Node, 2);
-            args[0] = lhs;
-            args[1] = rhs;
+            const args = try p.a.alloc(Arg, 2);
+            args[0] = .{ .value = lhs };
+            args[1] = .{ .value = rhs };
             lhs = try p.node(.{ .call = .{ .callee = op, .args = args } });
         }
         return lhs;
+    }
+
+    fn parsePostfix(p: *Parser) anyerror!*Node {
+        var value = try p.parsePrimary();
+        while (p.peek().kind == .dot) {
+            _ = p.next();
+            const field = p.next();
+            if (field.kind != .ident and field.kind != .int) return bindingError(error.InvalidProjection, field.text);
+            const name = if (field.kind == .int)
+                try std.fmt.allocPrint(p.a, "{d}", .{std.fmt.parseInt(usize, field.text, 10) catch return error.Parse})
+            else
+                field.text;
+            value = try p.node(.{ .project = .{ .value = value, .field = name } });
+        }
+        return value;
+    }
+
+    // The same two-section grammar builds call packs and tuple/record values.
+    // The opening parenthesis was consumed by the caller.
+    fn parseEntries(p: *Parser) anyerror!struct { args: []Arg, is_pack: bool } {
+        var args = try std.ArrayList(Arg).initCapacity(p.a, 8);
+        var named = false;
+        var separated = false;
+        p.skipNlOnlyNewlinesBeforeBody();
+        while (p.peek().kind != .rparen) {
+            if (p.peek().kind == .semi) {
+                if (named) return bindingError(error.DuplicateNamedSection, ";");
+                named = true;
+                separated = true;
+                _ = p.next();
+                p.skipNlOnlyNewlinesBeforeBody();
+                if (p.peek().kind == .rparen) break;
+            }
+            var label: []const u8 = "";
+            if (named) {
+                label = (try p.expect(.ident)).text;
+                _ = try p.expect(.eq);
+                for (args.items) |arg| if (std.mem.eql(u8, label, arg.label)) return bindingError(error.DuplicateNamedArgument, label);
+                p.skipNlOnlyNewlinesBeforeBody();
+            }
+            try args.append(p.a, .{ .label = label, .value = try p.parseExpr(0) });
+            p.skipNlOnlyNewlinesBeforeBody();
+            if (p.peek().kind == .comma) {
+                separated = true;
+                _ = p.next();
+                p.skipNlOnlyNewlinesBeforeBody();
+            } else if (p.peek().kind != .semi) break;
+        }
+        _ = try p.expect(.rparen);
+        return .{ .args = args.items, .is_pack = separated or args.items.len != 1 };
     }
 
     fn parsePrimary(p: *Parser) anyerror!*Node {
@@ -429,27 +484,16 @@ const Parser = struct {
                 _ = p.next();
                 if (p.peek().kind == .lparen) {
                     _ = p.next();
-                    var args = try std.ArrayList(*Node).initCapacity(p.a, 8);
-                    if (p.peek().kind != .rparen) {
-                        while (true) {
-                            try args.append(p.a, try p.parseExpr(0));
-                            if (p.peek().kind == .comma) {
-                                _ = p.next();
-                                continue;
-                            }
-                            break;
-                        }
-                    }
-                    _ = try p.expect(.rparen);
-                    return p.node(.{ .call = .{ .callee = t.text, .args = args.items } });
+                    const entries = try p.parseEntries();
+                    return p.node(.{ .call = .{ .callee = t.text, .args = entries.args } });
                 }
                 return p.node(.{ .ident = t.text });
             },
             .lparen => {
                 _ = p.next();
-                const e = try p.parseExpr(0);
-                _ = try p.expect(.rparen);
-                return e;
+                const entries = try p.parseEntries();
+                if (!entries.is_pack) return entries.args[0].value;
+                return p.node(.{ .pack = entries.args });
             },
             .lbrace => {
                 _ = p.next();
@@ -497,7 +541,7 @@ fn isTVar(d: Def, name: []const u8) bool {
 // ---------------------------------------------------------------- normalizer (ANF)
 
 const VR = union(enum) { param_type: usize, name: []const u8, param: usize, local: usize, lit_i: i64, lit_f: f64, lit_s: []const u8, lit_b: bool };
-const OpIR = struct { callee: []const u8, args: []VR };
+const OpIR = struct { kind: enum { call, pack, project } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, field: []const u8 = "" };
 const FlatIR = struct { ops: []OpIR, result: VR };
 const Local = struct { name: []const u8, value: VR };
 
@@ -513,12 +557,29 @@ fn hasBinding(n: *Node, name: []const u8) bool {
             for (items) |item| if (hasBinding(item, name)) break :blk true;
             break :blk false;
         },
-        .call => |c| blk: {
-            for (c.args) |arg| if (hasBinding(arg, name)) break :blk true;
-            break :blk false;
-        },
+        .call => |c| hasBindingEntries(c.args, name),
+        .pack => |args| hasBindingEntries(args, name),
+        .project => |proj| hasBinding(proj.value, name),
         else => false,
     };
+}
+
+fn hasBindingEntries(args: []Arg, name: []const u8) bool {
+    for (args) |arg| if (hasBinding(arg.value, name)) return true;
+    return false;
+}
+
+fn flattenEntries(a: std.mem.Allocator, entries: []Arg, def: Def, ops: *std.ArrayList(OpIR), locals: *std.ArrayList(Local), op: OpIR) !VR {
+    var result = op;
+    result.args = try a.alloc(VR, entries.len);
+    const labels = try a.alloc([]const u8, entries.len);
+    for (entries, 0..) |arg, i| {
+        result.args[i] = try flattenNode(a, arg.value, def, ops, locals);
+        labels[i] = arg.label;
+    }
+    result.labels = labels;
+    try ops.append(a, result);
+    return .{ .local = ops.items.len - 1 };
 }
 
 fn flatten(a: std.mem.Allocator, def: Def) !FlatIR {
@@ -551,9 +612,14 @@ fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpI
             // First-class callable local values need a separate application
             // representation; never silently call a same-spelled module word.
             if (hasBinding(def.body.?, c.callee)) return bindingError(error.LocalNotCallable, c.callee);
-            const args = try a.alloc(VR, c.args.len);
-            for (c.args, 0..) |arg, i| args[i] = try flattenNode(a, arg, def, ops, locals);
-            try ops.append(a, .{ .callee = c.callee, .args = args });
+            for (def.params) |prm| if (std.mem.eql(u8, prm.name, c.callee)) return bindingError(error.LocalNotCallable, c.callee);
+            return flattenEntries(a, c.args, def, ops, locals, .{ .callee = c.callee, .args = &.{} });
+        },
+        .pack => |entries| return flattenEntries(a, entries, def, ops, locals, .{ .kind = .pack, .args = &.{} }),
+        .project => |proj| {
+            const args = try a.alloc(VR, 1);
+            args[0] = try flattenNode(a, proj.value, def, ops, locals);
+            try ops.append(a, .{ .kind = .project, .args = args, .field = proj.field });
             return .{ .local = ops.items.len - 1 };
         },
         .block => |items| {
@@ -629,7 +695,7 @@ fn localWord(a: std.mem.Allocator, m: Mod, name: []const u8) ![]const u8 {
     return name;
 }
 
-fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
+fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name: ?[]const u8, is_facade: bool) !void {
     o.add("// GENERATED by jppc from {s} — do not edit.\n", .{m.name});
     o.add("const std = @import(\"std\");\n", .{});
     o.add("const jpp = @import(\"jpp.zig\");\n", .{});
@@ -639,15 +705,36 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
         o.add("const m_{s} = @import(\"m_{s}.zig\");\n", .{ alias, alias });
     }
     o.add("\nconst this_module = @This();\n", .{});
+    if (unit_name) |unit| o.add("pub const {s} = @import(\"u_{s}.zig\");\n", .{ if (is_facade) "DISPATCH_HOME" else "UNIT", try aliasOf(a, unit) });
     o.add("pub const STATIC = .{{ this_module", .{});
     for (m.usings) |u| o.add(", m_{s}", .{try aliasOf(a, u)});
     o.add(" }};\n", .{});
     o.add("pub const MODULE_NAME = \"{s}\";\n", .{m.name});
     o.add("pub const DECLARED = .{{", .{});
     for (m.defs) |d| o.add("\"{s}\",", .{d.name});
+    for (m.exports) |x| o.add("\"{s}\",", .{x});
     o.add(" }};\npub const EXPORTED = .{{", .{});
     for (m.exports) |x| o.add("\"{s}\",", .{x});
-    o.add(" }};\ncomptime {{ jpp.validateExports(DECLARED, EXPORTED); }}\n", .{});
+    o.add(" }};\n", .{});
+    // Lexical dependency metadata is emitted without inspecting any imports.
+    // The machinery checks even unused bodies against their declaration home.
+    o.add("pub const REQUIREMENTS = .{{\n", .{});
+    for (m.defs, 0..) |d, i| {
+        o.add("    .{{ .owner = \"{s}\", .words = &[_][]const u8{{", .{d.name});
+        if (flats[i]) |flat| for (flat.ops) |op| {
+            if (op.kind == .call) o.add("\"{s}\",", .{op.callee});
+        };
+        for (d.params) |prm| if (prm.pred) |pred| o.add("\"{s}\",", .{pred});
+        if (d.where_clause) |w| for (w.gates) |g| o.add("\"{s}\",", .{g[1]});
+        o.add(" }} }},\n", .{});
+    }
+    o.add("}};\ncomptime {{ for (REQUIREMENTS) |r| jpp.validateCalls(STATIC, r.owner, r.words); }}\n", .{});
+    for (m.exports) |x| {
+        const implemented = for (m.defs) |d| {
+            if (std.mem.eql(u8, d.name, x)) break true;
+        } else false;
+        if (!implemented) o.add("pub const @\"{s}\" = jpp.ReexportWord(\"{s}\", .{{this_module}});\n", .{ x, x });
+    }
 
     // Infer against run's runtime parameters. An undefined comptime sample
     // would accidentally freeze ordinary fields in returned record literals.
@@ -687,6 +774,7 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
     // multimethods: group same-named defs, definition order preserved.
     // Exported keys fuse across modules. Private keys are lexical and cannot
     // be spelled by callers. Main is implicitly exported for the harness.
+    o.add("\npub const LOCAL = struct {{\n", .{});
     var done = try a.alloc(bool, m.defs.len);
     @memset(done, false);
     for (m.defs, 0..) |d, di| {
@@ -699,7 +787,7 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
             o.add("    .{{ .declaration_home = this_module, .name = \"{s}\", .signature = &.{{", .{emitted_name});
             for (e.params, 0..) |prm, pi| {
                 if (pi > 0) o.add(",", .{});
-                o.add(" .{{ .name = \"{s}\", .qual = ", .{prm.name});
+                o.add(" .{{ .name = \"{s}\", .section = .{s}, .qual = ", .{ prm.name, if (prm.named) "named" else "positional" });
                 if (prm.anonymous)
                     o.add("jpp.declarationQual(STATIC, null, ", .{})
                 else
@@ -755,7 +843,9 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
                 const flat = flats[ei].?;
                 o.add("\n      .body = .{{ .ops = .{{ .ops = &.{{\n", .{});
                 for (flat.ops) |op| {
-                    o.add("        .{{ .callee = \"{s}\", .args = &.{{ ", .{try localWord(a, m, op.callee)});
+                    o.add("        .{{ .kind = .{s}, .callee = \"{s}\", .field = \"{s}\", .labels = &.{{", .{ @tagName(op.kind), if (op.kind == .call) try localWord(a, m, op.callee) else "", op.field });
+                    for (op.labels) |label| o.add("\"{s}\",", .{label});
+                    o.add(" }}, .args = &.{{ ", .{});
                     for (op.args, 0..) |r, ri| {
                         if (ri > 0) o.add(", ", .{});
                         emitVR(o, r);
@@ -767,7 +857,17 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR) !void {
                 o.add(" }} }} }},\n", .{});
             }
         }
-        o.add("}});\ncomptime {{ _ = @\"{s}\"; }}\n", .{emitted_name});
+        o.add("}});\ncomptime {{ _ = @field(@This(), \"{s}\"); }}\n", .{emitted_name});
+    }
+    o.add("}};\n", .{});
+    @memset(done, false);
+    for (m.defs, 0..) |d, i| {
+        if (done[i]) continue;
+        for (m.defs, 0..) |other, j| if (std.mem.eql(u8, d.name, other.name)) {
+            done[j] = true;
+        };
+        const key = try localWord(a, m, d.name);
+        o.add("pub const @\"{s}\" = LOCAL.@\"{s}\";\n", .{ key, key });
     }
 }
 
@@ -786,16 +886,20 @@ fn nodeUses(n: *Node, name: []const u8) bool {
     return switch (n.*) {
         .ident => |s| std.mem.eql(u8, s, name),
         .bind => |b| nodeUses(b.value, name),
-        .call => |c| blk: {
-            for (c.args) |arg| if (nodeUses(arg, name)) break :blk true;
-            break :blk false;
-        },
+        .call => |c| entriesUse(c.args, name),
+        .pack => |args| entriesUse(args, name),
+        .project => |proj| nodeUses(proj.value, name),
         .block => |items| blk: {
             for (items) |item| if (nodeUses(item, name)) break :blk true;
             break :blk false;
         },
         else => false,
     };
+}
+
+fn entriesUse(args: []Arg, name: []const u8) bool {
+    for (args) |arg| if (nodeUses(arg.value, name)) return true;
+    return false;
 }
 
 fn paramUsed(d: Def, name: []const u8) bool {
@@ -874,6 +978,81 @@ fn emitGroundPrelude(o: *Out, d: Def, g: [:0]const u8) void {
 
 const Found = struct { name: []const u8, path: []const u8 };
 
+// Import SCCs are public dispatch units. Source files retain lexical homes.
+const ModuleGraph = struct {
+    names: []const []const u8,
+    edges: [512][512]bool = @splat(@splat(false)),
+    index: [512]?usize = @splat(null),
+    low: [512]usize = undefined,
+    active: [512]bool = @splat(false),
+    stack: [512]usize = undefined,
+    nstack: usize = 0,
+    next: usize = 0,
+    leader: [512]usize = undefined,
+    size: [512]usize = @splat(0),
+
+    fn lookup(g: *const ModuleGraph, name: []const u8) ?usize {
+        for (g.names, 0..) |n, i| if (std.mem.eql(u8, n, name)) return i;
+        return null;
+    }
+
+    fn visit(g: *ModuleGraph, v: usize) void {
+        g.index[v] = g.next;
+        g.low[v] = g.next;
+        g.next += 1;
+        g.stack[g.nstack] = v;
+        g.nstack += 1;
+        g.active[v] = true;
+        for (0..g.names.len) |w| {
+            if (!g.edges[v][w]) continue;
+            if (g.index[w] == null) {
+                g.visit(w);
+                g.low[v] = @min(g.low[v], g.low[w]);
+            } else if (g.active[w]) g.low[v] = @min(g.low[v], g.index[w].?);
+        }
+        if (g.low[v] != g.index[v].?) return;
+        var first = g.nstack;
+        var leader = v;
+        while (first > 0) {
+            first -= 1;
+            const w = g.stack[first];
+            if (std.mem.lessThan(u8, g.names[w], g.names[leader])) leader = w;
+            if (w == v) break;
+        }
+        g.size[leader] = g.nstack - first;
+        for (g.stack[first..g.nstack]) |w| {
+            g.leader[w] = leader;
+            g.active[w] = false;
+        }
+        g.nstack = first;
+    }
+
+    fn unitName(g: *const ModuleGraph, i: usize) ?[]const u8 {
+        const leader = g.leader[i];
+        return if (g.size[leader] > 1 or g.edges[i][i]) g.names[leader] else null;
+    }
+};
+
+fn directChild(parent: []const u8, child: []const u8) bool {
+    if (!std.mem.startsWith(u8, child, parent)) return false;
+    if (child.len <= parent.len or child[parent.len] != '.') return false;
+    return std.mem.indexOfScalar(u8, child[parent.len + 1 ..], '.') == null;
+}
+
+fn appendWord(a: std.mem.Allocator, words: *std.ArrayList([]const u8), word: []const u8) !bool {
+    for (words.items) |prior| if (std.mem.eql(u8, prior, word)) return false;
+    try words.append(a, word);
+    return true;
+}
+
+fn sortModuleIndices(names: []const []const u8, indices: []usize) void {
+    std.mem.sort(usize, indices, names, struct {
+        fn lessThan(ns: []const []const u8, left: usize, right: usize) bool {
+            return std.mem.lessThan(u8, ns[left], ns[right]);
+        }
+    }.lessThan);
+}
+
 fn lessThanName(_: void, x: Found, y: Found) bool {
     return std.mem.lessThan(u8, x.name, y.name);
 }
@@ -946,23 +1125,18 @@ pub fn main(pinit: std.process.Init) !void {
             if (!std.mem.endsWith(u8, e.basename, ".jpp")) continue;
             // module identity = DOTTED PATH from the tree root:
             // ground/ints.jpp -> "ground.ints" (`using ground.ints`).
-            // TAKEOVER: <dir>/<dir>.jpp collapses to "<dir>" — that file
-            // IS the folder's module and governs it.
+            // A same-named child stays distinct: ground/ground.jpp is
+            // ground.ground, the optional public facade for ground.
             const rel = e.path[0 .. e.path.len - 4];
-            var dotted = try a.dupe(u8, rel);
+            const dotted = try a.dupe(u8, rel);
             std.mem.replaceScalar(u8, dotted, '/', '.');
-            if (std.mem.lastIndexOfScalar(u8, dotted, '.')) |di| {
-                const stem = dotted[di + 1 ..];
-                const dir = dotted[0..di];
-                const dirseg = if (std.mem.lastIndexOfScalar(u8, dir, '.')) |dj| dir[dj + 1 ..] else dir;
-                if (std.mem.eql(u8, stem, dirseg)) dotted = try a.dupe(u8, dir);
-            }
             for (found[0..nfound]) |f| {
                 if (std.mem.eql(u8, f.name, dotted)) {
                     std.debug.print("jppc: module name collision '{s}' under {s}\n", .{ dotted, src_root });
                     return error.DuplicateModule;
                 }
             }
+            if (nfound == found.len) return bindingError(error.ModuleLimit, "too many source modules");
             found[nfound] = .{
                 .name = dotted,
                 .path = try std.fmt.allocPrint(a, "{s}/{s}", .{ src_root, e.path }),
@@ -970,8 +1144,23 @@ pub fn main(pinit: std.process.Init) !void {
             nfound += 1;
         }
     }
-    // Base/ is the jpp library (not zig's std): modules join every tree
-    // under their own names; the tree's own SHADOW them (entitlement).
+    // A file and a folder in the same source tree cannot own one import.
+    // Cross-root library replacement is handled separately below.
+    for (found[0..nfound]) |f| {
+        var name = f.name;
+        while (std.mem.lastIndexOfScalar(u8, name, '.')) |di| {
+            const dir = name[0..di];
+            for (found[0..nfound]) |g| {
+                if (std.mem.eql(u8, g.name, dir)) {
+                    std.debug.print("jppc: file/folder module collision '{s}' under {s}\n", .{ dir, src_root });
+                    return error.DuplicateModule;
+                }
+            }
+            name = dir;
+        }
+    }
+    // Base/ joins as a named library root: Base/Any.jpp is Base.Any.
+    // Its aggregate is Base; exact source-tree modules shadow library names.
     if (cwd.openDir(io, "Base", .{ .iterate = true })) |sdc| {
         var sd = sdc;
         defer sd.close(io);
@@ -981,19 +1170,14 @@ pub fn main(pinit: std.process.Init) !void {
             if (e.kind != .file) continue;
             if (!std.mem.endsWith(u8, e.basename, ".jpp")) continue;
             const rel = e.path[0 .. e.path.len - 4];
-            var dotted = try a.dupe(u8, rel);
+            const dotted = try std.fmt.allocPrint(a, "Base.{s}", .{rel});
             std.mem.replaceScalar(u8, dotted, '/', '.');
-            if (std.mem.lastIndexOfScalar(u8, dotted, '.')) |di| {
-                const stem = dotted[di + 1 ..];
-                const dir = dotted[0..di];
-                const dirseg = if (std.mem.lastIndexOfScalar(u8, dir, '.')) |dj| dir[dj + 1 ..] else dir;
-                if (std.mem.eql(u8, stem, dirseg)) dotted = try a.dupe(u8, dir);
-            }
             var shadowed = false;
             for (found[0..nfound]) |f| {
                 if (std.mem.eql(u8, f.name, dotted)) shadowed = true;
             }
             if (shadowed) continue; // tree wins
+            if (nfound == found.len) return bindingError(error.ModuleLimit, "too many source modules");
             found[nfound] = .{
                 .name = dotted,
                 .path = try std.fmt.allocPrint(a, "Base/{s}", .{e.path}),
@@ -1023,6 +1207,91 @@ pub fn main(pinit: std.process.Init) !void {
         };
     }
 
+    // Inventory folders before emission so import SCCs include folder edges.
+    var names = try std.ArrayList([]const u8).initCapacity(a, 512);
+    var folders = try std.ArrayList([]const u8).initCapacity(a, 64);
+    for (mods) |f| try names.append(a, f.name);
+    for (mods) |f| {
+        var name = f.name;
+        while (std.mem.lastIndexOfScalar(u8, name, '.')) |di| {
+            name = name[0..di];
+            _ = try appendWord(a, &names, name);
+            _ = try appendWord(a, &folders, name);
+        }
+    }
+    for (folders.items) |folder| {
+        _ = try appendWord(a, &names, try std.fmt.allocPrint(a, "{s}.*", .{folder}));
+    }
+    if (names.items.len > 512) return bindingError(error.ModuleLimit, "too many module/folder identities");
+    const graph = try a.create(ModuleGraph);
+    graph.* = .{ .names = names.items };
+    for (parsed[0..mods.len], 0..) |m, i| {
+        for (m.usings) |u| {
+            const target = graph.lookup(u) orelse {
+                std.debug.print("jppc: unknown imported module '{s}' in {s}\n", .{ u, m.name });
+                return error.UnknownModule;
+            };
+            graph.edges[i][target] = true;
+        }
+    }
+    var alias_target: [512]?usize = @splat(null);
+    var facade_source: [512]bool = @splat(false);
+    var facade_view: [512]?usize = @splat(null);
+    for (mods.len..names.items.len) |i| {
+        const name = names.items[i];
+        if (std.mem.endsWith(u8, name, ".*")) {
+            const folder = name[0 .. name.len - 2];
+            const stem = if (std.mem.lastIndexOfScalar(u8, folder, '.')) |di| folder[di + 1 ..] else folder;
+            const facade = try std.fmt.allocPrint(a, "{s}.{s}", .{ folder, stem });
+            for (names.items, 0..) |child, j| {
+                graph.edges[i][j] = directChild(folder, child) and
+                    !std.mem.endsWith(u8, child, ".*") and !std.mem.eql(u8, child, facade);
+            }
+        } else {
+            const stem = if (std.mem.lastIndexOfScalar(u8, name, '.')) |di| name[di + 1 ..] else name;
+            const facade = try std.fmt.allocPrint(a, "{s}.{s}", .{ name, stem });
+            const candidate = graph.lookup(facade);
+            const facade_file = if (candidate) |ci| (if (ci < mods.len) ci else null) else null;
+            const target = facade_file orelse graph.lookup(try std.fmt.allocPrint(a, "{s}.*", .{name})).?;
+            if (facade_file) |ci| {
+                facade_source[ci] = true;
+                facade_view[ci] = ci;
+                facade_view[i] = ci;
+            }
+            alias_target[i] = target;
+            graph.edges[i][target] = true;
+        }
+    }
+    for (0..names.items.len) |i| if (graph.index[i] == null) graph.visit(i);
+
+    // Public declarations flow through both folder edges and unit membership.
+    // Fixed-point union is finite and does not inspect bodies or resolve calls.
+    const exports = try a.alloc(std.ArrayList([]const u8), names.items.len);
+    for (exports, 0..) |*words, i| {
+        words.* = try std.ArrayList([]const u8).initCapacity(a, 16);
+        if (i < mods.len) for (parsed[i].exports) |w| {
+            _ = try appendWord(a, words, w);
+        };
+    }
+    var changed = true;
+    while (changed) {
+        changed = false;
+        for (exports, 0..) |*words, i| {
+            for (exports, 0..) |source, j| {
+                if (i == j) continue;
+                if (i >= mods.len and graph.edges[i][j]) {
+                    // A folder sees the authored facade API, even when the
+                    // facade's dispatch unit also contains hidden siblings.
+                    const visible = if (facade_view[j]) |fi| parsed[fi].exports else source.items;
+                    for (visible) |w| changed = (try appendWord(a, words, w)) or changed;
+                }
+                if (graph.leader[i] == graph.leader[j]) {
+                    for (source.items) |w| changed = (try appendWord(a, words, w)) or changed;
+                }
+            }
+        }
+    }
+
     for (mods, 0..) |f, mi| {
         const mod = parsed[mi];
         const flats = try a.alloc(?FlatIR, mod.defs.len);
@@ -1033,103 +1302,136 @@ pub fn main(pinit: std.process.Init) !void {
             } else null;
         }
         var out = Out{ .buf = bigbuf };
-        try emitModule(&out, a, mod, flats);
+        try emitModule(&out, a, mod, flats, graph.unitName(mi), facade_source[mi]);
         const out_path = try std.fmt.allocPrint(a, "{s}/m_{s}.zig", .{ out_dir, try aliasOf(a, f.name) });
         try cwd.writeFile(io, .{ .sub_path = out_path, .data = out.text() });
         std.debug.print("jppc: {s} -> {s} ({d} defs, {d} bytes)\n", .{ f.path, out_path, mod.defs.len, out.len });
     }
 
-    // FOLDERS ARE MODULES: for every directory without a takeover file,
-    // synthesize the aggregate — its words are the union of its direct
-    // children's exports, methods merged in child order. deepest first,
-    // so a synthesized aggregate can be a child of its parent's aggregate.
-    var all_names: [512][]const u8 = undefined; // files + aggregates
-    var all_exports: [512][]const []const u8 = undefined;
-    var nall: usize = 0;
-    for (mods, 0..) |f, mi| {
-        all_names[nall] = f.name;
-        all_exports[nall] = parsed[mi].exports;
-        nall += 1;
-    }
-    var dirs: [64][]const u8 = undefined;
-    var ndirs: usize = 0;
-    for (mods) |f| {
-        var name = f.name;
-        while (std.mem.lastIndexOfScalar(u8, name, '.')) |di| {
-            const dir = name[0..di];
-            var known = false;
-            for (dirs[0..ndirs]) |d| {
-                if (std.mem.eql(u8, d, dir)) known = true;
-            }
-            for (mods) |g| {
-                if (std.mem.eql(u8, g.name, dir)) known = true; // takeover
-            }
-            if (!known) {
-                dirs[ndirs] = dir;
-                ndirs += 1;
-            }
-            name = dir;
-        }
-    }
-    // deepest (most dots) first
-    std.mem.sort([]const u8, dirs[0..ndirs], {}, moreDots);
-    for (dirs[0..ndirs]) |dir| {
+    for (mods.len..names.items.len) |fi| {
+        const dir = names.items[fi];
         var out = Out{ .buf = bigbuf };
-        out.add("// GENERATED aggregate — the folder '{s}' as a module.\n", .{dir});
-        out.add("const jpp = @import(\"jpp.zig\");\n", .{});
-        // direct children: name == dir ++ "." ++ seg (seg without dots)
-        var child_idx: [64]usize = undefined;
-        var nchild: usize = 0;
-        for (all_names[0..nall], 0..) |n, i| {
-            if (!std.mem.startsWith(u8, n, dir)) continue;
-            if (n.len <= dir.len or n[dir.len] != '.') continue;
-            const rest = n[dir.len + 1 ..];
-            if (std.mem.indexOfScalar(u8, rest, '.') != null) continue;
-            child_idx[nchild] = i;
-            nchild += 1;
+        if (alias_target[fi]) |target| {
+            out.add("// GENERATED folder facade/aggregate alias '{s}'.\nconst target = @import(\"m_{s}.zig\");\n", .{ dir, try aliasOf(a, names.items[target]) });
+            if (graph.unitName(fi)) |unit| {
+                if (facade_view[fi] != null) {
+                    out.add("pub const UNIT = target;\n", .{});
+                } else {
+                    out.add("pub const UNIT = @import(\"u_{s}.zig\");\n", .{try aliasOf(a, unit)});
+                }
+                out.add("pub const STATIC = .{{@This(), target}};\n", .{});
+            } else {
+                out.add("pub const UNIT = target;\npub const STATIC = target.STATIC;\n", .{});
+            }
+            const visible = if (facade_view[fi]) |source| parsed[source].exports else exports[fi].items;
+            out.add("pub const SOURCES = .{{target}};\n", .{});
+            out.add("pub const MODULE_NAME = \"{s}\";\npub const EXPORTED = .{{", .{dir});
+            for (visible) |w| out.add("\"{s}\",", .{w});
+            out.add(" }};\npub const DECLARED = EXPORTED;\n", .{});
+            for (visible) |w| out.add("pub const @\"{s}\" = @field(UNIT, \"{s}\");\n", .{ w, w });
+            const path = try std.fmt.allocPrint(a, "{s}/m_{s}.zig", .{ out_dir, try aliasOf(a, dir) });
+            try cwd.writeFile(io, .{ .sub_path = path, .data = out.text() });
+            continue;
         }
-        for (child_idx[0..nchild]) |i| {
-            const alias = try aliasOf(a, all_names[i]);
+        out.add("// GENERATED folder aggregate '{s}'.\nconst jpp = @import(\"jpp.zig\");\n", .{dir});
+        var children: [512]usize = undefined;
+        var nchild: usize = 0;
+        for (0..names.items.len) |i| if (graph.edges[fi][i]) {
+            children[nchild] = i;
+            nchild += 1;
+        };
+        sortModuleIndices(names.items, children[0..nchild]);
+        for (children[0..nchild]) |i| {
+            const alias = try aliasOf(a, names.items[i]);
             out.add("const m_{s} = @import(\"m_{s}.zig\");\n", .{ alias, alias });
         }
-        out.add("\nconst this_module = @This();\n", .{});
-        out.add("pub const STATIC = ", .{});
-        for (child_idx[0..nchild]) |_| out.add("jpp.extendAll(", .{});
-        out.add(".{{this_module}}", .{});
-        for (child_idx[0..nchild]) |i|
-            out.add(", m_{s}.STATIC)", .{try aliasOf(a, all_names[i])});
-        out.add(";\n", .{});
-        // words: union of children's exports (arena-owned — the aggregate
-        // itself becomes a child of its parent's aggregate)
-        var words = try std.ArrayList([]const u8).initCapacity(a, 32);
-        for (child_idx[0..nchild]) |i| {
-            for (all_exports[i]) |w| {
-                var dup = false;
-                for (words.items) |x| {
-                    if (std.mem.eql(u8, x, w)) dup = true;
-                }
-                if (!dup) try words.append(a, w);
+        out.add("pub const SOURCES = .{{", .{});
+        for (children[0..nchild]) |i| out.add("m_{s},", .{try aliasOf(a, names.items[i])});
+        out.add(" }};\nconst this_module = @This();\n", .{});
+        if (graph.unitName(fi)) |unit| {
+            out.add("pub const UNIT = @import(\"u_{s}.zig\");\n", .{try aliasOf(a, unit)});
+            // Reading child.STATIC here would reintroduce the folder cycle.
+            out.add("pub const STATIC = .{{this_module", .{});
+            for (children[0..nchild]) |i| out.add(", m_{s}", .{try aliasOf(a, names.items[i])});
+            out.add(" }};\n", .{});
+        } else {
+            out.add("pub const STATIC = ", .{});
+            for (children[0..nchild]) |_| out.add("jpp.extendAll(", .{});
+            out.add(".{{this_module}}", .{});
+            for (children[0..nchild]) |i| out.add(", m_{s}.STATIC)", .{try aliasOf(a, names.items[i])});
+            out.add(";\n", .{});
+        }
+        out.add("pub const MODULE_NAME = \"{s}\";\npub const EXPORTED = .{{", .{dir});
+        for (exports[fi].items) |w| out.add("\"{s}\",", .{w});
+        out.add(" }};\npub const DECLARED = EXPORTED;\n", .{});
+        for (exports[fi].items) |w| {
+            if (graph.unitName(fi) != null) {
+                out.add("pub const @\"{s}\" = @field(UNIT, \"{s}\");\n", .{ w, w });
+            } else {
+                out.add("pub const @\"{s}\" = jpp.MergedWord(\"{s}\", .{{", .{ w, w });
+                for (children[0..nchild]) |i| out.add("m_{s},", .{try aliasOf(a, names.items[i])});
+                out.add(" }});\n", .{});
             }
         }
-        out.add("pub const MODULE_NAME = \"{s}\";\n", .{dir});
-        out.add("pub const EXPORTED = .{{", .{});
-        for (words.items) |w| out.add("\"{s}\",", .{w});
+        const path = try std.fmt.allocPrint(a, "{s}/m_{s}.zig", .{ out_dir, try aliasOf(a, dir) });
+        try cwd.writeFile(io, .{ .sub_path = path, .data = out.text() });
+        std.debug.print("jppc: aggregate {s} ({d} children, {d} words)\n", .{ path, nchild, exports[fi].items.len });
+    }
+
+    for (names.items, 0..) |unit, leader| {
+        if (graph.leader[leader] != leader or graph.unitName(leader) == null) continue;
+        // Folder members contribute their descendant source files, not their
+        // generated UNIT aliases. This prevents circular word initializers.
+        var contributes: [512]bool = @splat(false);
+        var external: [512]bool = @splat(false);
+        for (0..names.items.len) |i| {
+            if (graph.leader[i] == leader) contributes[i] = true;
+        }
+        changed = true;
+        while (changed) {
+            changed = false;
+            for (mods.len..names.items.len) |i| if (contributes[i]) {
+                for (0..names.items.len) |j| if (graph.edges[i][j] and !contributes[j]) {
+                    contributes[j] = true;
+                    changed = true;
+                };
+            };
+        }
+        var words = try std.ArrayList([]const u8).initCapacity(a, 32);
+        for (exports[leader].items) |w| _ = try appendWord(a, &words, w);
+        for (0..mods.len) |i| if (graph.leader[i] == leader) {
+            for (parsed[i].defs) |d| _ = try appendWord(a, &words, try localWord(a, parsed[i], d.name));
+        };
+        for (0..names.items.len) |i| {
+            if (graph.leader[i] == leader) {
+                for (0..names.items.len) |j| {
+                    if (graph.edges[i][j] and graph.leader[j] != leader) external[j] = true;
+                }
+            } else if (contributes[i] and i < mods.len) external[i] = true;
+        }
+        var out = Out{ .buf = bigbuf };
+        out.add("// GENERATED public dispatch unit '{s}'; lexical homes remain files.\nconst jpp = @import(\"jpp.zig\");\n", .{unit});
+        for (names.items, 0..) |name, i| if ((i < mods.len and contributes[i]) or external[i]) {
+            const alias = try aliasOf(a, name);
+            out.add("const m_{s} = @import(\"m_{s}.zig\");\n", .{ alias, alias });
+        };
+        out.add("pub const SOURCES = .{{", .{});
+        for (0..mods.len) |i| if (contributes[i]) out.add("m_{s},", .{try aliasOf(a, names.items[i])});
+        out.add(" }};\n", .{});
+        out.add("pub const IS_DISPATCH_UNIT = true;\n", .{});
+        out.add("pub const MODULE_NAME = \"unit:{s}\";\npub const STATIC = .{{@This()", .{unit});
+        for (names.items, 0..) |name, i| if (external[i]) out.add(",m_{s}", .{try aliasOf(a, name)});
+        out.add(" }};\npub const EXPORTED = .{{", .{});
+        for (exports[leader].items) |w| out.add("\"{s}\",", .{w});
         out.add(" }};\npub const DECLARED = EXPORTED;\n", .{});
         for (words.items) |w| {
-            out.add("\npub const @\"{s}\" = jpp.MergedWord(\"{s}\", .{{", .{ w, w });
-            for (child_idx[0..nchild], 0..) |i, k| {
-                if (k > 0) out.add(",", .{});
-                out.add(" m_{s}", .{try aliasOf(a, all_names[i])});
-            }
+            out.add("pub const @\"{s}\" = jpp.UnitWord(\"{s}\", .{{", .{ w, w });
+            for (0..mods.len) |i| if (contributes[i]) out.add("m_{s},", .{try aliasOf(a, names.items[i])});
             out.add(" }});\n", .{});
         }
-        const agg_path = try std.fmt.allocPrint(a, "{s}/m_{s}.zig", .{ out_dir, try aliasOf(a, dir) });
-        try cwd.writeFile(io, .{ .sub_path = agg_path, .data = out.text() });
-        std.debug.print("jppc: aggregate {s} ({d} children, {d} words)\n", .{ agg_path, nchild, words.items.len });
-        // the aggregate is itself a module — a child of ITS parent
-        all_names[nall] = dir;
-        all_exports[nall] = words.items;
-        nall += 1;
+        const path = try std.fmt.allocPrint(a, "{s}/u_{s}.zig", .{ out_dir, try aliasOf(a, unit) });
+        try cwd.writeFile(io, .{ .sub_path = path, .data = out.text() });
+        std.debug.print("jppc: unit {s} ({d} members)\n", .{ path, graph.size[leader] });
     }
 
     // --- run.zig: THE artifact, self-judging ----------------------------------

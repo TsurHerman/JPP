@@ -23,18 +23,18 @@ zig run tests/.gen/checkout/run.zig
 retail                         member
   │                              ├── policies.member
   └──────────────┬───────────────┘
-                 checkout (takeover: exports only quote)
+                 checkout (facade: exports only quote)
                   ├── pricing.cart
                   │    └── pricing.lines
                   │         └── pricing.discounts
                   │              └── money → arithmetic.rounding → Base
-                  ├── shipping (takeover)
+                  ├── shipping (facade)
                   │    └── shipping.carrier
                   └── tax → money
 
 model = aggregate of line, basket, priced, quote
 arithmetic = aggregate of logic, rounding
-Base = implicit ordinary arithmetic import in each module
+Base = explicit foundation import; Base.Arithmetic selects only arithmetic
 ```
 
 `Line` is an ordinary structural predicate over native record types. The
@@ -74,19 +74,23 @@ all six fields plus `gross − discount = net` and
 
 | Observation from this code | Design implication |
 |---|---|
-| Arithmetic is defined once in Base; consumers receive its ordinary import implicitly. | Arithmetic-only consumers no longer write `using arithmetic`. Logic and rounding helpers remain explicit imports; consumers never need to re-export operators. |
-| `using pricing.lines`, `using shipping`, and `using tax` explain domain dependencies. | Keep domain imports explicit. A takeover module gives a folder a focused public API. |
+| Arithmetic is defined once in Base.Arithmetic; consumers import Base or that leaf explicitly. | Arithmetic consumers state their Base dependency. Logic and rounding helpers remain explicit imports; consumers never need to re-export operators. |
+| `using pricing.lines`, `using shipping`, and `using tax` explain domain dependencies. | Keep domain imports explicit. A same-name facade gives a folder a focused public API. |
 | One policy import changes both discounts and freight deep in the same library graph. | Caller context is useful without policy parameters on every helper. Defaults have real meanings here. |
 | `quote` now names prices, net goods, freight, tax, and total in one body; `netLine` and `priceBasket` also bind intermediate results. | Immutable bindings replace helpers used solely for carrying results. They alias existing ANF values, preserving evaluation once and in source order. |
-| Record creation and access require grounds; the quote constructor takes six integers in order. | Record surface syntax and the already-validated named-pack binder would make inputs and units easier to inspect. |
+| The quote constructor has six required named fields; construction and access use the surface. | Names make tax and freight distinguishable at the call site; only the underlying domain records still need grounds. |
 | The basket is fixed at two lines. | Variadic packs or traversal are needed before claiming a general cart. Putting its entire loop in a ground would bypass jpp dispatch and weaken the experiment. |
 
-The preferred direction is **a small implicit foundation, explicit domain
-imports, and explicit exported extension points**. The small implicit `Base`
-import and immutable local bindings now RUN. The export-without-body tunnel
-remains OPEN. All calls here have actual source-visible local or imported
-definitions. Meaningful defaults suffice for these policies; a future case
-with a service that genuinely requires a provider should test the tunnel.
+The current direction is explicit foundation/domain imports and explicit exported
+extension points. Base's facade selects its public interface. The export-only
+tunnel and imported re-exports now run, and all calls are lexically checked.
+Checkout has meaningful fallback policies; declaration_tunnel separately tests
+an interface that requires a caller implementation.
+
+Basket storage is `(a, b)` with positional projection. The public basket contract
+still requires two lines of one bound type; heterogeneous/variable-size carts
+will arrive in the varargs slice. The quote constructor is named-only and its
+result is an ordinary structural record, with no handwritten Zig wrapper.
 
 `choose` evaluates both value arguments before selection; it is not lazy
 control flow. Counts, cents, and grams still share `int64`; input validation,
@@ -95,7 +99,7 @@ example's tested domain.
 
 The initial Base exports same-type int64/float64 arithmetic and int64 `div`.
 Rounding uses `div` explicitly because ordinary `/` produces a floating
-quotient. `Any` and its authored order remain explicitly imported. Base has
+quotient. `Any` and its authored order are available through Base, or Base.Any explicitly. Base has
 ordinary context position, including precedence over imports reached later;
 it is not a special fallback tier. The member policy is imported ahead of it.
 

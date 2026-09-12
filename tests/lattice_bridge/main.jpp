@@ -3,7 +3,7 @@
 using order
 using bridge
 using rules
-using Test
+using Base.Test
 
 main() = {
     check("caller's edge closes the gap", gap(itsy()), 10)

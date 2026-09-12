@@ -1,0 +1,3 @@
+using Base
+f(; a::int64) = a
+main() = f(; other = 1)

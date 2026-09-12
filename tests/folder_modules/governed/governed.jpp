@@ -1,8 +1,3 @@
-# TAKEOVER: this file shares the folder's name, so it IS the module
-# `governed`. it imports what it needs itself — self-contained — and
-# chooses what the folder exposes: best, built on the folder file raw.
-using governed.raw
-using ints
+# The customary facade republishes only best from its siblings.
+using governed.*
 export best
-
-best() = raw() + raw()

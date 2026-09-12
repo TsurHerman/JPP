@@ -1,0 +1,8 @@
+using Base.Arithmetic
+using Base.Any
+using Base.Test
+
+main() = {
+    check("Base leaves remain explicitly addressable", 20 + 22, 42)
+    check("Any leaf has its own identity", Any(int64), true)
+}

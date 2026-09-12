@@ -1,15 +1,3 @@
-# The small implicit foundation. These are ordinary exported methods.
-# Initial domains: the surface's default int64 and float64 literal types.
-# Integer +, -, * wrap as ratified; / returns a float, div truncates to int.
-export +, -, *, /, div
-
-+(a::int64, b::int64)::int64 = zig{ a +% b }
--(a::int64, b::int64)::int64 = zig{ a -% b }
-*(a::int64, b::int64)::int64 = zig{ a *% b }
-/(a::int64, b::int64)::float64 = zig{ @as(f64, @floatFromInt(a)) / @as(f64, @floatFromInt(b)) }
-div(a::int64, b::int64)::int64 = zig{ @divTrunc(a, b) }
-
-+(a::float64, b::float64)::float64 = zig{ a + b }
--(a::float64, b::float64)::float64 = zig{ a - b }
-*(a::float64, b::float64)::float64 = zig{ a * b }
-/(a::float64, b::float64)::float64 = zig{ a / b }
+# The customary Base facade chooses the foundation's public interface.
+using Base.*
+export +, -, *, /, div, Any, <:, len, first, tail, check

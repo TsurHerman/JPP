@@ -1,4 +1,4 @@
-using Test
+using Base.Test
 export Signed, Wide, pick, flipped, byType
 Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }
 Wide(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits >= 32, else => false } }

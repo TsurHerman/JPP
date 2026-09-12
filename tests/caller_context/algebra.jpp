@@ -1,3 +1,4 @@
+using Base.Arithmetic
 # Implicit Base makes + source-visible; explicit caller providers still fuse.
 # General lexical call validation remains open; see design/word_contracts.md.
 export double

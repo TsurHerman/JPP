@@ -1,5 +1,5 @@
-using Any
-using Test
+using Base.Any
+using Base.Test
 export category, relay, echo, choose, same, choosePair, <:
 category(<:Any) = 0
 category(::int64) = 1

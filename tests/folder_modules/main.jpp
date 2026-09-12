@@ -1,11 +1,13 @@
-# VALIDATES: the three folder-module rules, one check each.
+# Every folder recursively exposes exported words from its descendants.
 using nested
 using governed
-using governed.raw
-using Test
+using governed.*
+using Base.Test
 
 main() = {
     check("a folder is a module", answer(), 42)
-    check("same-named file takes the folder over", best(), 42)
-    check("files stay addressable by dotted path", raw(), 21)
+    check("folder facade republishes its selected public word", best(), 42)
+    check("explicit wildcard imports sibling exports", raw(), 21)
+    check("nested folders aggregate recursively", deep(), 63)
+    check("nested method retains its private declaration home", scoped(), 84)
 }

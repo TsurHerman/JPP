@@ -1,4 +1,4 @@
-using Any
+using Base.Any
 # dispatch made visible: every method returns its own number, so WHICH
 # method ran is the value itself.
 export kind, pick

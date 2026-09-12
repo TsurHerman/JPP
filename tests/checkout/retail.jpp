@@ -1,7 +1,7 @@
 using checkout
 using model
 using verify
-using Test
+using Base.Test
 
 main() = {
     verifyQuote("retail / small basket", quote(basket(line(1299, 2, 250), line(2500, 1, 800))), 5098, 0, 5098, 500, 1120, 6718)

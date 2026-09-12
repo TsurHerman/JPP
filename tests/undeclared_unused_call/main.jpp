@@ -1,0 +1,2 @@
+unused(x) = typo(x)
+main() = 0

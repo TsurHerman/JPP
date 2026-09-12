@@ -1,4 +1,4 @@
-// ast.zig — the transpiler's data model.
+// ast.zig — intended AST model; the active parser still owns its smaller AST.
 //
 // THREE representations, each with one producer and one consumer (ratified):
 //
@@ -67,7 +67,7 @@ pub const Head = enum {
     subtype, //   x<:P
     where, //     sig where pred
     @"for", //    for b in it { ... }   top level = staged codegen
-    @"using", //  using mod
+    using, //  using mod
     @"export", // export a, b, ...
     type_decl, // type arm64
 };
@@ -109,26 +109,26 @@ pub const Def = union(enum) {
     comptime_for: ComptimeFor, // top-level for = staged codegen
 };
 
-/// methods are UNARY (ratified): a method takes one comptime pack (the
-/// {} struct) and one runtime pack (the () struct). the param lists
-/// below are PATTERNS over the packs' fields; a variadic slot means
-/// "any pack", destructured by the extractor vocabulary. dispatch is
-/// structural dispatch on the runtime pack's single type.
+/// Methods take ONE semantic pack: positional and named fields, including
+/// actual static values. Selectors do not create a second method table or pack.
+/// This intended model includes future rest and static-application syntax.
 pub const Method = struct {
     name: []const u8, // "+", "promote", "double" — verbatim (@"name" decl key)
-    comptime_params: []const Slot = &.{}, // pattern over the {} pack
-    value_params: ?[]const Slot = null, // pattern over the () pack; null = brace-only
+    params: []const Slot = &.{}, // one pattern over the whole pack
     where: ?Expr = null, // comptime predicate over bound names
     ret: ?Expr = null, // a type expression; absent = inferred
     body: Body,
 };
 
 /// one grammar for both positions (ratified): brace slots and value slots
-/// are the same shape. rank: exact=3, predicate=2, bare=1; variadic
-/// drops the slot to 0. method rank = sum (per-arg lexicographic later).
+/// are the same shape. Specificity compares the same supplied coordinates:
+/// fixed type value > exact input type > predicate > bare > rest coverage.
+/// Never sum ranks. Named coordinates align by name, positionals by index.
 pub const Slot = struct {
     name: ?[]const u8, // null = anonymous (::arm64, {Integer})
     qual: Qual,
+    section: enum { positional, named } = .positional,
+    requires_static: bool = false, // future brace/static input requirement
     variadic: bool = false, // TT... / args...
 };
 
@@ -186,7 +186,8 @@ pub const Op = struct {
 
 pub const OpKind = union(enum) {
     call: FlatCall, // the unit of computation
-    tuple: []const ValRef,
+    pack: []const Entry,
+    project: struct { value: ValRef, field: []const u8 },
     splat: ValRef,
     select: Select, // ternary — arms are regions, not eager operands
     ground: Ground, // zig{} in expression position
@@ -194,8 +195,13 @@ pub const OpKind = union(enum) {
 
 pub const FlatCall = struct {
     callee: []const u8,
-    brace_args: []const ValRef = &.{},
-    paren_args: []const ValRef = &.{},
+    args: []const Entry = &.{},
+};
+
+pub const Entry = struct {
+    label: ?[]const u8 = null, // null = positional; otherwise a named field
+    value: ValRef,
+    splat: bool = false, // future syntax, expanded from the known pack shape
 };
 
 pub const Select = struct {
@@ -205,8 +211,7 @@ pub const Select = struct {
 };
 
 pub const ValRef = union(enum) {
-    param: u32, // value param index
-    cparam: u32, // comptime (brace) param index
+    param: u32, // index in the single bound pack, static or runtime
     local: u32, // result of a previous op
     lit_int: []const u8, // comptime int, arbitrary precision
     lit_float: []const u8,
@@ -238,7 +243,7 @@ pub const example_double_surface: Expr = .{ .kind = .{ .node = .{
 // layer 2 — what the reader makes of it:
 pub const example_double: Method = .{
     .name = "double",
-    .value_params = &.{
+    .params = &.{
         .{ .name = "x", .qual = .bare }, // rank 1
     },
     .body = .{ .expr = .{ .kind = .{ .node = .{ .head = .call, .args = &.{
@@ -253,7 +258,7 @@ pub const example_double_flat: FlatBody = .{
     .ops = &.{
         .{ .id = 0, .kind = .{ .call = .{
             .callee = "+",
-            .paren_args = &.{ .{ .param = 0 }, .{ .param = 0 } },
+            .args = &.{ .{ .value = .{ .param = 0 } }, .{ .value = .{ .param = 0 } } },
         } } },
     },
     .result = .{ .local = 0 },

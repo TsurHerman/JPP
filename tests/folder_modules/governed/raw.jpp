@@ -1,3 +1,4 @@
-# folder-internal; still addressable by dotted path
-export raw
+using ints
+export raw, best
 raw() = 21
+best() = raw() + raw()

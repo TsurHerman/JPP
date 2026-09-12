@@ -1,0 +1,4 @@
+using Base
+f(; a::int64, b<:Any) = 1
+f(; b::int64, a<:Any) = 2
+main() = f(; b = 1, a = 2)

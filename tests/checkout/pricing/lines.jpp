@@ -1,3 +1,4 @@
+using Base.Arithmetic
 using model.line
 using pricing.discounts
 export grossLine, netLine, gramsLine

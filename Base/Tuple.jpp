@@ -1,0 +1,5 @@
+# Ordinary tuple utilities. Storage reflection ends at these grounds.
+export len, first, tail
+len(xs) = zig{ jpp.tupleLen(@TypeOf(xs)) }
+first(xs) = xs.0
+tail(xs) = zig{ jpp.tupleTail(xs) }

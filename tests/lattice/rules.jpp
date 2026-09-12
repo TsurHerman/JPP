@@ -1,4 +1,4 @@
-using Any
+using Base.Any
 # one word, five methods, four of them gated on overlapping classes.
 # every int16 answers ALL four predicates; the lattice is what decides.
 using preds

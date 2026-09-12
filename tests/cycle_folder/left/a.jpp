@@ -1,0 +1,3 @@
+using right.b
+export leftValue
+leftValue() = 11

@@ -26,11 +26,13 @@ that defines `main`; `Base/` modules join every tree, the tree's own
 shadow them), then `zig run <out_dir>/run.zig`.
 `zig test src/jpp.zig`; `zig test spike/<probe>.zig`.
 
-Each module implicitly imports the small arithmetic `Base` interface after
-its explicit imports; explicit `using Base` keeps its written position.
-`Base` itself has no implicit self-import. `using Test` and `using Any`
-remain explicit. Generated modules use escaped `m_*.zig` filenames so module
-names remain distinct on case-insensitive filesystems; `run.zig` is the driver.
+Imports are explicit. `using Base` selects the public facade at Base/Base.jpp;
+it includes arithmetic, Any, Tuple utilities and check. Leaf imports such as
+`using Base.Arithmetic` and `using Base.Test` select narrower interfaces.
+`using folder.*` collects siblings excluding folder/folder.jpp; `using folder`
+uses that facade when present. Mutual imports share one dispatch unit while
+private definitions remain file-local. Generated module/unit names use injective
+byte escaping so module identities survive case-insensitive filesystems.
 
 For a larger runnable example, read [the checkout case study](tests/checkout/test.md):
 
@@ -54,8 +56,8 @@ NEGATIVE cases: `expect.err` in the folder flips the contract — the
 harness compiles the case expecting FAILURE and greps the error for
 the file's text (error promises: ambiguity, declaration binding, type-only order, export gating).
 Frontend-negative cases instead contain `expect.transpile.err`: jppc must
-exit 1 with that diagnostic substring. These cover invalid local bindings;
-they do not reach Zig compilation.
+exit 1 with that diagnostic substring. These cover invalid local bindings,
+pack syntax, and module paths; they do not reach Zig compilation.
 
 ## Layout
 
@@ -65,12 +67,12 @@ they do not reach Zig compilation.
 | `RUNNING.md` | this file |
 | `build.zig` | orchestrator (ratified: zig build drives jpp) |
 | `src/jpp.zig` | the machinery: methods-as-data interpreters, dispatch, `<:` order, collapse — executes at COMPTIME inside generated code; machinery tests live inline |
-| `src/jppc.zig` | the transpiler: lexer -> parser -> ANF -> data-literal printer -> aggregates -> driver; deliberately dumb (file-local, context-blind) |
+| `src/jppc.zig` | the transpiler: lexer -> parser -> ANF -> data-literal printer -> module graph -> driver; parsing/normalization stay file-local, dispatch stays in jpp.zig |
 | `src/ast.zig` | the ratified three-layer AST model (Expr/Method/FlatBody); jppc does not consume it yet — acknowledged debt |
 | `src/emit.zig` | v1 emitter, superseded by the five-facts data shape; history |
 | `tests/` | the language cases: each folder a tree; programs are root modules that define `main` (see `tests/README.md`) |
-| `Base/` | the jpp library — `Test.jpp` first; `using Test` works from any tree, tree modules shadow Base. Zig's `std` is only inside `zig{}` |
-| `design/*.jpp` | design-phase sketches of the future corpus (reals, promote rules, intrinsics, tensors) — use surface features ahead of the v1 parser; not yet transpilable |
+| `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Any, Test and Tuple; source modules can shadow matching bundled paths. Zig's `std` is only inside `zig{}` |
+| `design/` | rewritten design notebook: modules, packs, contracts, type families, numerics, binary artifacts and implementation sequence |
 | `tests/README.md` | the promise catalog and suite conventions (machinery tests live inline in `src/jpp.zig`) |
 | `spike/` | validated probes, each a self-contained proof of one mechanism (see below) |
 | `gen/` | derived output — gitignored, regenerate anytime |

@@ -1,0 +1,20 @@
+using Base
+export pick, cross, gated, Signed, Wide, <:
+pick(; a<:Any, b::int64) = 1
+pick(; b::int64, a::int64) = 2
+cross(; a::int64, b<:Any) = 3
+cross(; b::int64, a<:Any) = 4
+cross(; b::int64, a::int64) = 5
+Signed(::type)::bool = true
+Wide(::type)::bool = true
+<:(Signed, Wide) = true
+gated(; left<:Wide, right<:Any) = 6
+gated(; right<:Any, left<:Signed) = 7
+main() = {
+    check("constraints align by field name", pick(; a = 1, b = 2), 2)
+    check("call permutation retains winner", pick(; b = 2, a = 1), 2)
+    check("intersection cures named crossing", cross(; a = 1, b = 2), 5)
+    check("left branch", cross(; a = 1, b = 2.0), 3)
+    check("right branch", cross(; b = 1, a = 2.0), 4)
+    check("authored gate order aligns by name", gated(; left = 1, right = 2), 7)
+}

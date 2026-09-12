@@ -1,5 +1,5 @@
 using lib
-using Test
+using Base.Test
 
 main() = {
     check("library imports the ordinary Any definition", pick(7), 2)

@@ -1,0 +1,7 @@
+using Base
+
+main() = {
+    check("Base exposes arithmetic", 20 + 22, 42)
+    check("Base exposes Any without a leaf import", Any(int64), true)
+    check("Base exposes Any authored order", <:(int64, Any), true)
+}

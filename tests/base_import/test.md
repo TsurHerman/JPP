@@ -1,12 +1,11 @@
 # base_import
 
-Modules receive an ordinary `Base` import after their explicit imports.
-The library supplies wrapping int64 arithmetic, float64 arithmetic, floating
-`/`, and truncating integer `div`. The compiler gives those words no bodies.
+Every module authors the imports it needs. The Base folder supplies wrapping
+int64 arithmetic, float64 arithmetic, floating `/`, and truncating integer
+`div`; the compiler gives those words no bodies.
 
-Three fresh contexts compare the default, a caller override that reaches
-an imported library, and an explicit `using Base` placed before the override.
-Explicit Base retains its written position and is not added again. Existing
-specificity and caller-first accumulation rules apply to this import too.
-In particular, an inherited Base entry precedes a later library's own
-imports. Base is an ordinary import, not a specially demoted fallback tier.
+Three fresh contexts compare ordinary Base arithmetic, a caller override
+placed before Base, and Base placed before the override. Import position
+and caller-first accumulation determine which methods win. An inherited
+Base entry also precedes a deeper library's own imports. Base has no special
+fallback tier.

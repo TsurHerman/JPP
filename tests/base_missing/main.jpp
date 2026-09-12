@@ -1,1 +1,2 @@
+using Base
 main() = 1 + 2

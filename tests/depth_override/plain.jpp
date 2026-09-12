@@ -2,7 +2,7 @@
 using ints
 using stats
 using algebra
-using Test
+using Base.Test
 
 main() = {
     check("plain: report(21) = 21+21", report(21), 42)

@@ -1,0 +1,2 @@
+export probe
+probe(x) = tag(x)

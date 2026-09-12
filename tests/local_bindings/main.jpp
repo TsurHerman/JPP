@@ -1,4 +1,5 @@
-using Test
+using Base.Arithmetic
+using Base.Test
 
 next()::int64 = zig{ blk: {
     const State = struct { var count: i64 = 0; };

@@ -56,7 +56,14 @@ pub const ValRef = union(enum) {
     lit_b: bool, //    boolean literal (`<:` facts are the motivating use)
 };
 
-pub const Op = struct { callee: []const u8, args: []const ValRef };
+pub const Op = struct {
+    kind: enum { call, pack, project } = .call,
+    callee: []const u8 = "",
+    args: []const ValRef,
+    // Empty labels are positional. Written order is retained through ANF.
+    labels: []const []const u8 = &.{},
+    field: []const u8 = "", // project: one operand, statically named field
+};
 pub const Flat = struct { ops: []const Op, result: ValRef };
 
 pub const Body = union(enum) {
@@ -128,20 +135,59 @@ pub fn MultiMethod(comptime word: []const u8, comptime list: []const Method) typ
     };
 }
 
-/// FOLDER-AS-MODULE aggregation: one word, methods concatenated from the
-/// child modules that export it (order = child order: position semantics
-/// inside the aggregate). methods are data, so merging is concatenation.
-pub fn MergedWord(comptime word: []const u8, comptime mods: anytype) type {
+/// Composition follows raw authored methods, never another forwarded field.
+/// This prevents recursive declaration aliases in import cycles and preserves
+/// each method's original lexical home. A word with no provider remains empty.
+pub fn ReexportWord(comptime word: []const u8, comptime roots: anytype) type {
     comptime {
+        @setEvalBranchQuota(1_000_000);
+        var pending: [512]type = undefined;
+        var n: usize = 0;
+        for (roots) |mod| {
+            if (contains(pending[0..n], mod)) continue;
+            if (n == pending.len) @compileError("jpp: reexport module limit exceeded.");
+            pending[n] = mod;
+            n += 1;
+        }
         var list: []const Method = &.{};
-        for (0..mods.len) |i| {
-            if (!@hasDecl(mods[i], word)) continue;
-            const MM = @field(mods[i], word);
-            if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
-            list = list ++ MM.methods;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const mod = pending[i];
+            if (@hasDecl(mod, "LOCAL") and @hasDecl(mod.LOCAL, word)) {
+                list = list ++ @field(mod.LOCAL, word).methods;
+                continue;
+            }
+            // Legacy native fixtures have direct methods and no source metadata.
+            if (!@hasDecl(mod, "EXPORTED")) {
+                if (@hasDecl(mod, word)) {
+                    const MM = @field(mod, word);
+                    if (@TypeOf(MM) == type and @hasDecl(MM, "is_mm")) list = list ++ MM.methods;
+                }
+                continue;
+            }
+            if (!exportedName(mod, word)) continue;
+            const is_sources = @hasDecl(mod, "SOURCES");
+            const raw_members = @hasDecl(mod, "IS_DISPATCH_UNIT");
+            const next = if (is_sources) mod.SOURCES else if (@hasDecl(mod, "STATIC")) mod.STATIC else .{};
+            for (next) |source| {
+                if (!is_sources and source == mod) continue;
+                const target = if (raw_members) source else dispatchUnit(source);
+                if (contains(pending[0..n], target)) continue;
+                if (n == pending.len) @compileError("jpp: reexport module limit exceeded.");
+                pending[n] = target;
+                n += 1;
+            }
         }
         return MultiMethod(word, list);
     }
+}
+
+pub fn MergedWord(comptime word: []const u8, comptime mods: anytype) type {
+    return ReexportWord(word, extendAll(.{}, mods));
+}
+
+pub fn UnitWord(comptime word: []const u8, comptime mods: anytype) type {
+    return ReexportWord(word, mods);
 }
 
 // --- signature interpreter ----------------------------------------------------------
@@ -174,7 +220,7 @@ pub fn construct(comptime sig: []const Slot, comptime Raw: type) ?type {
                 if (types[p] != null) return null;
                 if (!qualOk(sig[p].qual, f)) return null;
                 types[p] = f.type;
-                if (f.type == type) attrs[p] = .{ .@"comptime" = true, .default_value_ptr = f.default_value_ptr };
+                if (f.is_comptime) attrs[p] = .{ .@"comptime" = true, .default_value_ptr = f.default_value_ptr };
             } else {
                 const idx = for (sig, 0..) |s, i| {
                     if (s.section == .named and std.mem.eql(u8, s.name, f.name)) break i;
@@ -182,7 +228,7 @@ pub fn construct(comptime sig: []const Slot, comptime Raw: type) ?type {
                 if (types[idx] != null) return null;
                 if (!qualOk(sig[idx].qual, f)) return null;
                 types[idx] = f.type;
-                if (f.type == type) attrs[idx] = .{ .@"comptime" = true, .default_value_ptr = f.default_value_ptr };
+                if (f.is_comptime) attrs[idx] = .{ .@"comptime" = true, .default_value_ptr = f.default_value_ptr };
             }
         }
         if (sig.len == 0) return @Struct(.auto, null, &.{}, &.{}, &.{});
@@ -203,6 +249,14 @@ pub fn construct(comptime sig: []const Slot, comptime Raw: type) ?type {
         for (sig, 0..) |s, i| {
             switch (s.qual) {
                 .tvar => |v| {
+                    // An explicit type-valued input can witness this same
+                    // binder, in either declaration order and either section.
+                    for (sig, 0..) |witness, wi| {
+                        if (witness.qual == .exact and witness.qual.exact == type and std.mem.eql(u8, witness.name, v)) {
+                            const selected = @as(*const type, @ptrCast(@alignCast(attrs[wi].default_value_ptr.?))).*;
+                            if (selected != ts[i]) return null;
+                        }
+                    }
                     const existing: ?usize = for (0..nb) |bi| {
                         if (std.mem.eql(u8, bn[bi], v)) break bi;
                     } else null;
@@ -330,25 +384,41 @@ fn exportedName(comptime mod: type, comptime name: []const u8) bool {
     return false;
 }
 
-pub fn validateExports(comptime declared: anytype, comptime exported: anytype) void {
-    inline for (exported) |name| {
+fn unitScopeHas(comptime mod: type, comptime name: []const u8) bool {
+    if (@hasDecl(mod, "DISPATCH_HOME")) return exportedName(mod.DISPATCH_HOME, name);
+    if (@hasDecl(mod, "UNIT")) return exportedName(dispatchUnit(mod.UNIT), name);
+    return false;
+}
+
+/// Exporting a word declares its identity, not a fallback implementation.
+/// Check lexical dependencies independently of whether a body is instantiated.
+/// Only the source module and its direct imports supply declarations; caller
+/// context selects implementations later and cannot repair misspellings.
+pub fn validateCalls(comptime scope: anytype, comptime owner: []const u8, comptime words: []const []const u8) void {
+    @setEvalBranchQuota(1_000_000);
+    for (words) |word| {
         const found = blk: {
-            inline for (declared) |d| if (std.mem.eql(u8, name, d)) break :blk true;
+            inline for (scope, 0..) |mod, i| {
+                const names = if (i == 0) mod.DECLARED else dispatchUnit(mod).EXPORTED;
+                inline for (names) |n| if (std.mem.eql(u8, word, n)) break :blk true;
+                if (i == 0 and unitScopeHas(mod, word)) break :blk true;
+            }
             break :blk false;
         };
-        if (!found) @compileError("jpp: export '" ++ name ++ "' has no local definition.");
+        if (!found) @compileError("jpp: undeclared call '" ++ word ++ "' in '" ++ scope[0].MODULE_NAME ++ "." ++ owner ++ "' (define, import, or export the word).");
     }
 }
 
 pub fn declaredValue(comptime scope: anytype, comptime name: []const u8) ?type {
     if (builtinType(name)) |T| return T;
     inline for (scope, 0..) |mod, i| {
-        const names = if (i == 0) mod.DECLARED else mod.EXPORTED;
+        const names = if (i == 0) mod.DECLARED else dispatchUnit(mod).EXPORTED;
         inline for (names) |n| if (std.mem.eql(u8, name, n)) {
             if (i == 0 and !exportedName(mod, name) and !std.mem.eql(u8, name, "main"))
                 return Word(mod.MODULE_NAME ++ "#" ++ name);
             return Word(name);
         };
+        if (i == 0 and unitScopeHas(mod, name)) return Word(name);
     }
     return null;
 }
@@ -455,6 +525,25 @@ fn gatesOk(comptime ctx: anytype, comptime m: Method, comptime B: type) bool {
     }
 }
 
+// Compare the same supplied coordinate, not parallel declaration indices.
+fn alignedSlot(comptime a: []const Slot, comptime i: usize, comptime b: []const Slot) ?usize {
+    if (a[i].section == .positional) {
+        var ordinal: usize = 0;
+        for (a[0..i]) |slot| if (slot.section == .positional) {
+            ordinal += 1;
+        };
+        var seen: usize = 0;
+        for (b, 0..) |slot, j| {
+            if (slot.section != .positional) continue;
+            if (seen == ordinal) return j;
+            seen += 1;
+        }
+    } else {
+        for (b, 0..) |slot, j| if (slot.section == .named and std.mem.eql(u8, slot.name, a[i].name)) return j;
+    }
+    return null;
+}
+
 // STRATUM 0: the bare ladder — rank-only dominance, no edge refinement,
 // no policy word. the machinery's own words resolve HERE, because the
 // order must never consult itself (the recursion-break pattern, third
@@ -467,7 +556,8 @@ const stratum0_policy = struct {
             var strictly: bool = false;
             for (0..a.signature.len) |i| {
                 const ra = effRank(a, i);
-                const rb = effRank(b, i);
+                const j = alignedSlot(a.signature, i, b.signature) orelse return false;
+                const rb = effRank(b, j);
                 if (ra < rb) return false;
                 if (ra > rb) strictly = true;
             }
@@ -481,9 +571,11 @@ const ground_policy = struct {
         comptime {
             if (a.signature.len != b.signature.len) return false;
             var strictly: bool = false;
-            for (a.signature, b.signature, 0..) |sa, sb, i| {
+            for (a.signature, 0..) |sa, i| {
                 const ra = effRank(a, i);
-                const rb = effRank(b, i);
+                const j = alignedSlot(a.signature, i, b.signature) orelse return false;
+                const rb = effRank(b, j);
+                const sb = b.signature[j];
                 if (ra < rb) return false;
                 if (ra > rb) {
                     strictly = true;
@@ -501,7 +593,7 @@ const ground_policy = struct {
                     if (!ab) return false; // worse OR incomparable in this coordinate
                 }
                 const ga = gatesAt(a, i);
-                const gb = gatesAt(b, i);
+                const gb = gatesAt(b, j);
                 if (ga.len > 0 or gb.len > 0) {
                     // Legacy function predicates and surface word predicates
                     // have no authored identity bridge: keep them incomparable.
@@ -557,6 +649,14 @@ fn policyOf(comptime ctx: anytype) type {
 
 // --- context building ----------------------------------------------------------------
 
+pub fn dispatchUnit(comptime mod: type) type {
+    return if (@hasDecl(mod, "UNIT")) dispatchUnit(mod.UNIT) else mod;
+}
+
+fn dispatchHome(comptime mod: type) type {
+    return if (@hasDecl(mod, "DISPATCH_HOME")) mod.DISPATCH_HOME else mod;
+}
+
 pub fn contains(comptime ctx: anytype, comptime mod: type) bool {
     inline for (ctx) |m| if (m == mod) return true;
     return false;
@@ -564,21 +664,24 @@ pub fn contains(comptime ctx: anytype, comptime mod: type) bool {
 
 fn ExtendAllT(comptime ctx: anytype, comptime mods: anytype, comptime i: usize) type {
     if (i == mods.len) return @TypeOf(ctx);
-    if (contains(ctx, mods[i])) return ExtendAllT(ctx, mods, i + 1);
-    return ExtendAllT(ctx ++ .{mods[i]}, mods, i + 1);
+    if (contains(ctx, dispatchUnit(mods[i]))) return ExtendAllT(ctx, mods, i + 1);
+    return ExtendAllT(ctx ++ .{dispatchUnit(mods[i])}, mods, i + 1);
 }
 
 fn extendAllFrom(comptime ctx: anytype, comptime mods: anytype, comptime i: usize) ExtendAllT(ctx, mods, i) {
     if (i == mods.len) return ctx;
-    if (comptime contains(ctx, mods[i])) return extendAllFrom(ctx, mods, i + 1);
-    return extendAllFrom(ctx ++ .{mods[i]}, mods, i + 1);
+    if (comptime contains(ctx, dispatchUnit(mods[i]))) return extendAllFrom(ctx, mods, i + 1);
+    return extendAllFrom(ctx ++ .{dispatchUnit(mods[i])}, mods, i + 1);
 }
 
 fn Extended(comptime ctx: anytype, comptime mods: anytype) type {
     // A declaration caches the value as well as its type. Return-type mirrors
     // otherwise repeat the same context construction through deep inference.
     return struct {
-        const value = extendAllFrom(ctx, mods, 0);
+        const value = blk: {
+            @setEvalBranchQuota(1_000_000);
+            break :blk extendAllFrom(extendAllFrom(.{}, ctx, 0), mods, 0);
+        };
     };
 }
 
@@ -603,6 +706,7 @@ fn DependencyModules(comptime ctx: anytype) type {
         // Only a discovery universe: these imports do NOT enter the caller's
         // resolution context until the corresponding method is entered.
         const value = blk: {
+            @setEvalBranchQuota(1_000_000);
             var mods: [512]type = undefined;
             var n: usize = 0;
             for (ctx) |mod| {
@@ -657,6 +761,7 @@ fn footprint(comptime ctx: anytype, comptime word: []const u8) []const []const u
                     }
                     if (m.body != .ops) continue;
                     for (m.body.ops.ops) |op| {
+                        if (op.kind != .call) continue;
                         if (!containsWord(words[0..n], op.callee)) {
                             if (n == words.len) @compileError("jpp: dependency word limit exceeded.");
                             words[n] = op.callee;
@@ -701,7 +806,11 @@ fn canonFrom(comptime acc: anytype, comptime ctx: anytype, comptime words: []con
 
 fn Canonical(comptime ctx: anytype, comptime word: []const u8) type {
     return struct {
-        const value = canonFrom(.{}, ctx, footprint(ctx, word), 0);
+        const value = blk: {
+            @setEvalBranchQuota(1_000_000);
+            const units = extendAll(.{}, ctx);
+            break :blk canonFrom(.{}, units, footprint(units, word), 0);
+        };
     };
 }
 
@@ -711,7 +820,14 @@ pub fn canon(comptime ctx: anytype, comptime word: []const u8) @TypeOf(Canonical
 
 // --- resolution ------------------------------------------------------------------------
 
-const Resolved = struct { m: Method, B: type, home: type };
+const Resolved = struct { m: Method, B: type, home: type, unit: ?type = null };
+
+fn methodUnit(comptime method: Method) ?type {
+    const home = method.declaration_home orelse return null;
+    if (@hasDecl(home, "DISPATCH_HOME")) return home.DISPATCH_HOME;
+    if (@hasDecl(home, "UNIT")) return dispatchUnit(home.UNIT);
+    return null;
+}
 
 /// julia-parity ambiguity semantics, jpp deviation where ratified:
 /// collect ALL constructing candidates, compute the MAXIMA under the
@@ -736,7 +852,16 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
             if (!@hasDecl(mod, word)) continue;
             const MM = @field(mod, word);
             if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
+            const candidate_home = dispatchHome(mod);
+            const earlier_modules = n;
             for (MM.methods) |m| {
+                const unit = methodUnit(m);
+                // A facade view and its full unit can both be present. They
+                // may expose the same authored method, which is one candidate.
+                const duplicate = for (cands[0..earlier_modules]) |prior| {
+                    if ((prior.home == candidate_home or (unit != null and prior.unit == unit)) and std.meta.eql(prior.m, m)) break true;
+                } else false;
+                if (duplicate) continue;
                 const B = construct(m.signature, Raw) orelse continue;
                 const candidate_ctx = extendAll(ctx, StaticOf(m.declaration_home orelse mod));
                 if (!eqsOk(candidate_ctx, m, B)) continue;
@@ -746,7 +871,7 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
                 // by position) without forcing every caller to import the
                 // predicate module.
                 if (!gatesOk(candidate_ctx, m, B)) continue;
-                cands[n] = .{ .m = m, .B = B, .home = mod };
+                cands[n] = .{ .m = m, .B = B, .home = candidate_home, .unit = unit };
                 n += 1;
             }
         }
@@ -775,7 +900,8 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
             max_count += 1;
             if (first_max == null) {
                 first_max = cands[i]; // gather order = context order = position
-            } else if (cands[i].home == first_max.?.home) {
+            } else if (cands[i].home == first_max.?.home or
+                (cands[i].unit != null and cands[i].unit == first_max.?.unit)) {
                 same_home_clash = true;
             }
         }
@@ -828,16 +954,28 @@ fn fieldAt(s: anytype, comptime i: usize) fieldTypeAt(@TypeOf(s), i) {
     return @field(s, @typeInfo(@TypeOf(s)).@"struct".fields[i].name);
 }
 
-const ValueInfo = struct { T: type, value: ?type = null };
+// Static availability belongs to fields, not to incidental constant folding.
+// A static field carries its actual value in the pack type; a runtime field
+// carries only its type. This also preserves non-type selectors from grounds.
+const ValueInfo = struct { T: type, value: ?*const anyopaque = null };
+
+fn staticInfo(comptime value: anytype) ValueInfo {
+    return .{ .T = @TypeOf(value), .value = &value };
+}
+
+fn staticValue(comptime info: ValueInfo) info.T {
+    return @as(*const info.T, @ptrCast(@alignCast(info.value.?))).*;
+}
+
+fn fieldInfo(comptime f: std.builtin.Type.StructField) ValueInfo {
+    return .{ .T = f.type, .value = if (f.is_comptime) f.default_value_ptr else null };
+}
 
 fn refInfo(comptime r: ValRef, comptime B: type, comptime locals: []const ValueInfo) ValueInfo {
     return switch (r) {
-        .param_type => |p| .{ .T = type, .value = fieldTypeAt(B, p) },
-        .type_value => |V| .{ .T = type, .value = V },
-        .param => |p| blk: {
-            const f = @typeInfo(B).@"struct".fields[p];
-            break :blk .{ .T = f.type, .value = if (f.type == type) f.defaultValue().? else null };
-        },
+        .param_type => |p| staticInfo(fieldTypeAt(B, p)),
+        .type_value => |V| staticInfo(V),
+        .param => |p| fieldInfo(@typeInfo(B).@"struct".fields[p]),
         .local => |l| locals[l],
         .lit_i => .{ .T = i64 },
         .lit_f => .{ .T = f64 },
@@ -846,39 +984,130 @@ fn refInfo(comptime r: ValRef, comptime B: type, comptime locals: []const ValueI
     };
 }
 
-fn infoPack(comptime infos: []const ValueInfo) type {
+fn entryName(comptime labels: []const []const u8, comptime i: usize) []const u8 {
+    if (labels.len > 0 and labels[i].len > 0) return labels[i];
+    return std.fmt.comptimePrint("{d}", .{i});
+}
+
+fn namedInfoPack(comptime infos: []const ValueInfo, comptime labels: []const []const u8, comptime canonical: bool) type {
     comptime {
+        if (labels.len != 0 and labels.len != infos.len) @compileError("jpp: invalid pack labels.");
         var names: [infos.len][]const u8 = undefined;
         var ts: [infos.len]type = undefined;
         var attrs: [infos.len]std.builtin.Type.StructField.Attributes = @splat(.{});
+        var named = false;
         for (infos, 0..) |info, i| {
-            names[i] = std.fmt.comptimePrint("{d}", .{i});
+            names[i] = entryName(labels, i);
+            const is_named = positionOf(names[i]) == null;
+            if (named and !is_named) @compileError("jpp: positional field after named section.");
+            named = named or is_named;
+            for (names[0..i]) |prior| if (std.mem.eql(u8, prior, names[i])) @compileError("jpp: duplicate pack field.");
             ts[i] = info.T;
-            if (info.value) |V| attrs[i] = .{ .@"comptime" = true, .default_value_ptr = &V };
+            if (info.value) |ptr| attrs[i] = .{ .@"comptime" = true, .default_value_ptr = ptr };
+        }
+        // Positional indices retain their order. Named value identity is
+        // independent of spelling order; this does not promise a foreign ABI.
+        if (canonical) {
+            for (0..infos.len) |i| {
+                if (positionOf(names[i]) != null) continue;
+                for (i + 1..infos.len) |j| {
+                    if (std.mem.lessThan(u8, names[j], names[i])) {
+                        std.mem.swap([]const u8, &names[i], &names[j]);
+                        std.mem.swap(type, &ts[i], &ts[j]);
+                        std.mem.swap(std.builtin.Type.StructField.Attributes, &attrs[i], &attrs[j]);
+                    }
+                }
+            }
         }
         return @Struct(.auto, null, &names, &ts, &attrs);
     }
 }
 
-fn argPack(comptime args: []const ValRef, comptime B: type, comptime locals: []const ValueInfo) type {
+fn infoPack(comptime infos: []const ValueInfo) type {
+    return namedInfoPack(infos, &.{}, false);
+}
+
+/// Native representation boundary used by the ordinary Tuple library.
+pub fn tupleLen(comptime T: type) i64 {
+    if (@typeInfo(T) != .@"struct") @compileError("jpp: tuple operation requires positional fields.");
+    const fields = @typeInfo(T).@"struct".fields;
+    inline for (fields, 0..) |f, i| {
+        if (comptime !std.mem.eql(u8, f.name, std.fmt.comptimePrint("{d}", .{i})))
+            @compileError("jpp: tuple operation requires positional fields.");
+    }
+    return @intCast(fields.len);
+}
+
+fn TailType(comptime T: type) type {
+    const n = tupleLen(T);
+    if (n == 0) @compileError("jpp: tail requires a nonempty tuple.");
+    const fields = @typeInfo(T).@"struct".fields;
+    var infos: [fields.len - 1]ValueInfo = undefined;
+    for (fields[1..], 0..) |f, i| infos[i] = fieldInfo(f);
+    return infoPack(&infos);
+}
+
+pub fn tupleTail(value: anytype) TailType(@TypeOf(value)) {
+    const T = TailType(@TypeOf(value));
+    var out: T = undefined;
+    inline for (@typeInfo(T).@"struct".fields, 0..) |f, i| {
+        if (comptime !f.is_comptime) @field(out, f.name) = fieldAt(value, i + 1);
+    }
+    return out;
+}
+
+fn argPack(comptime op: Op, comptime B: type, comptime locals: []const ValueInfo) type {
     comptime {
-        var infos: [args.len]ValueInfo = undefined;
-        for (args, 0..) |r, j| infos[j] = refInfo(r, B, locals);
-        return infoPack(&infos);
+        var infos: [op.args.len]ValueInfo = undefined;
+        for (op.args, 0..) |r, j| infos[j] = refInfo(r, B, locals);
+        return namedInfoPack(&infos, op.labels, op.kind == .pack);
     }
 }
 
-fn localInfo(comptime ctx: anytype, comptime flat: Flat, comptime B: type) [flat.ops.len]ValueInfo {
-    comptime {
-        @setEvalBranchQuota(1_000_000);
-        var infos: [flat.ops.len]ValueInfo = undefined;
-        for (flat.ops, 0..) |op, i| {
-            const Raw = argPack(op.args, B, infos[0..i]);
-            const T = RetOf(ctx, op.callee, Raw);
-            infos[i] = .{ .T = T, .value = if (T == type) call(ctx, op.callee, @as(Raw, undefined)) else null };
+fn projectedInfo(comptime parent: ValueInfo, comptime field: []const u8) ValueInfo {
+    if (@typeInfo(parent.T) != .@"struct") @compileError("jpp: field projection requires a tuple or record.");
+    for (@typeInfo(parent.T).@"struct".fields) |f| {
+        if (std.mem.eql(u8, f.name, field)) {
+            if (parent.value != null) return staticInfo(@field(staticValue(parent), field));
+            return fieldInfo(f);
         }
-        return infos;
     }
+    @compileError("jpp: no field '" ++ field ++ "' in tuple or record.");
+}
+
+fn callInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ValueInfo {
+    const T = RetOf(ctx, word, Raw);
+    if (T == type) return staticInfo(call(ctx, word, @as(Raw, undefined)));
+    const c = canon(ctx, word);
+    const r = resolve(c, word, Raw) orelse return .{ .T = T };
+    if (r.m.body == .ops) {
+        const flat = r.m.body.ops;
+        const infos = localInfo(extendAll(c, StaticOf(r.m.declaration_home orelse r.home)), flat, r.B);
+        const result = refInfo(flat.result, r.B, &infos);
+        if (result.T == T) return result;
+    }
+    return .{ .T = T };
+}
+
+fn localInfo(comptime ctx: anytype, comptime flat: Flat, comptime B: type) [flat.ops.len]ValueInfo {
+    return LocalInfos(ctx, flat, B).value;
+}
+
+fn LocalInfos(comptime ctx: anytype, comptime flat: Flat, comptime B: type) type {
+    return struct {
+        const value = blk: {
+            @setEvalBranchQuota(1_000_000);
+            var infos: [flat.ops.len]ValueInfo = undefined;
+            for (flat.ops, 0..) |op, i| {
+                infos[i] = switch (op.kind) {
+                    .call => callInfo(ctx, op.callee, argPack(op, B, infos[0..i])),
+                    .pack => .{ .T = argPack(op, B, infos[0..i]) },
+                    .project => projectedInfo(refInfo(op.args[0], B, infos[0..i]), op.field),
+                };
+            }
+            break :blk infos;
+        };
+    };
 }
 
 fn flatRet(comptime ctx: anytype, comptime flat: Flat, comptime B: type) type {
@@ -933,7 +1162,7 @@ fn packInfo(comptime B: type) [@typeInfo(B).@"struct".fields.len]ValueInfo {
     comptime {
         const fields = @typeInfo(B).@"struct".fields;
         var infos: [fields.len]ValueInfo = undefined;
-        for (fields, 0..) |f, i| infos[i] = .{ .T = f.type, .value = if (f.type == type) f.defaultValue().? else null };
+        for (fields, 0..) |f, i| infos[i] = fieldInfo(f);
         return infos;
     }
 }
@@ -946,17 +1175,26 @@ fn exec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) flatRet(ctx,
     const infos = comptime localInfo(ctx, flat, B);
     var locals: infoPack(&infos) = undefined;
     inline for (flat.ops, 0..) |op, i| {
-        if (comptime infos[i].T != type) {
-            const Raw = argPack(op.args, B, &infos);
-            var raw: Raw = undefined;
-            inline for (op.args, 0..) |r, j| {
-                if (comptime !@typeInfo(Raw).@"struct".fields[j].is_comptime)
-                    @field(raw, std.fmt.comptimePrint("{d}", .{j})) = refValue(r, bound, locals);
+        // Static results need no value storage, but calls may still have
+        // runtime effects before returning a static field. Execute those calls.
+        if (comptime infos[i].value == null or (op.kind == .call and infos[i].T != type)) {
+            if (comptime op.kind == .project) {
+                @field(locals, std.fmt.comptimePrint("{d}", .{i})) = @field(refValue(op.args[0], bound, locals), op.field);
+            } else {
+                const Raw = argPack(op, B, &infos);
+                var raw: Raw = undefined;
+                inline for (op.args, 0..) |r, j| {
+                    const name = comptime entryName(op.labels, j);
+                    const f = comptime @typeInfo(Raw).@"struct".fields[std.meta.fieldIndex(Raw, name).?];
+                    if (comptime !f.is_comptime) @field(raw, name) = refValue(r, bound, locals);
+                }
+                const value = if (comptime op.kind == .pack) raw else call(ctx, op.callee, raw);
+                if (comptime infos[i].value == null) @field(locals, std.fmt.comptimePrint("{d}", .{i})) = value;
             }
-            @field(locals, std.fmt.comptimePrint("{d}", .{i})) = call(ctx, op.callee, raw);
         }
     }
-    if (comptime refInfo(flat.result, B, &infos).value) |V| return V;
+    const result = comptime refInfo(flat.result, B, &infos);
+    if (comptime result.value != null) return staticValue(result);
     return refValue(flat.result, bound, locals);
 }
 
@@ -1047,8 +1285,9 @@ pub fn sigLeq(comptime ctx: anytype, comptime a: []const Slot, comptime b: []con
     comptime {
         if (a.len != b.len) return .no; // no defaults yet: arity must agree
         var acc: Tri = .yes;
-        for (a, b) |sa, sb| {
-            if (!std.mem.eql(u8, sa.name, sb.name) and sa.section == .named) return .no;
+        for (a, 0..) |sa, i| {
+            const j = alignedSlot(a, i, b) orelse return .no;
+            const sb = b[j];
             acc = triAll(acc, qualLeq(ctx, sa.qual, sb.qual));
             if (acc == .no) return .no;
         }
@@ -1070,7 +1309,9 @@ pub fn sigMeet(comptime a: []const Slot, comptime b: []const Slot) ?[]const Slot
     comptime {
         if (a.len != b.len) return null;
         var out: [a.len]Slot = undefined;
-        for (a, b, 0..) |sa, sb, i| {
+        for (a, 0..) |sa, i| {
+            const j = alignedSlot(a, i, b) orelse return null;
+            const sb = b[j];
             const q: Qual = switch (sa.qual) {
                 .type_value => |T| switch (sb.qual) {
                     .type_value => |S| if (T == S) sa.qual else return null,
@@ -1628,9 +1869,11 @@ test "bound packs preserve type values but erase incidental data constants" {
         .{ .name = "T", .section = .named, .qual = .{ .exact = type } },
         .{ .name = "x", .section = .named, .qual = .{ .exact = i64 } },
     };
-    const first = .{ .x = @as(i64, 1), .T = i64 };
-    const second = .{ .T = i64, .x = @as(i64, 2) };
-    const other = .{ .x = @as(i64, 1), .T = u64 };
+    // Specify runtime fields at the native boundary, as the surface emitter
+    // does. A Zig anonymous literal may itself create comptime fields.
+    const first: struct { x: i64, comptime T: type = i64 } = .{ .x = 1 };
+    const second: struct { comptime T: type = i64, x: i64 } = .{ .x = 2 };
+    const other: struct { x: i64, comptime T: type = u64 } = .{ .x = 1 };
     const B = comptime construct(&sig, @TypeOf(first)).?;
     try std.testing.expect(B == comptime construct(&sig, @TypeOf(second)).?);
     try std.testing.expect(B != comptime construct(&sig, @TypeOf(other)).?);

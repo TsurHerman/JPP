@@ -1,7 +1,7 @@
 # world A: first before second — first answers.
 using first
 using second
-using Test
+using Base.Test
 
 main() = {
     check("first leads: tag answers 1", tag(0), 1)

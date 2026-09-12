@@ -1,6 +1,6 @@
-using Any
+using Base.Any
 using fallback
-using Test
+using Base.Test
 export forward
 
 # Any is an ordinary predicate, so the later gated method beats this bare one.

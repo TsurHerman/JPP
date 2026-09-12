@@ -1,0 +1,7 @@
+using Base
+
+main() = {
+    check("Base aggregate uses the source Any leaf", Any(bool), true)
+    check("Base aggregate excludes replaced membership", Any(int64), false)
+    check("other bundled leaves remain in Base", 20 + 22, 42)
+}

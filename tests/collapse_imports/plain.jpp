@@ -1,5 +1,5 @@
 using facade
-using Test
+using Base.Test
 main() = {
     check("fallback behind three import boundaries", probe(7), 7)
     check("dependency discovery does not import deeper methods", surface(7), 7)

@@ -1,10 +1,11 @@
+using Base.Arithmetic
 using base
 using a
 using a.b
 using a_b
 using jpp
 using run
-using Test
+using Base.Test
 
 main() = {
     check("Base and base are distinct modules", 2 + 3, 5)

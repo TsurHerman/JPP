@@ -4,7 +4,7 @@
 using loud
 using base
 using lib
-using Test
+using Base.Test
 
 main() = {
     check("loud leads: tag answers 99", tag(21), 99)

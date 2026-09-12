@@ -1,0 +1,30 @@
+using Base
+export identity, withEffect, pass, kind
+identity(x) = x
+withEffect(x) = { _ = tick(); x }
+pass(; value) = value
+kind(::T) where T = T
+tick()::nothing = zig{ { jpp.test_failures += 1; } }
+untick()::nothing = zig{ { jpp.test_failures -= 1; } }
+count()::int64 = zig{ @intCast(jpp.test_failures) }
+nativeType()::type = zig{ struct { comptime dimension: i64 = 3, data: i64, comptime Elem: type = i64 } }
+constructNative(T::type, x::int64) = zig{ T{ .data = x } }
+native(x::int64) = constructNative(nativeType(), x)
+main() = {
+    source = native(17)
+    shape = (source.dimension, source.Elem)
+    retained = (; dimension = pass(; value = identity(shape.0)), Elem = shape.1)
+    check("static non-type field survives calls", retained.dimension, 3)
+    check("runtime field remains data", source.data, 17)
+    check("native type field survives", retained.Elem, int64)
+    checkStatic(retained)
+    value = withEffect(source.dimension)
+    seen = count()
+    _ = untick()
+    check("static result does not erase runtime effects", seen, 1)
+    check("static result value", value, 3)
+}
+checkStatic(pack)::nothing = zig{ {
+    const fs = @typeInfo(@TypeOf(pack)).@"struct".fields;
+    if (!fs[0].is_comptime or !fs[1].is_comptime) @compileError("lost static fields");
+} }

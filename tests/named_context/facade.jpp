@@ -1,0 +1,3 @@
+using middle
+export probe
+probe(value; bonus::int64) = inner(value; bonus = bonus)

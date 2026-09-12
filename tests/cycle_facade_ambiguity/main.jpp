@@ -1,0 +1,3 @@
+using group
+using group.package.worker
+main() = crossed(1, 2)

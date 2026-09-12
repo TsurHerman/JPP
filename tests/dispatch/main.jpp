@@ -2,7 +2,7 @@
 # beats the Any predicate. each method returns its own number — the value says which
 # method ran.
 using kinds
-using Test
+using Base.Test
 
 main() = {
     check("int64 selects method 1", kind(21), 1)

@@ -1,3 +1,5 @@
+// HISTORICAL v1 emitter, not the active compiler. Its summed-rank output
+// targets the original spike; only its AST field adapter is kept buildable.
 // emit.zig — the printer: ast.Method + ast.FlatBody -> zig text.
 // templates are the shapes hand-validated in spike/. each ANF op prints
 // TWICE: at type level into Ret (return types may depend on context
@@ -53,7 +55,7 @@ pub fn emitModule(out: *Out, spec: ModuleSpec) void {
 
 fn emitMethod(out: *Out, spec: MethodSpec, idx: usize) void {
     const m = spec.method;
-    const slots = m.value_params orelse &.{};
+    const slots = m.params;
 
     out.add("\nconst M{d} = jpp.Method(struct {{\n", .{idx});
 
@@ -99,9 +101,9 @@ fn emitOpType(out: *Out, op: ast.Op) void {
     switch (op.kind) {
         .call => |c| {
             out.add("        const T{d} = jpp.RetOfT(ctx2, \"{s}\", &.{{ ", .{ op.id, c.callee });
-            for (c.paren_args, 0..) |r, i| {
+            for (c.args, 0..) |r, i| {
                 if (i > 0) out.add(", ", .{});
-                emitRefType(out, r);
+                emitRefType(out, r.value);
             }
             out.add(" }});\n", .{});
         },
@@ -113,9 +115,9 @@ fn emitOpValue(out: *Out, op: ast.Op) void {
     switch (op.kind) {
         .call => |c| {
             out.add("        const v{d} = jpp.call(ctx2, \"{s}\", .{{ ", .{ op.id, c.callee });
-            for (c.paren_args, 0..) |r, i| {
+            for (c.args, 0..) |r, i| {
                 if (i > 0) out.add(", ", .{});
-                emitRefValue(out, r);
+                emitRefValue(out, r.value);
             }
             out.add(" }});\n", .{});
         },

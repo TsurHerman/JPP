@@ -1,0 +1,3 @@
+export inspect, probe, exportedWord, unusedRequirement
+probe(x) = inspect(x)
+exportedWord() = inspect

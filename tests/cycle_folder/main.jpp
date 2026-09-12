@@ -1,0 +1,7 @@
+using group
+using group.a
+using Base.Test
+main() = {
+    check("folder cycle has finite static context", alpha(), 42)
+    check("noncyclic sibling remains part of folder public interface", beta(), 21)
+}

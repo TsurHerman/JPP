@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     const transpile = b.addRunArtifact(jppc);
+    transpile.has_side_effects = true;
     transpile.setCwd(b.path("."));
     const transpile_step = b.step("transpile", "Transpile tests/dispatch/*.jpp -> gen/*.zig");
     transpile_step.dependOn(&transpile.step);
@@ -69,6 +70,9 @@ pub fn build(b: *std.Build) void {
         const src = b.fmt("tests/{s}", .{name});
         const gen = b.fmt("tests/.gen/{s}", .{name});
         const tr = b.addRunArtifact(jppc);
+        // jppc reads a source tree and copies the runtime; neither is captured
+        // by a directory argument's Run cache key. Regenerate before checking.
+        tr.has_side_effects = true;
         tr.setCwd(b.path("."));
         tr.addArg(src);
         tr.addArg(gen);
@@ -82,6 +86,8 @@ pub fn build(b: *std.Build) void {
             const neg = b.addSystemCommand(&.{
                 b.graph.zig_exe, "build-exe", "-fno-emit-bin", "--cache-dir", ".zig-cache",
             });
+            // A cached process result cannot certify changed generated inputs.
+            neg.has_side_effects = true;
             neg.addArg(b.fmt("tests/.gen/{s}/run.zig", .{name}));
             neg.setCwd(b.path("."));
             neg.step.dependOn(&tr.step);

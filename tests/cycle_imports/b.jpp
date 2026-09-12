@@ -1,0 +1,5 @@
+using c
+export beta, right
+helper() = 22
+beta() = gamma()
+right() = helper()

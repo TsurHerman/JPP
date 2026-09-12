@@ -1,1 +1,2 @@
-# An intentionally empty replacement: there is no arithmetic implementation.
+# This source module declares addition without an implementation.
+export +

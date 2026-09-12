@@ -1,0 +1,3 @@
+using left.a
+export rightValue
+rightValue() = 22

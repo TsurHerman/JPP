@@ -1,0 +1,3 @@
+using package
+using Base.Test
+main() = check("facade method can call internal unit words", exposed(), 42)

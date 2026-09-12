@@ -1,3 +1,4 @@
+using Base.Arithmetic
 export double, square
 double(x) = x + x
 square(x) = x * x

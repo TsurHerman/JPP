@@ -1,4 +1,4 @@
-using Any
+using Base.Any
 using order
 export accepts
 accepts(<:Any, <:Any) = false
