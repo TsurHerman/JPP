@@ -103,3 +103,8 @@ Inspect existing edits before changing files and preserve work outside the
 task. Run the relevant checks once after the final change; repeat only for
 new changes, failures, or unresolved concerns. Report what changed, the
 checks performed, and any remaining limitations.
+
+Use commit history as project memory. Commit completed, coherent increments;
+prefer short, memorable subjects that capture the concrete idea, such as
+"Methods become switches". Keep messages concise; add a brief body only when a
+decision or limitation is needed to understand the change later.
