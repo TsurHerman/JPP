@@ -170,6 +170,14 @@ Parsing malformed input is outside the corpus and fixture allocation failures
 panic. The 128-item case proves runtime-sized iteration, not arbitrary recursion
 scaling or a fixed stack bound.
 
+The Zig arrays, maps and cursor adapter are foreign fixture details, not a choice
+of jpp's collection model. The objective here is multiple dispatch replacing a
+switch. The host implementation also does not establish that table construction,
+variant representation and result-joining policy must permanently live in Zig.
+Moving those into ordinary jpp compile-time code is a design direction to examine;
+the active surface still lacks the reflection, callable application and staged
+branch construction needed to express the complete mechanism without Zig grounds.
+
 ## Next small increments
 
 1. Review an enum declaration and value-pattern spelling against this running

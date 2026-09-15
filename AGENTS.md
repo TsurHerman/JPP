@@ -66,6 +66,9 @@ a feature; preserve the ratified semantics unless the task changes them.
   arm coverage, runtime exhaustiveness, and return joins into the owning union.
   Variant groups are ordinary predicates. Do not introduce JSON-specific compiler
   rules, implicit catch-alls, or automatically split fields hidden inside records.
+- The JSON case adapts Zig std types as a foreign test fixture. It does not choose
+  jpp's array representation, collection/iteration model, allocation or ownership.
+  Keep those language decisions open; the objective is dispatch replacing switches.
 - Local `name = expression` bindings are immutable aliases of ANF values.
   Preserve evaluation once and in source order, type identity, and the
   method-wide sequential binding environment. Rebinding and forward uses
