@@ -543,6 +543,15 @@ Variadic and tuples (RUNS):
   are not recursively scanned: a nested enum is split when passed as an input.
   This is a semantic rule, independent of optimizer decisions; identical arms
   may subsequently fold. It does not add a global method table.
+- **Branch facts drive dispatch (RATIFIED principle, 2026-09-15).** A branch
+  establishes a fact that ordinary dispatch can use inside the branch. Knowing
+  that fact at comptime removes the runtime test; the value itself may still be
+  runtime data. An enum arm establishes an exact tag. An interval arm could
+  establish membership while leaving the exact integer unknown. Only the enum/
+  tagged-union form RUNS today. General fact representation, interval patterns,
+  runtime guard coverage and overlap remain OPEN; the small range probe expands
+  individual values and does not implement symbolic interval refinement. See the
+  [scalar dispatch research](design/dispatch_tables.md#the-underlying-structure).
 - **Enums and tagged payloads.** A plain enum retains its enum type; the selected
   value becomes a static pack field. `Qual.enum_value = EnumValue(E.tag)` is
   VALIDATED in native method data, above exact input type in the same rank-4

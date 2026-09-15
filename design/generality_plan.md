@@ -1,6 +1,6 @@
 # Generality implementation sequence
 
-Revised 2026-09-15 after the injected-table serialization increment. This supersedes
+Revised 2026-09-15 after scalar dispatch scrutiny. This supersedes
 the earlier feature-by-feature sequence, which postponed dependency visibility
 and static fields until after consumers were already built.
 
@@ -130,13 +130,11 @@ of all arms. Tagged payloads use the agreed Variant(owner, tag) value with
 .payload; predicates group variants. Same-owner returned variants rejoin their
 union; arbitrary return joins remain unbuilt.
 
-The [JSON case study](dispatch_tables.md) uses std.json.Value directly. Its
+The [JSON case study](dispatch_tables.md#earlier-source-problem-json) uses std.json.Value directly. Its
 jpp layer factors scalar and container behavior, traverses runtime-sized data,
-and composes two independent policies over enum-and-writer regions. The next
-surface decisions are ordinary enum declaration/pattern spelling, reflection
-without native predicates, and clearer runtime-field declarations. General error
-propagation and guaranteed stack behavior for large recursive traversals need
-separate work. None requires treating illustrative syntax as implemented.
+and composes two independent policies over enum-and-writer regions. Its Zig
+collections are foreign fixture details. Expansion and large-array experiments
+are paused; the recursive walk does not establish a memory or iteration model.
 
 Verification: `zig build test demo probes --summary all` passed all 309 build
 steps: 127 language cases (62 expected compile rejections, 14 frontend rejections)
@@ -153,6 +151,26 @@ a standalone library-size estimate. Inspection of the optimized LLVM IR found
 an eight-arm integer switch inside a jpp call implementation. The static-only
 positive fixture separately demonstrates selected-arm coverage and type results.
 No general compile-time or stack-scaling claim follows from this sample.
+
+### 4b. Scalar cases and partial evaluation
+
+OPEN — next bounded research and implementation sequence, not new syntax or
+ratified runtime-predicate semantics. The [dispatch notebook](dispatch_tables.md)
+separates method regions, knowledge established by a branch, and residual control
+flow. The existing small integer-range probe enumerates values; symbolic interval
+refinement needs a different mechanism.
+
+First expose already declared enum values and exact patterns in source, then use
+Zig's Order.compare as an 18-cell modular example. Follow it with numeric
+compare(a, op, b), exercising both known and runtime operators with integer and
+float data. NaN exposes the limit of a three-outcome relation: negating greater
+does not implement less-or-equal for arbitrary floats. Keep comparison equations
+in authored library definitions and preserve context semantics.
+
+Only after that evidence, design the smallest staged branch/refinement primitive
+and its library boundary. This keeps arrays, ownership and traversal out of the
+dispatch proof. Reflection, callable application and general value-guard overlap
+remain explicit gaps; the notebook lists the proposed tests and decision limits.
 
 ## 5. Independent library increments
 

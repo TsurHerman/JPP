@@ -16,8 +16,8 @@ Read in this order:
    argument/result obligations are a later interface feature.
 5. [Type families](type_families.md) and [numerics](numerics.md): future libraries,
    with unresolved policies identified rather than hidden in pretend implementations.
-6. [Injected dispatch tables](dispatch_tables.md): a running std.json case study,
-   shared definitions, contextual table regions and the remaining surface gaps.
+6. [Injected dispatch tables](dispatch_tables.md): method regions, partial
+   evaluation, the next scalar comparison proof, and the earlier running JSON case.
 7. [Binary units](binary_units.md): what an inspectable compiled unit must retain.
 
 **Status vocabulary:** RUNS means implemented and checked through the active
