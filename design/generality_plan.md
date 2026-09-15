@@ -1,6 +1,6 @@
 # Generality implementation sequence
 
-Revised 2026-09-12 after review and the module/unit decisions. This supersedes
+Revised 2026-09-15 after the injected-table serialization increment. This supersedes
 the earlier feature-by-feature sequence, which postponed dependency visibility
 and static fields until after consumers were already built.
 
@@ -116,8 +116,43 @@ and known callable values need dependency discovery and private-home preservatio
 before context collapse. Test deep caller overrides through an alias.
 
 Compare literal/computed static selectors, keyword permutations, and different
-runtime data at the bound method's instance identity. Runtime closed-domain
-selector bridging and general closures are later extensions.
+runtime data at the bound method's instance identity. General closures and
+bool/integer-range bridges remain later extensions. The enum/tagged-union
+bridge below was brought forward to test declarative library composition.
+
+### 4a. Injected tables through a real library
+
+RUNS — verified 2026-09-15.
+This bounded increment was brought forward at the user's request. Ordinary
+calls inject enum/tagged-union switches before method selection. Each arm uses
+the active resolver. Known tags select one arm; runtime tags require coverage
+of all arms. Tagged payloads use the agreed Variant(owner, tag) value with
+.payload; predicates group variants. Same-owner returned variants rejoin their
+union; arbitrary return joins remain unbuilt.
+
+The [JSON case study](dispatch_tables.md) uses std.json.Value directly. Its
+jpp layer factors scalar and container behavior, traverses runtime-sized data,
+and composes two independent policies over enum-and-writer regions. The next
+surface decisions are ordinary enum declaration/pattern spelling, reflection
+without native predicates, and clearer runtime-field declarations. General error
+propagation and guaranteed stack behavior for large recursive traversals need
+separate work. None requires treating illustrative syntax as implemented.
+
+Verification: `zig build test demo probes --summary all` passed all 309 build
+steps: 127 language cases (62 expected compile rejections, 14 frontend rejections)
+and 52 machinery/probe tests. The JSON case has 38 assertions in two programs;
+variant_dispatch adds nine focused checks. The first full run exposed a case-
+sensitive expected-diagnostic typo in the new crossing fixture; it was corrected
+to the resolver's existing AMBIGUOUS diagnostic and the full run passed.
+
+A separate ReleaseSafe build of the JSON case ran the same 38 assertions. On
+this Darwin arm64/Zig 0.16.0 host, one wall-clock sample with a shared warm cache
+and LLVM IR emission took 11.44 s; the executable was 572,552 bytes. It includes
+the parser, reference serializer, both contexts and test harness, so this is not
+a standalone library-size estimate. Inspection of the optimized LLVM IR found
+an eight-arm integer switch inside a jpp call implementation. The static-only
+positive fixture separately demonstrates selected-arm coverage and type results.
+No general compile-time or stack-scaling claim follows from this sample.
 
 ## 5. Independent library increments
 

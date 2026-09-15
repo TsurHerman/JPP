@@ -6,7 +6,7 @@
 // in src/jpp.zig and run at zig comptime inside the GENERATED files.
 //
 // v1 surface (scope cuts documented in README):
-//   using NAME (implicit Base appended unless explicit, except in Base itself)
+//   using NAME (explicit imports, optional same-name folder facades)
 //   export a, b, +
 //   name(params) [:: retty] = expr
 //   expr: literals, idents, calls, { blocks with immutable name = expr binds }, zig{ raw ground },

@@ -1,0 +1,4 @@
+modeType()::type = zig{ enum(u8) { first, _ } }
+make(S::type)::S = zig{ .first }
+identity(value) = value
+main() = identity(make(modeType()))

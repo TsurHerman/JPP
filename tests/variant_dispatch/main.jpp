@@ -1,0 +1,38 @@
+using Base
+export choiceType, Left, Right, Both
+choiceType()::type = zig{ union(enum) { left: i64, right: i64 } }
+make(S::type, n::int64)::S = zig{ if (n == 0) .{ .left = 7 } else .{ .right = 9 } }
+Left(T::type) = isLeft(T, choiceType())
+Right(T::type) = isRight(T, choiceType())
+Both(T::type) = inFamily(T, choiceType())
+isLeft(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .left) }
+isRight(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .right) }
+inFamily(T::type, Owner::type)::bool = zig{ jpp.isVariantOf(T, Owner) }
+
+export <:
+<:(Left, Both) = true
+<:(Right, Both) = true
+identity(value) = value
+read(value<:Both) = value.payload
+pick(value<:Both) = value.payload
+pick(value<:Left) = value.payload + 100
+forward(values...; options...) = target(values...; options...)
+target(value<:Both; extra) = read(value) + extra
+staticValue(S::type) = zig{ .{ .value = S{ .left = 17 } } }
+selectedType(<:Left) = int64
+selectedType(<:Right) = float64
+staticOnly(value<:Left) = value.payload
+counter()::type = zig{ struct { pub var count: i64 = 0; } }
+produce(S::type, C::type)::S = zig{ blk: { C.count += 1; break :blk .{ .left = 7 }; } }
+count(C::type)::int64 = zig{ C.count }
+main() = {
+    check("variant identity rejoins the original union", read(identity(make(choiceType(), 1))), 9)
+    check("broad grouped method accepts both tags", read(make(choiceType(), 1)), 9)
+    check("specific predicate refines grouped variant", pick(make(choiceType(), 0)), 107)
+    check("unrelated tag retains common method", pick(make(choiceType(), 1)), 9)
+    check("named and rest forwarding preserves variant", forward(make(choiceType(), 1); extra = 3), 12)
+    check("known tag selects a type without a runtime join", selectedType(staticValue(choiceType()).value), int64)
+    check("static input needs only selected arm coverage", staticOnly(staticValue(choiceType()).value), 17)
+    check("producer output arrives at selected method", pick(produce(choiceType(), counter())), 107)
+    check("producer runs once across all potential arms", count(counter()), 1)
+}

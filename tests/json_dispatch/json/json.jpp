@@ -1,0 +1,3 @@
+using json.*
+export emit, render, openContainer, closeContainer, entries
+render(value, writer)::nothing = emit(value, writer)

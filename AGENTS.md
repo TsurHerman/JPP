@@ -59,6 +59,13 @@ a feature; preserve the ratified semantics unless the task changes them.
   for otherwise tied coordinates. Uniform T needs a witness when empty;
   short predicate rest annotations check each element independently.
   `design/` is a design notebook, not runnable regression fixtures.
+- Ordinary direct enum/tagged-union inputs inject a table before selection in
+  the machinery. Resolve each arm with the normal context and specificity rules;
+  evaluate producers once. Enum values become static fields; union inputs become
+  Variant(owner, tag) values with .payload. Keep owner/tag identity, static known
+  arm coverage, runtime exhaustiveness, and return joins into the owning union.
+  Variant groups are ordinary predicates. Do not introduce JSON-specific compiler
+  rules, implicit catch-alls, or automatically split fields hidden inside records.
 - Local `name = expression` bindings are immutable aliases of ANF values.
   Preserve evaluation once and in source order, type identity, and the
   method-wide sequential binding environment. Rebinding and forward uses

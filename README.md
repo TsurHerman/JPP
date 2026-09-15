@@ -52,7 +52,8 @@ Status of the major features:
 | direct mutual `<:` pairs; no implicit equivalence closure; cyclic strict order diagnosed | RUNS (type_bindings; negative: order_cycle); legacy gated edges VALIDATED in machinery |
 | delegation `M.f` (select in M, propagate caller) | VALIDATED (machinery) — no surface |
 | specificity policy as shadowable word; stratum-0 self-reference break | VALIDATED (probe + machinery) |
-| selectors `{}`, value dispatch, runtime enum bridge, int range arms | VALIDATED (probes) — surface supports exact type values; general value selectors remain unbuilt |
+| automatic enum/tagged-union tables in ordinary calls | RUNS (variant_dispatch, json_dispatch and rejection cases); exact enum-value patterns VALIDATED in native method data |
+| general selectors `{}` and integer range arms | VALIDATED (probes); surface syntax remains unbuilt |
 | tuples/records, static projections, two-section named calls, name-aligned dispatch and bound-instance convergence | RUNS (pack_values, pack_static, named_arguments, named_specificity, named_instances, named_context) |
 | positional/named rest capture, splats, elementwise predicates, uniform rest types, and shrinking reductions | RUNS (varargs, varargs_dispatch, varargs_forward, varargs_scale, checkout; rejection cases) |
 | parametric type-words, pattern binding, re-application provenance | VALIDATED (probe) |
@@ -225,16 +226,18 @@ F{a::int32, B<:Integer, mode}(c::T1, d<:Real, rest...; eps::float64)::R where P(
 ```
 
 - **Braces — selectors**: what the specialization is chosen BY. `F{...}`
-  returns a type; every type has its `()`. Value patterns (exact values,
-  ranges) live ONLY here. Any comptime value binds; a RUNTIME selector
-  is legal iff its domain is closed (enum, bool, bounded int) — the
-  bridge lifts it per slot into the collected switch. Open domains
-  (types, comptime_int, floats, strings) are comptime-only selectors.
+  returns a comptime value, commonly a type; every type has its `()`. General
+  value/range selector syntax remains unbuilt. Automatic enum and tagged-union
+  tables also apply to ordinary paren calls (RUNS, revised 2026-09-15); they no
+  longer require a selector section. The proposed bool and bounded-integer
+  bridges remain separate work. Open domains (types, comptime_int, floats,
+  strings) remain comptime-only selectors.
 - **Parens — the call pack**: runtime data dispatches on its type. Type
   values also travel through this pack, with their identity preserved in
   comptime fields. Thus `f(int64)` can select a different method from
-  `f(float64)` without treating integer data as static selectors. General
-  runtime value selection and bridging remain in the future brace surface.
+  `f(float64)` without treating integer data as static selectors. Direct enum
+  and tagged-union inputs now receive an injected table before method selection;
+  other runtime data continue to dispatch on type.
   Positional tuple, then `;`, then named record (required named inputs RUN).
   No cross-fill; declared order is canonical.
 - **Return** optional; absent = inferred (body mirrored in context).
@@ -526,43 +529,48 @@ Variadic and tuples (RUNS):
   just a word whose pack is all-comptime and whose return is a type.
   One-way door, welded deliberately: brace application can never mean
   something paren application can't.
-- **Value dispatch and the runtime enum bridge (validated:
-  `spike/enumprobe.zig`).** Dispatch on exact enum VALUES needs no new
-  mechanism: Zig's anonymous packs make comptime-known initializers
-  comptime FIELDS, so `@TypeOf(.{Mode.fast})` carries the value and the
-  existing exact-beats-bare ladder covers `F{Mode.fast}` vs `F{mode}`
-  (value dispatch lives in the SELECTOR section — see the complete
-  shape above; data slots dispatch on types only and never bridge).
-  The new piece is the BRIDGE for runtime values: the
-  ground machinery lifts a runtime enum field to comptime with
-  `switch (x) { inline else => |v| ... }` — one arm per variant, each
-  re-entering ordinary comptime dispatch with the value known. The
-  collected arms ARE the switch table; semantics stays single (dispatch
-  is always on fully comptime-known shape) and tier-invariant. This is
-  julia's union-splitting promoted from optimizer heuristic to language
-  semantics. Consequences: exhaustiveness for free (no default method +
-  an uncovered variant = comptime error naming it, even for runtime
-  values); tables are per-instantiation (word × context × pack type) —
-  a context adding `F{Mode.fast}` changes the compiled switch, sealing
-  freezes it. Expansion policy (ratified): JUST NEST IT — no probing
-  heuristic, no optimizer-dependent meaning. The bridge lifts ONE
-  runtime field per re-entry, left to right; a pack with several
-  runtime enums nests automatically (validated). The cartesian product
-  is the user's own specialization budget: if they wrote explosive
-  numbers of specializations, they are supported; identical arms fold
-  downstream. Integers can't inline-else (2^64 arms) — they bridge
-  through DECLARED range patterns as Zig range arms
-  (`inline 0...9 => |v|` lifts each value in range to comptime;
-  validated), with the else arm going to the unconstrained methods.
-  The purpose: PROMOTE BRANCHING OUT OF THE LANGUAGE — if/else/switch
-  are not surface control flow the user schedules but a semantic step
-  the compiler completes: you write specialized methods, dispatch
-  collects the branch. The ternary select remains the value-selection
-  primitive. Note: the spike's `matches([]const type)` interface CANNOT
-  see comptime field values — the pack-type interface rework is
-  mandatory, not cosmetic. Natural extension, unprobed: tagged unions —
-  switch on the tag, dispatch per payload type; jpp's
-  sum-type/pattern-matching story.
+- **Injected dispatch tables (RUNS; revised 2026-09-15).** The source is a
+  collection of ordinary method definitions; their composition in the caller's
+  context determines a table. An ordinary call with a direct enum or tagged-union
+  argument injects its switch BEFORE method selection. Each arm uses the same
+  resolver, pointwise specificity, context position, private homes and accumulated
+  caller context. An enum-wide fallback cannot hide more specific value methods.
+  This supersedes the former rule that data slots never bridge.
+  A comptime-known input selects its arm directly. A runtime input generates all
+  possible arms, selecting only one at execution; argument producers execute once
+  before the table, in source order. Multiple dynamic coordinates nest left to
+  right, including named inputs and fields expanded from splats. Packs themselves
+  are not recursively scanned: a nested enum is split when passed as an input.
+  This is a semantic rule, independent of optimizer decisions; identical arms
+  may subsequently fold. It does not add a global method table.
+- **Enums and tagged payloads.** A plain enum retains its enum type; the selected
+  value becomes a static pack field. `Qual.enum_value = EnumValue(E.tag)` is
+  VALIDATED in native method data, above exact input type in the same rank-4
+  position as a specific type value. Enum declaration/literal/pattern syntax is
+  not yet in jppc. A tagged union instead supplies `Variant(U, tag)`, with a
+  `.payload` field and type metadata retaining its owning union and tag. Methods
+  can group variants using ordinary predicates; `jpp.isVariantOf` and
+  `jpp.isVariant` are reflection helpers usable in ground predicates. Native
+  variant identity is checked by re-application; forged metadata is insufficient.
+  Fresh where-bound types describe the refined variant. A bare `::U` native
+  exact-type signature is not a variant-family predicate; use an explicit family
+  predicate to cover U's variants. The wrapper is a shallow value copy, not a
+  mutable view or an ownership transfer. References inside payloads retain their
+  ordinary lifetimes. No enum/union declaration is duplicated in the serializer.
+- **Table obligations and scope.** Every possible runtime arm must resolve;
+  missing coverage and competing maxima fail during compilation. A known static
+  tag requires only its selected arm. Runtime arms must share a return type, or
+  return variants that rejoin their common owning union (so `identity(x) = x`
+  works). Other result joins, including general numeric promotion/error-set
+  merging, remain unbuilt; a runtime-selected type cannot escape. Non-exhaustive
+  enums are rejected for runtime splitting. Bool/integer-range splitting is not
+  activated by this change; range arms remain a separate probe. `resolve` itself
+  resolves a refined leaf pack; `call`, return inference and delegation inject
+  tables. General surface braces and value-pattern spelling remain future work.
+  Evidence: native enum/delegation/ledger tests, `variant_dispatch`, six rejection
+  cases, and the modular [JSON case study](tests/json_dispatch/test.md).
+  The [design walkthrough](design/dispatch_tables.md) shows shared scalar and
+  container definitions, recursive traversal and independent policy modules.
 - `<:` has ONE meaning, defined by desugaring: "the TYPE BINDER on my
   left satisfies the predicate on my right" — it never applies to a
   value. The argument-position form introduces an anonymous binder:
@@ -1138,6 +1146,12 @@ print/algebra demo):
   Local bindings name intermediate results; export-only dependencies now RUN.
   The basket accepts zero/one/many heterogeneous physical and digital lines;
   recursive pricing shrinks its tuple while preserving caller policies.
+- [JSON serialization](tests/json_dispatch/test.md) is a second modular RUNS
+  case: std.json.Value is consumed through injected variant tables. Four scalar
+  variants share one definition; arrays and objects share a container body and
+  runtime cursor traversal. Two policy modules specialize strings/integers for
+  one writer family, including nested values. Ground code retains std parsing
+  and writing primitives; the case is not a complete replacement of std.json.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across

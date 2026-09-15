@@ -44,6 +44,13 @@ zig run tests/.gen/checkout/run.zig
 It prices baskets through nested modules in two application contexts,
 prints receipts, and checks the totals. It also runs under `zig build test`.
 
+For injected variant tables and runtime traversal, read the
+[JSON case study](tests/json_dispatch/test.md). Run it with
+`zig run src/jppc.zig -- tests/json_dispatch tests/.gen/json_dispatch`, then
+`zig run tests/.gen/json_dispatch/run.zig`. Its jpp modules consume the real
+std.json.Value union, compare with Zig's serializer, and apply caller policies
+inside nested arrays and objects. Types/reflection and IO still use Zig grounds.
+
 **The case contract (unix, self-judging, ONE artifact):** jppc emits a
 single `run.zig` per tree. Each program (root module defining `main`)
 runs as a fresh root context; `check(name, got, want)` (from

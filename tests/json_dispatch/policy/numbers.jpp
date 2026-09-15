@@ -1,0 +1,5 @@
+using model
+export emit
+
+# Independently composed with masked. Ordinary writers retain their behavior.
+emit(value<:JsonInteger, writer<:Masked)::nothing = writeIntegerAsString(value.payload, writer)

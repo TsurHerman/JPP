@@ -1,0 +1,41 @@
+using Base.Test
+using model
+using json
+export compare, expectDocument, checkFailure
+
+compare(text::string, numbers::bool)::nothing = {
+    parsed = parse(text, numbers)
+    writer = newWriter(writerType(Plain), 8192)
+    render(parsed.value, writer)
+    expected = reference(parsed)
+    check("JSON matches std serializer", output(writer), expected)
+    check("successful output", failed(writer), false)
+    releaseReference(expected)
+    releaseWriter(writer)
+    releaseParsed(parsed)
+}
+expectDocument(P::type, text::string, expected::string)::nothing = {
+    parsed = parse(text, true)
+    writer = newWriter(writerType(P), 8192)
+    render(parsed.value, writer)
+    check("context and writer select table region", output(writer), expected)
+    check("policy output succeeds", failed(writer), false)
+    releaseWriter(writer)
+    releaseParsed(parsed)
+}
+checkFailure()::nothing = {
+    parsed = parse("[123456789,1,2,3]", true)
+    writer = newWriter(writerType(Plain), 2)
+    render(parsed.value, writer)
+    check("writer failure is reported", failed(writer), true)
+    check("first failure stops output and cursor advancement", writes(writer), 2)
+    releaseWriter(writer)
+    releaseParsed(parsed)
+}
+
+export compareSequence
+compareSequence(n::int64)::nothing = {
+    text = sequence(n)
+    compare(text, true)
+    releaseReference(text)
+}

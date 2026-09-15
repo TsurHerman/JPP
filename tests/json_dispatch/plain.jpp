@@ -1,0 +1,19 @@
+using suite
+using model
+main() = {
+    compare("null", true)
+    compare("true", true)
+    compare("-42", true)
+    compare("1.25", true)
+    compare("\"42\"", true)
+    compare("123456789012345678901234567890", true)
+    compare("[[],{},null,true,false,-7,1.25,\"quote\\\" and slash\\\\ and newline\\n\"]", true)
+    compare("{\"name\":\"Ada\",\"items\":[{\"n\":7,\"label\":\"x\"},false],\"empty\":{}}", true)
+    compare("[17,1.25,123456789012345678901234567890]", false)
+    expectDocument(Masked, "[17,\"x\",{\"name\":\"Ada\",\"n\":2}]", "[17,\"x\",{\"name\":\"Ada\",\"n\":2}]")
+    compareSequence(0)
+    compareSequence(1)
+    compareSequence(8)
+    compareSequence(128)
+    checkFailure()
+}

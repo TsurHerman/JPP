@@ -31,11 +31,19 @@ pub fn testFail() void {
 
 pub const Qual = union(enum) {
     type_value: type, //    int64: this particular type VALUE, not an integer
+    enum_value: type, // EnumValue(E.tag): a particular declared enum value
     exact: type, //          x::int64
     pred: fn (type) bool, // x<:Integer (predicate on the slot's type)
     bare, //                 x
     tvar: []const u8, //     x::T  (T declared in `where`; unconstrained per slot)
 };
+
+pub fn EnumValue(comptime value: anytype) type {
+    if (@typeInfo(@TypeOf(value)) != .@"enum") @compileError("jpp: enum value pattern requires a typed enum value.");
+    return struct {
+        pub const Value = value;
+    };
+}
 
 pub const Section = enum { positional, named };
 
@@ -129,7 +137,7 @@ pub fn MultiMethod(comptime word: []const u8, comptime list: []const Method) typ
             if (m.signature.len != 2) @compileError("jpp: '<:' requires two type-value inputs.");
             for (m.signature) |slot| {
                 if (slot.rest) @compileError("jpp: '<:' requires two fixed type-value inputs.");
-                if (slot.qual == .pred or (slot.qual == .exact and slot.qual.exact != type))
+                if (slot.qual == .enum_value or slot.qual == .pred or (slot.qual == .exact and slot.qual.exact != type))
                     @compileError("jpp: '<:' input domains must be type values.");
             }
         }
@@ -208,6 +216,7 @@ fn qualOk(comptime q: Qual, comptime f: std.builtin.Type.StructField) bool {
     const T = f.type;
     return switch (q) {
         .type_value => |V| T == type and f.is_comptime and f.defaultValue().? == V,
+        .enum_value => |V| T == @TypeOf(V.Value) and f.is_comptime and f.defaultValue().? == V.Value,
         .exact => |E| T == E,
         .pred => |P| P(T),
         .bare, .tvar => true,
@@ -711,7 +720,7 @@ const ground_policy = struct {
 
 fn slotRank(comptime q: Qual) u32 {
     return switch (q) {
-        .type_value => 4,
+        .type_value, .enum_value => 4,
         .exact => 3,
         .pred => 2,
         .bare, .tvar => 1,
@@ -1030,6 +1039,7 @@ fn candidatesText(comptime ctx: anytype, comptime word: []const u8) []const u8 {
                     msg = msg ++ s.name;
                     switch (s.qual) {
                         .type_value => |V| msg = msg ++ "=" ++ @typeName(V),
+                        .enum_value => |V| msg = msg ++ "=" ++ @typeName(@TypeOf(V.Value)) ++ "." ++ @tagName(V.Value),
                         .exact => |E| msg = msg ++ "::" ++ @typeName(E),
                         .pred => msg = msg ++ "<:pred",
                         .bare => {},
@@ -1045,6 +1055,164 @@ fn candidatesText(comptime ctx: anytype, comptime word: []const u8) []const u8 {
         }
         return msg;
     }
+}
+
+// --- injected variant tables -------------------------------------------------------
+
+/// A selected tagged-union arm. Identity includes the owning union and tag,
+/// even when several variants have the same payload type. This is a value
+/// snapshot; it does not borrow mutable storage from the original union.
+pub fn Variant(comptime U: type, comptime tag: std.meta.Tag(U)) type {
+    return struct {
+        pub const Union = U;
+        pub const Tag = tag;
+        payload: @FieldType(U, @tagName(tag)),
+    };
+}
+
+pub fn isVariantOf(comptime T: type, comptime U: type) bool {
+    if (@typeInfo(T) != .@"struct" or @typeInfo(U) != .@"union") return false;
+    if (@typeInfo(U).@"union".tag_type == null) return false;
+    if (!@hasDecl(T, "Union") or !@hasDecl(T, "Tag")) return false;
+    if (@TypeOf(T.Union) != type or T.Union != U) return false;
+    if (@TypeOf(T.Tag) != std.meta.Tag(U)) return false;
+    return T == Variant(U, T.Tag);
+}
+
+pub fn isVariant(comptime T: type, comptime U: type, comptime tag: std.meta.Tag(U)) bool {
+    return isVariantOf(T, U) and T.Tag == tag;
+}
+
+fn bridgeField(comptime Raw: type) ?usize {
+    for (@typeInfo(Raw).@"struct".fields, 0..) |f, i| {
+        switch (@typeInfo(f.type)) {
+            .@"enum" => if (!f.is_comptime) return i,
+            .@"union" => |u| if (u.tag_type != null) return i,
+            else => {},
+        }
+    }
+    return null;
+}
+
+fn bridgeTagType(comptime T: type) type {
+    const E = if (@typeInfo(T) == .@"union") std.meta.Tag(T) else T;
+    if (!@typeInfo(E).@"enum".is_exhaustive)
+        @compileError("jpp: injected switch requires an exhaustive enum.");
+    return E;
+}
+
+fn branchRaw(comptime Raw: type, comptime i: usize, comptime tag: anytype) type {
+    const fields = @typeInfo(Raw).@"struct".fields;
+    var infos: [fields.len]ValueInfo = undefined;
+    var names: [fields.len][]const u8 = undefined;
+    for (fields, 0..) |f, j| {
+        names[j] = f.name;
+        infos[j] = fieldInfo(f);
+        if (i != j) continue;
+        if (@typeInfo(f.type) == .@"enum") {
+            infos[j] = staticInfo(tag);
+        } else {
+            const V = Variant(f.type, tag);
+            infos[j] = if (f.is_comptime)
+                staticInfo(V{ .payload = @field(f.defaultValue().?, @tagName(tag)) })
+            else
+                .{ .T = V };
+        }
+    }
+    return namedInfoPack(&infos, &names, false);
+}
+
+fn branchPack(raw: anytype, comptime i: usize, comptime tag: anytype, payload: anytype) branchRaw(@TypeOf(raw), i, tag) {
+    const Next = branchRaw(@TypeOf(raw), i, tag);
+    var next: Next = undefined;
+    inline for (@typeInfo(Next).@"struct".fields, 0..) |f, j| {
+        if (comptime f.is_comptime) continue;
+        @field(next, f.name) = if (comptime i == j) .{ .payload = payload } else @field(raw, f.name);
+    }
+    return next;
+}
+
+fn selectedRet(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, comptime Raw: type, comptime delegated: bool) type {
+    return if (delegated) DelegateRet(rctx, xctx, word, Raw) else RetOf(rctx, word, Raw);
+}
+
+fn selectedCall(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, raw: anytype, comptime delegated: bool) selectedRet(rctx, xctx, word, @TypeOf(raw), delegated) {
+    return if (delegated) delegate(rctx, xctx, word, raw) else call(rctx, word, raw);
+}
+
+fn variantOwner(comptime T: type) ?type {
+    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "Union")) return null;
+    if (@TypeOf(T.Union) != type or !isVariantOf(T, T.Union)) return null;
+    return T.Union;
+}
+
+fn joinedVariantResult(comptime A: type, comptime B: type) ?type {
+    if (A == B or B == noreturn) return A;
+    if (A == noreturn) return B;
+    const a = variantOwner(A);
+    const b = variantOwner(B);
+    if (a != null and b != null and a.? == b.?) return a.?;
+    if (a != null and a.? == B) return B;
+    if (b != null and b.? == A) return A;
+    return null;
+}
+
+fn bridgeResult(comptime R: type, value: anytype) R {
+    if (comptime isVariantOf(@TypeOf(value), R))
+        return @unionInit(R, @tagName(@TypeOf(value).Tag), value.payload);
+    return value;
+}
+
+fn bridgeRet(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, comptime Raw: type, comptime i: usize, comptime delegated: bool) type {
+    comptime {
+        const f = @typeInfo(Raw).@"struct".fields[i];
+        const E = bridgeTagType(f.type);
+        if (f.is_comptime) {
+            const tag = std.meta.activeTag(f.defaultValue().?);
+            return selectedRet(rctx, xctx, word, branchRaw(Raw, i, tag), delegated);
+        }
+        var result: type = noreturn;
+        for (@typeInfo(E).@"enum".fields) |field| {
+            const tag: E = @enumFromInt(field.value);
+            const R = selectedRet(rctx, xctx, word, branchRaw(Raw, i, tag), delegated);
+            if (R == noreturn) continue;
+            if (R == type or @typeInfo(R) == .comptime_int or @typeInfo(R) == .comptime_float)
+                @compileError("jpp: runtime variant selection cannot return a comptime-only value.");
+            result = joinedVariantResult(result, R) orelse
+                @compileError("jpp: injected switch arms require one result type in '" ++ word ++ "' (" ++ @typeName(result) ++ " versus " ++ @typeName(R) ++ ").");
+        }
+        return result;
+    }
+}
+
+fn bridgeCall(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, raw: anytype, comptime i: usize, comptime delegated: bool) bridgeRet(rctx, xctx, word, @TypeOf(raw), i, delegated) {
+    const f = comptime @typeInfo(@TypeOf(raw)).@"struct".fields[i];
+    const R = bridgeRet(rctx, xctx, word, @TypeOf(raw), i, delegated);
+    if (comptime f.is_comptime) {
+        const tag = comptime std.meta.activeTag(f.defaultValue().?);
+        return selectedCall(rctx, xctx, word, branchPack(raw, i, tag, {}), delegated);
+    }
+    if (comptime @typeInfo(bridgeTagType(f.type)).@"enum".fields.len == 0) unreachable;
+    if (comptime @typeInfo(f.type) == .@"enum") {
+        switch (@field(raw, f.name)) {
+            inline else => |tag| return bridgeResult(R, selectedCall(rctx, xctx, word, branchPack(raw, i, tag, {}), delegated)),
+        }
+    } else {
+        switch (@field(raw, f.name)) {
+            inline else => |payload, tag| return bridgeResult(R, selectedCall(rctx, xctx, word, branchPack(raw, i, tag, payload), delegated)),
+        }
+    }
+}
+
+fn variantDescription(comptime Raw: type) []const u8 {
+    var description: []const u8 = "";
+    for (@typeInfo(Raw).@"struct".fields) |f| {
+        if (@typeInfo(f.type) == .@"enum" and f.is_comptime)
+            description = description ++ " Input " ++ f.name ++ " = " ++ @typeName(f.type) ++ "." ++ @tagName(f.defaultValue().?) ++ ".";
+        if (variantOwner(f.type)) |U|
+            description = description ++ " Input " ++ f.name ++ " = " ++ @typeName(U) ++ "." ++ @tagName(f.type.Tag) ++ ".";
+    }
+    return description;
 }
 
 // --- body interpreter ---------------------------------------------------------------
@@ -1063,7 +1231,7 @@ fn fieldAt(s: anytype, comptime i: usize) fieldTypeAt(@TypeOf(s), i) {
 const ValueInfo = struct { T: type, value: ?*const anyopaque = null };
 
 fn staticInfo(comptime value: anytype) ValueInfo {
-    return .{ .T = @TypeOf(value), .value = &value };
+    return .{ .T = @TypeOf(value), .value = @ptrCast(&value) };
 }
 
 fn staticValue(comptime info: ValueInfo) info.T {
@@ -1216,6 +1384,7 @@ fn projectedInfo(comptime parent: ValueInfo, comptime field: []const u8) ValueIn
 fn callInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ValueInfo {
     const T = RetOf(ctx, word, Raw);
     if (T == type) return staticInfo(call(ctx, word, @as(Raw, undefined)));
+    if (bridgeField(Raw) != null) return .{ .T = T };
     const c = canon(ctx, word);
     const r = resolve(c, word, Raw) orelse return .{ .T = T };
     if (r.m.body == .ops) {
@@ -1273,10 +1442,11 @@ fn orderIdentity(comptime Raw: type) bool {
 /// Return type of a call; inferred returns are context-derived.
 pub fn RetOf(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) type {
     if (comptime std.mem.eql(u8, word, "<:") and orderIdentity(Raw)) return bool;
+    if (comptime bridgeField(Raw)) |i| return bridgeRet(ctx, ctx, word, Raw, i, false);
     const c = comptime canon(ctx, word);
     const r = comptime resolve(c, word, Raw) orelse {
         if (std.mem.eql(u8, word, "<:")) return bool;
-        @compileError("jpp: no method '" ++ word ++ "' matches in context." ++ candidatesText(ctx, word));
+        @compileError("jpp: no method '" ++ word ++ "' matches in context." ++ variantDescription(Raw) ++ candidatesText(ctx, word));
     };
     const Ret = methodRet(extendAll(c, StaticOf(r.m.declaration_home orelse r.home)), r.m, r.B);
     if (std.mem.eql(u8, word, "<:") and Ret != bool) @compileError("jpp: '<:' must return bool.");
@@ -1344,6 +1514,7 @@ fn exec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) flatRet(ctx,
 /// method, the effective context is caller ++ home STATIC (dedup,
 /// caller ahead) — context reaches downward and accumulates.
 pub fn call(comptime ctx: anytype, comptime word: []const u8, raw: anytype) RetOf(ctx, word, @TypeOf(raw)) {
+    if (comptime bridgeField(@TypeOf(raw))) |i| return bridgeCall(ctx, ctx, word, raw, i, false);
     const c = comptime canon(ctx, word);
     if (comptime std.mem.eql(u8, word, "<:") and orderIdentity(@TypeOf(raw))) return true;
     const resolved = comptime resolve(c, word, @TypeOf(raw));
@@ -1365,6 +1536,7 @@ pub fn call(comptime ctx: anytype, comptime word: []const u8, raw: anytype) RetO
 /// delegation: M.f(x) — resolve the word in M's context (selection),
 /// execute with the caller's accumulated context (propagation).
 pub fn delegate(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, raw: anytype) DelegateRet(rctx, xctx, word, @TypeOf(raw)) {
+    if (comptime bridgeField(@TypeOf(raw))) |i| return bridgeCall(rctx, xctx, word, raw, i, true);
     const r = comptime resolve(rctx, word, @TypeOf(raw)) orelse
         @compileError("jpp: no method '" ++ word ++ "' in delegated context");
     const bound = bindValues(r.m.signature, r.B, raw);
@@ -1376,6 +1548,7 @@ pub fn delegate(comptime rctx: anytype, comptime xctx: anytype, comptime word: [
 }
 
 fn DelegateRet(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, comptime Raw: type) type {
+    if (comptime bridgeField(Raw)) |i| return bridgeRet(rctx, xctx, word, Raw, i, true);
     const r = comptime resolve(rctx, word, Raw) orelse
         @compileError("jpp: no method '" ++ word ++ "' in delegated context");
     return methodRet(extendAll(xctx, StaticOf(r.m.declaration_home orelse r.home)), r.m, r.B);
@@ -1407,14 +1580,20 @@ pub fn qualLeq(comptime ctx: anytype, comptime a: Qual, comptime b: Qual) Tri {
             .type_value => |T| if (T == S) .yes else .no,
             else => .no,
         },
+        .enum_value => |S| switch (a) {
+            .enum_value => |T| if (T == S) .yes else .no,
+            else => .no,
+        },
         .exact => |S| switch (a) {
             .type_value => if (S == type) .yes else .no,
+            .enum_value => |T| if (@TypeOf(T.Value) == S) .yes else .no,
             .exact => |T| if (T == S) Tri.yes else Tri.no,
             .pred => .unknown, // P could denote exactly {S} — unknowable
             .bare, .tvar => .no,
         },
         .pred => |Q| switch (a) {
             .type_value => if (Q(type)) .yes else .no,
+            .enum_value => |T| if (Q(@TypeOf(T.Value))) .yes else .no,
             .exact => |T| if (Q(T)) Tri.yes else Tri.no, // point witness
             .pred => |P| if (predLeq(ctx, P, Q)) Tri.yes else Tri.unknown,
             .bare, .tvar => .unknown, // bare <= Q iff Q is total — unknowable
@@ -1453,18 +1632,28 @@ fn qualMeet(comptime a: Qual, comptime b: Qual) ?Qual {
     return switch (a) {
         .type_value => |T| switch (b) {
             .type_value => |S| if (T == S) a else return null,
+            .enum_value => null,
             .exact => |S| if (S == type) a else return null,
             .pred => |Q| if (Q(type)) a else return null,
             .bare, .tvar => a,
         },
+        .enum_value => |T| switch (b) {
+            .type_value => null,
+            .enum_value => |S| if (T == S) a else null,
+            .exact => |S| if (@TypeOf(T.Value) == S) a else null,
+            .pred => |Q| if (Q(@TypeOf(T.Value))) a else null,
+            .bare, .tvar => a,
+        },
         .exact => |T| switch (b) {
             .type_value => if (T == type) b else return null,
+            .enum_value => |S| if (@TypeOf(S.Value) == T) b else null,
             .exact => |S| if (T == S) a else return null,
             .pred => |Q| if (Q(T)) a else return null,
             .bare, .tvar => a,
         },
         .pred => |P| switch (b) {
             .type_value => if (P(type)) b else return null,
+            .enum_value => |S| if (P(@TypeOf(S.Value))) b else null,
             .exact => |S| if (P(S)) b else return null,
             .pred => |Q| if (P == Q) a else Qual{ .pred = conj(P, Q) },
             .bare, .tvar => a,
@@ -1539,6 +1728,99 @@ pub fn resolves(comptime ctx: anytype, comptime c: []const Slot, comptime a: []c
 }
 
 // --- tests: julia's dispatch patterns, from the manual --------------------------------
+
+const bridge_mode = enum { text, raw, skip };
+const bridge_enum_base = struct {
+    pub const choose = MultiMethod("choose", &.{
+        .{ .name = "choose", .signature = &.{.{ .name = "mode", .qual = .{ .exact = bridge_mode } }}, .body = .{ .ground = GroundConst(1) } },
+        .{ .name = "choose", .signature = &.{.{ .name = "mode", .qual = .{ .enum_value = EnumValue(bridge_mode.raw) } }}, .body = .{ .ground = GroundConst(2) } },
+    });
+    pub const relay = MultiMethod("relay", &.{.{ .name = "relay", .signature = &.{.{ .name = "mode", .qual = .bare }}, .body = .{ .ops = .{
+        .ops = &.{.{ .callee = "choose", .args = &.{.{ .param = 0 }} }},
+        .result = .{ .local = 0 },
+    } } }});
+};
+const bridge_enum_override = struct {
+    pub const choose = MultiMethod("choose", &.{.{ .name = "choose", .signature = &.{.{ .name = "mode", .qual = .{ .enum_value = EnumValue(bridge_mode.raw) } }}, .body = .{ .ground = GroundConst(9) } }});
+};
+
+test "enum table uses the resolver before broad fallback, including deep overrides" {
+    var mode = bridge_mode.text;
+    try std.testing.expectEqual(1, call(.{bridge_enum_base}, "relay", .{mode}));
+    mode = .raw;
+    try std.testing.expectEqual(2, call(.{bridge_enum_base}, "relay", .{mode}));
+    try std.testing.expectEqual(9, call(.{ bridge_enum_override, bridge_enum_base }, "relay", .{mode}));
+    try std.testing.expectEqual(2, call(.{ bridge_enum_base, bridge_enum_override }, "relay", .{mode}));
+    try std.testing.expectEqual(2, delegate(.{bridge_enum_base}, .{ bridge_enum_override, bridge_enum_base }, "choose", .{mode}));
+    try std.testing.expectEqual(9, delegate(.{bridge_enum_base}, .{ bridge_enum_override, bridge_enum_base }, "relay", .{mode}));
+    try std.testing.expectEqual(2, comptime call(.{bridge_enum_base}, "choose", .{bridge_mode.raw}));
+}
+
+test "nested enum table preserves named coordinates, static fields, and rest binding" {
+    const M = struct {
+        pub const choose = MultiMethod("choose", &.{
+            .{ .name = "choose", .signature = &.{
+                .{ .name = "first", .qual = .{ .exact = bridge_mode } },
+                .{ .name = "second", .section = .named, .qual = .{ .exact = bridge_mode } },
+                .{ .name = "extras", .section = .named, .rest = true, .qual = .bare },
+            }, .body = .{ .ground = GroundConst(1) } },
+            .{ .name = "choose", .signature = &.{
+                .{ .name = "first", .qual = .{ .enum_value = EnumValue(bridge_mode.raw) } },
+                .{ .name = "second", .section = .named, .qual = .{ .enum_value = EnumValue(bridge_mode.text) } },
+                .{ .name = "extras", .section = .named, .rest = true, .qual = .bare },
+            }, .body = .{ .ops = .{ .ops = &.{.{ .kind = .project, .args = &.{.{ .param = 2 }}, .field = "answer" }}, .result = .{ .local = 0 } } } },
+        });
+    };
+    var a = bridge_mode.raw;
+    var b = bridge_mode.text;
+    const first = .{ .@"0" = a, .second = b, .answer = @as(i64, 42), .T = i64 };
+    try std.testing.expectEqual(42, call(.{M}, "choose", first));
+    b = .raw;
+    try std.testing.expectEqual(1, call(.{M}, "choose", .{ .@"0" = a, .T = i64, .answer = @as(i64, 42), .second = b }));
+    a = .text;
+    try std.testing.expectEqual(1, call(.{M}, "choose", .{ .@"0" = a, .second = b, .answer = @as(i64, 42) }));
+}
+
+test "tagged union refinement preserves owner, same-type tags, and static payloads" {
+    const U = union(enum) { text: []const u8, raw: []const u8 };
+    const Other = union(enum) { text: []const u8, raw: []const u8 };
+    const M = struct {
+        pub const classify = MultiMethod("classify", &.{
+            .{ .name = "classify", .signature = &.{.{ .name = "v", .qual = .{ .exact = Variant(U, .text) } }}, .body = .{ .ground = GroundConst(1) } },
+            .{ .name = "classify", .signature = &.{.{ .name = "v", .qual = .{ .exact = Variant(U, .raw) } }}, .body = .{ .ground = GroundConst(2) } },
+        });
+        pub const payload = MultiMethod("payload", &.{.{ .name = "payload", .signature = &.{.{ .name = "v", .qual = .bare }}, .body = .{ .ops = .{
+            .ops = &.{.{ .kind = .project, .field = "payload", .args = &.{.{ .param = 0 }} }},
+            .result = .{ .local = 0 },
+        } } }});
+    };
+    var value: U = .{ .text = "17" };
+    try std.testing.expectEqual(1, call(.{M}, "classify", .{value}));
+    value = .{ .raw = "17" };
+    try std.testing.expectEqual(2, call(.{M}, "classify", .{value}));
+    try std.testing.expectEqualStrings("17", call(.{M}, "payload", .{value}));
+    try std.testing.expectEqualStrings("static", comptime call(.{M}, "payload", .{U{ .text = "static" }}));
+    try std.testing.expect(isVariant(Variant(U, .text), U, .text));
+    try std.testing.expect(!isVariant(Variant(U, .text), U, .raw));
+    try std.testing.expect(!isVariantOf(Variant(U, .text), Other));
+    const Forged = struct {
+        pub const Union = U;
+        pub const Tag = std.meta.Tag(U).text;
+        payload: []const u8,
+    };
+    try std.testing.expect(!isVariantOf(Forged, U));
+}
+
+test "enum value signature ledger agrees with inclusion and disjointness" {
+    const a: Qual = .{ .enum_value = EnumValue(bridge_mode.text) };
+    const b: Qual = .{ .enum_value = EnumValue(bridge_mode.raw) };
+    const wide: Qual = .{ .exact = bridge_mode };
+    try std.testing.expectEqual(Tri.yes, qualLeq(.{}, a, wide));
+    try std.testing.expectEqual(Tri.no, qualLeq(.{}, wide, a));
+    try std.testing.expectEqual(Tri.no, qualLeq(.{}, a, b));
+    try std.testing.expect(qualMeet(a, b) == null);
+    try std.testing.expect(std.meta.eql(a, qualMeet(a, wide).?));
+}
 
 fn isNum(comptime T: type) bool {
     return T == i64 or T == f64;

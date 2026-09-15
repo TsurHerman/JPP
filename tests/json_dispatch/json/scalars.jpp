@@ -1,0 +1,7 @@
+using model
+export emit
+
+# Four std.json.Value arms share this one definition.
+emit(value<:JsonScalar, writer)::nothing = writeScalar(value.payload, writer)
+emit(<:JsonNull, writer)::nothing = writeNull(writer)
+emit(value<:JsonRawNumber, writer)::nothing = writeRaw(value.payload, writer)

@@ -1,0 +1,5 @@
+using model
+export emit
+
+# A region of the table: only strings, and only Masked writers.
+emit(value<:JsonString, writer<:Masked)::nothing = writeScalar("[redacted]", writer)

@@ -16,7 +16,9 @@ Read in this order:
    argument/result obligations are a later interface feature.
 5. [Type families](type_families.md) and [numerics](numerics.md): future libraries,
    with unresolved policies identified rather than hidden in pretend implementations.
-6. [Binary units](binary_units.md): what an inspectable compiled unit must retain.
+6. [Injected dispatch tables](dispatch_tables.md): a running std.json case study,
+   shared definitions, contextual table regions and the remaining surface gaps.
+7. [Binary units](binary_units.md): what an inspectable compiled unit must retain.
 
 **Status vocabulary:** RUNS means implemented and checked through the active
 pipeline; VALIDATED means machinery/probe evidence; RATIFIED means decided but

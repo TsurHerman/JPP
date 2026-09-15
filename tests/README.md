@@ -114,7 +114,7 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
 | 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` and precedence); `base_import`, `base_shadow`, `base_missing`, `base_mixed`; `checkout` (Base arithmetic); machinery tests (`+` shadowed) | more widths and promotion |
 | 10 | Binder: packs, named args (§4) | named_arguments, named_specificity, named_context, named_instances; varargs, varargs_dispatch, varargs_forward; binderprobe | defaults |
-| 11 | Enum bridge (§4) | enumprobe (spike) | surface selectors |
+| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; json_dispatch; variant_* and enum_open negatives | enum declaration/pattern syntax; general result joins |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: facade, wildcard, dotted (§1) | folder_modules, folder_scope, cycle_folder, private_helpers | binary artifact boundaries |
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
@@ -186,3 +186,27 @@ promise tests are INLINE in `src/jpp.zig` (zig convention), including
 collapse, delegation, and export gating (cross-file fixture:
 `src/mixed_vis_fixture.zig`). A machinery test migrates to a case when
 the surface learns to express its promise.
+
+## Injected tables and serialization
+
+- `variant_dispatch`: ordinary calls split tagged unions before selection;
+  owner/tag identity, shared predicates and authored order, named/rest forwarding,
+  static selected-arm coverage and type results, runtime union identity rejoining,
+  and producer evaluation once.
+- `variant_missing`, `variant_result`, `variant_runtime_type`, `variant_crossing`,
+  `variant_owner`, `enum_open`: missing runtime coverage, incompatible results,
+  escaping runtime-selected types, pointwise ambiguity, unrelated union identity,
+  and non-exhaustive enum rejection.
+- [json_dispatch](json_dispatch/test.md): a modular serializer consuming the real
+  std.json.Value. Four scalar variants share one method; arrays and objects share
+  the container body and runtime cursor traversal. Two independent policy modules
+  specialize strings/integers for Masked writers, including nested values. The
+  default path is compared with std on all eight variants, escaping, raw numbers,
+  empty containers and arrays of 0/1/8/128 elements. A bounded writer exposes the
+  first failure and stops subsequent output/iteration. General error syntax and
+  a full JSON library are outside this case.
+
+Inline machinery tests also exercise plain enum value patterns, static/runtime
+selection, named multi-enum tables, rest capture, delegation with separate selection
+and execution contexts, and enum-value signature inclusion/intersection. Static
+union payloads retain slice values; variant metadata cannot forge native identity.

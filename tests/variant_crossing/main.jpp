@@ -1,0 +1,13 @@
+using Base
+export choiceType, Left, Right, Both
+choiceType()::type = zig{ union(enum) { left: i64, right: i64 } }
+make(S::type, n::int64)::S = zig{ if (n == 0) .{ .left = 7 } else .{ .right = 9 } }
+Left(T::type) = isLeft(T, choiceType())
+Right(T::type) = isRight(T, choiceType())
+Both(T::type) = inFamily(T, choiceType())
+isLeft(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .left) }
+isRight(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .right) }
+inFamily(T::type, Owner::type)::bool = zig{ jpp.isVariantOf(T, Owner) }
+pick(value<:Left, n) = value.payload + n
+pick(value, n::int64) = value.payload
+main() = pick(make(choiceType(), 0), 1)

@@ -1,0 +1,8 @@
+using Base
+owner()::type = zig{ union(enum) { text: []const u8 } }
+other()::type = zig{ union(enum) { text: []const u8 } }
+make(S::type)::S = zig{ .{ .text = "same payload" } }
+Owned(T::type) = belongs(T, owner())
+belongs(T::type, U::type)::bool = zig{ jpp.isVariantOf(T, U) }
+pick(value<:Owned) = value.payload
+main() = pick(make(other()))
