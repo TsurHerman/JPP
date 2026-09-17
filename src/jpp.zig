@@ -1384,7 +1384,16 @@ fn projectedInfo(comptime parent: ValueInfo, comptime field: []const u8) ValueIn
 fn callInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ValueInfo {
     const T = RetOf(ctx, word, Raw);
     if (T == type) return staticInfo(call(ctx, word, @as(Raw, undefined)));
-    if (bridgeField(Raw) != null) return .{ .T = T };
+    if (bridgeField(Raw)) |i| {
+        const f = @typeInfo(Raw).@"struct".fields[i];
+        // A known arm has the same result information as its refined call.
+        // Follow metadata only: exec still runs the call's runtime effects.
+        if (f.is_comptime) {
+            const tag = std.meta.activeTag(f.defaultValue().?);
+            return callInfo(ctx, word, branchRaw(Raw, i, tag));
+        }
+        return .{ .T = T };
+    }
     const c = canon(ctx, word);
     const r = resolve(c, word, Raw) orelse return .{ .T = T };
     if (r.m.body == .ops) {

@@ -252,6 +252,14 @@ repeated across possible branches. Named fields, splats, static values and
 private declaration homes survive the same binder/context path. Multiple enum
 coordinates generate nested tables. Plain records are not recursively split.
 
+Correction, 2026-09-17: the original bridge discarded static result information
+after selecting a known union arm. Extracting a payload into an ordinary helper
+could therefore prevent later specialization. `callInfo` now follows the known
+arm's refined call and preserves its result metadata. The `variant_static` case
+checks helper composition, named/rest forwarding, a returned known union used
+for selected-only coverage, and execution of runtime effects exactly once.
+Unknown arms still produce runtime data; this adds no general constant folding.
+
 The result must have a common runtime type. Returned variants of the same union
 can rejoin their original union, preserving `identity(x) = x`. Other implicit
 result joins are not implemented. A runtime-selected type cannot escape.

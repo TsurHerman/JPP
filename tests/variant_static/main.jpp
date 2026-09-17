@@ -1,0 +1,45 @@
+using Base
+
+choiceType()::type = zig{ union(enum) { left: i64, right: i64 } }
+known(S::type) = zig{ .{ .value = S{ .left = 17 } } }
+runtime(S::type, n::int64)::S = zig{ if (n == 0) .{ .left = 7 } else .{ .right = 9 } }
+payload(value) = value.payload
+envelopeType(Inner::type)::type = zig{ union(enum) { value: Inner, empty: void } }
+knownEnvelope(Outer::type, Inner::type) = zig{ .{ .value = Outer{ .value = Inner{ .left = 23 } } } }
+Left(T::type) = leftOf(T, choiceType())
+leftOf(T::type, U::type)::bool = zig{ jpp.isVariant(T, U, .left) }
+selectedType(<:Left) = int64
+forward(values...; options...) = named(values...; options...)
+named(; value) = payload(value)
+second(<:Any, value) = value.payload
+isStatic(pack)::bool = zig{ @typeInfo(@TypeOf(pack)).@"struct".fields[0].is_comptime }
+
+counter()::type = zig{ struct { pub var count: i64 = 0; } }
+tick(C::type)::nothing = zig{ { C.count += 1; } }
+count(C::type)::int64 = zig{ C.count }
+withEffect(value, C::type) = { tick(C); value.payload }
+
+main() = {
+    source = known(choiceType())
+    result = payload(source.value)
+    check("known arm returns its payload", result, 17)
+    check("known payload survives a helper call", isStatic((result,)), true)
+    forwarded = forward(; value = source.value)
+    check("known payload survives named and rest forwarding", isStatic((forwarded,)), true)
+    check("forwarded payload keeps its value", forwarded, 17)
+    effected = withEffect(source.value, counter())
+    check("static result still executes the body once", count(counter()), 1)
+    check("effectful helper retains the known result", isStatic((effected,)), true)
+    check("effectful helper returns its payload", effected, 17)
+    inner = payload(knownEnvelope(envelopeType(choiceType()), choiceType()).value)
+    check("returned known tag needs only its selected method", selectedType(inner), int64)
+    check("nested known union keeps its payload", payload(inner), 23)
+    check("nested known payload remains static", isStatic((payload(inner),)), true)
+    dynamic = payload(runtime(choiceType(), 0))
+    check("runtime arm keeps its payload as data", isStatic((dynamic,)), false)
+    check("runtime left payload is correct", dynamic, 7)
+    check("runtime right payload is correct", payload(runtime(choiceType(), 1)), 9)
+    mixed = second(source.value, runtime(choiceType(), 1))
+    check("a known coordinate does not freeze another coordinate", isStatic((mixed,)), false)
+    check("mixed static and runtime coordinates keep the runtime value", mixed, 9)
+}

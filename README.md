@@ -548,8 +548,10 @@ Variadic and tuples (RUNS):
   that fact at comptime removes the runtime test; the value itself may still be
   runtime data. An enum arm establishes an exact tag. An interval arm could
   establish membership while leaving the exact integer unknown. Only the enum/
-  tagged-union form RUNS today. General fact representation, interval patterns,
-  runtime guard coverage and overlap remain OPEN; the small range probe expands
+  tagged-union form RUNS today. Known results from a static union arm also survive
+  ordinary helper calls and forwarding without suppressing runtime effects
+  (RUNS: `variant_static`, corrected 2026-09-17). General fact representation,
+  interval patterns, runtime guard coverage and overlap remain OPEN; the small range probe expands
   individual values and does not implement symbolic interval refinement. See the
   [scalar dispatch research](design/dispatch_tables.md#the-underlying-structure).
 - **Enums and tagged payloads.** A plain enum retains its enum type; the selected

@@ -114,7 +114,7 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
 | 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` and precedence); `base_import`, `base_shadow`, `base_missing`, `base_mixed`; `checkout` (Base arithmetic); machinery tests (`+` shadowed) | more widths and promotion |
 | 10 | Binder: packs, named args (§4) | named_arguments, named_specificity, named_context, named_instances; varargs, varargs_dispatch, varargs_forward; binderprobe | defaults |
-| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; json_dispatch; variant_* and enum_open negatives | enum declaration/pattern syntax; general result joins |
+| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; variant_static; json_dispatch; variant rejection cases and enum_open | enum declaration/pattern syntax; general result joins |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: facade, wildcard, dotted (§1) | folder_modules, folder_scope, cycle_folder, private_helpers | binary artifact boundaries |
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
@@ -125,6 +125,11 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
 | 21 | Ground inference preserves runtime data and intentional static fields (§7) | `ground_records`; `checkout` (native record pipeline and void statement emission) | richer record surface |
 | 22 | Immutable local bindings alias ANF values (§6) | `local_bindings`, `checkout`; `binding_*` frontend rejection cases | typed local annotations; application of callable values |
+
+`variant_static` preserves known results from static union arms through helpers,
+named calls and rest forwarding. A returned known tag needs only its selected
+method at the next call. Runtime effects execute once, while runtime payloads
+remain data even alongside static coordinates.
 
 Lexical call/gate validation and export-only declarations now RUN. Typed input/
 result contracts remain OPEN. `declaration_tunnel` and repaired `override` prove
