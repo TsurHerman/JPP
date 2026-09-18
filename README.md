@@ -557,8 +557,13 @@ Variadic and tuples (RUNS):
 - **Enums and tagged payloads.** A plain enum retains its enum type; the selected
   value becomes a static pack field. `Qual.enum_value = EnumValue(E.tag)` is
   VALIDATED in native method data, above exact input type in the same rank-4
-  position as a specific type value. Enum declaration/literal/pattern syntax is
-  not yet in jppc. A tagged union instead supplies `Variant(U, tag)`, with a
+  position as a specific type value. Enum member expressions RUN (2026-09-18):
+  `orderType().lt`, or `Order.lt` after a local `Order = orderType()` binding,
+  selects an existing member of a known enum type and retains its static value.
+  Missing members and non-enum owners error. Enum declaration and signature
+  pattern syntax remain unbuilt. Recognizing native enum/union types for dispatch
+  does not ratify enum or struct declaration keywords in jpp. A tagged union
+  instead supplies `Variant(U, tag)`, with a
   `.payload` field and type metadata retaining its owning union and tag. Methods
   can group variants using ordinary predicates; `jpp.isVariantOf` and
   `jpp.isVariant` are reflection helpers usable in ground predicates. Native
@@ -725,9 +730,17 @@ The whole surface reduces to one mechanism:
   local callable values is still unbuilt and produces a diagnostic rather
   than dispatching to a same-spelled module word. Typed local annotations
   and mutable assignment remain outside this implemented surface.
+- **Overridable definition operator (RATIFIED direction, 2026-09-18; unbuilt).**
+  The eventual `=` word covers both value bindings (`x = expression`) and method
+  definitions (`f(x) = body`). The agreed protocol dispatches on the kind of
+  definition target and a scoped, unevaluated right-hand side; a method body is
+  stored for later execution. The default binding behavior can retain immutable
+  names and single evaluation. This does not make the current parser or normalizer
+  extensible yet. Handler selection context, bootstrap and detailed staging rules
+  remain OPEN; see the [definition protocol](design/generality_plan.md#definition-as-a-dispatched-operation).
 - **The unit of computation is the call** (reference: Thorin/AnyDSL,
-  "A Graph-Based Higher-Order IR", CGO'15). A binding is not
-  computation — it names a data edge, and is erased at emission (jpp
+  "A Graph-Based Higher-Order IR", CGO'15). After definition elaboration,
+  the default immutable binding names a data edge and is erased at emission (jpp
   bind -> Zig `const` -> LLVM SSA). Bodies-as-statement-vectors are
   surface sugar over a dataflow graph whose only computing nodes are
   context-resolved calls and ground axioms (Thorin's primops). We adopt

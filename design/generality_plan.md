@@ -1,6 +1,6 @@
 # Generality implementation sequence
 
-Revised 2026-09-15 after scalar dispatch scrutiny. This supersedes
+Revised 2026-09-18 after the representation and definition-operator discussion. This supersedes
 the earlier feature-by-feature sequence, which postponed dependency visibility
 and static fields until after consumers were already built.
 
@@ -8,6 +8,45 @@ The purpose is reusable libraries and inspectable binary units, exercised in
 real module trees. Membership, identity, preference, and conversion remain
 distinct. Keep caller-first context, pointwise dominance, and explicit pairwise
 order. The active compiler and tests determine RUNS status.
+
+## Current steering recommendation
+
+This section is the proposed near-term direction; the dated sections below retain
+the implementation ledger. Keep Zig as the compiler host and provider of native
+types, code generation and useful library implementations. Define jpp's public
+semantics through its own contracts: context, identity, cases, packs and refinement.
+A foreign representation can implement those contracts without determining every
+source-language rule. In particular, using Zig enum/union metadata does not choose
+jpp's collection, ownership or declaration model.
+
+The next milestone is one modular scalar comparison library:
+
+1. Consolidate enums and tagged unions into the proposed
+   [case-family model](dispatch_tables.md#one-case-family-model): a family, a
+   selected case and a possibly empty payload. First specify the common facts
+   and how native adapters supply them. Keep source spelling separate.
+2. Expose defined case values in method patterns. Make signature evaluation's
+   stage and context explicit; keep fresh names as binders. Existing member
+   expressions are the small completed prerequisite.
+3. Express Order.compare through shared jpp definitions, modules and one caller
+   policy. Check all 18 cells, selected-only static coverage, full runtime
+   coverage, owner identity and single evaluation of effects. Inspect generated
+   code for known and runtime selectors.
+4. Then extend comparison to numeric data, including unordered float results.
+   Use what this reveals to choose the next language change.
+
+A port earns its place when ordinary jpp definitions make shared behavior or
+contextual customization useful and can be checked against the native reference.
+Port those algorithm bodies while retaining suitable Zig leaves. A wrapper
+around a Zig std function does not make calls inside that function overridable:
+grounds receive no caller context. The desired extension points must be actual
+jpp calls. Rewriting the whole standard library is not the next milestone.
+
+Overridable `=` for both bindings and method definitions is an agreed eventual
+direction. Preserve room for it while completing this slice; building its staged
+definition engine immediately would turn the scalar milestone into a compiler
+bootstrap project. Runtime collections, memory policy and a general value-guard
+solver likewise have no role in the first comparison proof.
 
 ## 1. Foundations
 
@@ -160,7 +199,7 @@ separates method regions, knowledge established by a branch, and residual contro
 flow. The existing small integer-range probe enumerates values; symbolic interval
 refinement needs a different mechanism.
 
-First expose already declared enum values and exact patterns in source, then use
+First expose already defined case values and exact patterns in source, then use
 Zig's Order.compare as an 18-cell modular example. Follow it with numeric
 compare(a, op, b), exercising both known and runtime operators with integer and
 float data. NaN exposes the limit of a three-outcome relation: negating greater
@@ -171,6 +210,60 @@ Only after that evidence, design the smallest staged branch/refinement primitive
 and its library boundary. This keeps arrays, ownership and traversal out of the
 dispatch proof. Reflection, callable application and general value-guard overlap
 remain explicit gaps; the notebook lists the proposed tests and decision limits.
+
+Progress, 2026-09-18: member expressions on known enum types RUN. Both
+`orderType().lt` and projection through a local type alias retain a static enum
+value. The enum_members case covers ownership and forwarding; two rejection
+cases cover missing members and non-enum owners. Declarations and signature
+patterns remain unbuilt. Dedicated enum declarations are no longer assumed to
+be the next step; the surface may keep representation categories opaque.
+
+### Opaque representations, explicit capabilities
+
+OPEN research direction, 2026-09-18: source programs may use ordinary constructors,
+predicates and dispatch without separate enum/struct declaration syntax. Existing
+native enum recognition does not establish that enums must be a primitive source
+declaration category. Types remain real values with identity; opacity concerns
+how their representation and capabilities are exposed.
+
+An injected switch still requires facts: what alternatives are possible, how to
+select an alternative at runtime, and what that selection establishes about the
+input. Comptime library operations could supply this information. The current
+bridge uses Zig reflection directly; an authored protocol has not been designed
+or implemented. Exhaustiveness requires a closed set of alternatives or an
+explicit remaining case, not an assumption that an arbitrary predicate family
+is closed. Nothing here adds automatic traversal of fields hidden in records.
+
+The next source experiment should expose case values through ordinary words and
+study general static value patterns before adding category-specific declarations.
+Computation of a case value in a signature still needs an explicit stage and
+context rule. This preserves the comparison example while avoiding a premature
+enum-only definition mechanism.
+
+### Definition as a dispatched operation
+
+RATIFIED direction, 2026-09-18: `=` should eventually be an overridable function
+call covering both value bindings and method definitions. Current local bindings
+remain immutable aliases and the compiler still reads method definitions directly.
+
+The agreed model dispatches on a definition target and a scoped, unevaluated
+right-hand side. `f(x) = x + 1` cannot eagerly call f or evaluate its body before
+x is bound. Likewise, a fresh binding name on the left cannot be looked up as an
+already existing value. Scope, source identity and evaluation stage must be
+represented explicitly if ordinary dispatch is to supply definition behavior.
+
+An overridable definition operation can still produce a stable named type.
+Fixed resulting identity and overridable construction are compatible. Therefore
+`Order = enum { ... }` versus a type-returning function is not a choice between
+permanently primitive bindings and extensible computation. Avoid an enum-specific
+definition rule that forecloses a general protocol.
+
+Open decisions: the detailed target/body representation; which compilation context
+selects a handler; how a handler elaborates or evaluates its right-hand side; and
+the minimal bootstrap mechanism that defines the first `=` methods. The default
+binding handler can evaluate once and introduce an immutable name. No overload
+may be assumed to change evaluation count or name visibility until those rules
+are specified. Supporting the shared enum-member expression does not settle them.
 
 ## 5. Independent library increments
 

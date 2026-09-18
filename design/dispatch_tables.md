@@ -41,6 +41,39 @@ coordinate, even when subsequent optimization can merge equivalent work. Sharing
 arms safely requires considering their specialized bodies and nested calls;
 selecting the same outer method alone does not prove the arms equivalent.
 
+## One case-family model
+
+Proposed consolidation, 2026-09-18; common library protocol and source spelling
+remain OPEN. A family defines alternatives, each with a payload shape. A value
+has that family, one selected case, and the selected payload. An enum is the
+special case in which every alternative has an empty payload. A tagged union
+uses the same model with data in some alternatives.
+
+| Example family | Alternatives | Payloads |
+|---|---|---|
+| Order | less, equal, greater | empty for each |
+| Reading | absent, present | empty; one numeric value |
+
+A record holds its fields together; it can describe the payload of an alternative.
+The existing pack model is a candidate for those payload shapes. This is a
+semantic model, not a mandated wrapper allocation, tag width, layout or ABI.
+Family and case identities must be explicit; equal tag spellings from different
+families remain different cases.
+
+There is one dispatch contract: establish the selected case, refine what is known
+about the input, and apply the ordinary context and specificity rules. The payload
+can remain runtime data. Known cases need only their selected arm; unknown cases
+need coverage of the family's alternatives. An arbitrary predicate collection
+does not establish a closed family. Whole-family annotations on refined inputs
+and general result joins still need decisions.
+
+The current implementation has two native representations of a refined arm: a
+static enum field, and Variant(owner, tag) with .payload for a union. These are
+working adapters, not evidence that jpp needs two independent declaration systems.
+The next consolidation should expose common case facts while retaining native
+representation details behind the adapter. Construction may be library-defined;
+an explicit semantic representation need not imply an enum or union keyword.
+
 ## A smaller source example: comparison
 
 The selected specimen is Zig 0.16's installed `lib/std/math.zig`:
@@ -304,8 +337,11 @@ branch construction needed to express the complete mechanism without Zig grounds
 
 ## Next small increments
 
-1. Give already declared enum values an explicit usable surface identity and
-   exact patterns. Undefined names must remain binders, never invented tags.
+1. Give already defined case values usable exact patterns. Member expressions on
+   native enum types now RUN (`enum_members`, 2026-09-18). Dedicated enum declaration
+   syntax remains undecided; prefer investigating ordinary type/case-producing
+   words and general static patterns. Undefined names must remain binders, never
+   invented tags. Signature computation needs an explicit stage/context rule.
 2. Reproduce Order.compare through source modules; check all 18 cells with known,
    runtime and mixed selectors. Factor shared definitions before adding policy.
    A separate application word, such as acceptsBound, can delegate comparison
