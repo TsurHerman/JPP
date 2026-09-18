@@ -1371,6 +1371,9 @@ fn argPack(comptime op: Op, comptime B: type, comptime locals: []const ValueInfo
 }
 
 fn projectedInfo(comptime parent: ValueInfo, comptime field: []const u8) ValueInfo {
+    if (parent.T == type and parent.value != null) {
+        return staticInfo(enumMember(staticValue(parent), field));
+    }
     if (@typeInfo(parent.T) != .@"struct") @compileError("jpp: field projection requires a tuple or record.");
     for (@typeInfo(parent.T).@"struct".fields) |f| {
         if (std.mem.eql(u8, f.name, field)) {
@@ -1379,6 +1382,15 @@ fn projectedInfo(comptime parent: ValueInfo, comptime field: []const u8) ValueIn
         }
     }
     @compileError("jpp: no field '" ++ field ++ "' in tuple or record.");
+}
+
+/// Enum members are defined values of their owner, available at comptime.
+pub fn enumMember(comptime E: type, comptime name: []const u8) E {
+    if (@typeInfo(E) != .@"enum") @compileError("jpp: member selection requires an enum type.");
+    for (@typeInfo(E).@"enum".fields) |field| {
+        if (std.mem.eql(u8, name, field.name)) return @enumFromInt(field.value);
+    }
+    @compileError("jpp: no enum member '" ++ name ++ "' in '" ++ @typeName(E) ++ "'.");
 }
 
 fn callInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ValueInfo {

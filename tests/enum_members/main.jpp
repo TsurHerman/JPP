@@ -1,0 +1,18 @@
+using Base.Test
+
+orderType()::type = zig{ std.math.Order }
+otherType()::type = zig{ enum { lt, eq, gt } }
+identity(value) = value
+kind(::T)::type where T = T
+equal(a::T, b::T)::bool where T = zig{ a == b }
+isStatic(pack)::bool = zig{ @typeInfo(@TypeOf(pack)).@"struct".fields[0].is_comptime }
+main() = {
+    Order = orderType()
+    less = Order.lt
+    check("member has its declared enum type", kind(less), Order)
+    check("type-returning calls support member projection", equal(less, orderType().lt), true)
+    check("members of one enum remain distinct", equal(less, Order.gt), false)
+    check("defined member is a static value", isStatic((less,)), true)
+    check("enum member survives helper forwarding", isStatic((identity(less),)), true)
+    check("same tag spelling retains owner identity", equal(kind(less), kind(otherType().lt)), false)
+}

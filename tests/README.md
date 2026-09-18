@@ -114,7 +114,7 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
 | 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` and precedence); `base_import`, `base_shadow`, `base_missing`, `base_mixed`; `checkout` (Base arithmetic); machinery tests (`+` shadowed) | more widths and promotion |
 | 10 | Binder: packs, named args (§4) | named_arguments, named_specificity, named_context, named_instances; varargs, varargs_dispatch, varargs_forward; binderprobe | defaults |
-| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; variant_static; json_dispatch; variant rejection cases and enum_open | enum declaration/pattern syntax; general result joins |
+| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; variant_static; enum_members; json_dispatch; variant rejection cases, enum_open, enum_missing_member, enum_member_non_enum | enum declaration/pattern syntax; general result joins |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: facade, wildcard, dotted (§1) | folder_modules, folder_scope, cycle_folder, private_helpers | binary artifact boundaries |
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
@@ -130,6 +130,11 @@ type and record values, discarded results, and nested blocks. Frontend cases
 named calls and rest forwarding. A returned known tag needs only its selected
 method at the next call. Runtime effects execute once, while runtime payloads
 remain data even alongside static coordinates.
+
+`enum_members` selects defined members from known enum types, including through
+type-returning calls and local aliases. Static values and enum owner identity
+survive forwarding. `enum_missing_member` and `enum_member_non_enum` reject
+undefined members and invalid owners.
 
 Lexical call/gate validation and export-only declarations now RUN. Typed input/
 result contracts remain OPEN. `declaration_tunnel` and repaired `override` prove
