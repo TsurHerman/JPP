@@ -13,6 +13,11 @@ and registered (see bottom).
 dependency (zig 0.16), five `zig build` steps. The language-promise
 test catalog lives in `tests/README.md`.
 
+Syntax coloring for VS Code/Cursor and local HTML rendering is available in
+[`editors/vscode/`](editors/vscode/README.md), using one shared TextMate grammar
+with embedded Zig highlighting. This is editor tooling; semantic IDE features
+such as diagnostics and go-to-definition remain unbuilt.
+
 ## How to read this document
 
 This is a DESIGN LEDGER first: it records every ratified decision with

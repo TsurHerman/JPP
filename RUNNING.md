@@ -1,8 +1,12 @@
 # Running jpp
 
 Prerequisite: **Zig 0.16** (`brew install zig` / zig.dev). Zig is the
-only dependency — it hosts the transpiler, executes the language's
+only compiler dependency — it hosts the transpiler, executes the language's
 semantics at comptime, and compiles the artifacts.
+
+For **VS Code / Cursor syntax coloring** and standalone local HTML previews,
+see [the JPP editor extension](editors/vscode/README.md). Its optional packaging
+and rendering tools use Node.js 22+; the installed grammar needs no Node setup.
 
 ## The pipeline
 
@@ -79,6 +83,7 @@ pack syntax, and module paths; they do not reach Zig compilation.
 | `tests/` | the language cases: each folder a tree; programs are root modules that define `main` (see `tests/README.md`) |
 | `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Any, Test and Tuple; source modules can shadow matching bundled paths. Zig's `std` is only inside `zig{}` |
 | `design/` | rewritten design notebook: modules, packs, contracts, type families, numerics, binary artifacts and implementation sequence |
+| `editors/vscode/` | JPP TextMate grammar, VS Code/Cursor extension, and local HTML renderer; optional Node tooling |
 | `tests/README.md` | the promise catalog and suite conventions (machinery tests live inline in `src/jpp.zig`) |
 | `spike/` | validated probes, each a self-contained proof of one mechanism (see below) |
 | `gen/` | derived output — gitignored, regenerate anytime |

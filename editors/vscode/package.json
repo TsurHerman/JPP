@@ -1,0 +1,38 @@
+{
+  "name": "jpp-language",
+  "displayName": "JPP Language",
+  "description": "Syntax coloring for JPP, including embedded Zig grounds.",
+  "version": "0.1.0",
+  "publisher": "jpp-local",
+  "private": true,
+  "license": "UNLICENSED",
+  "repository": { "type": "git", "url": "https://github.com/TsurHerman/JPP.git" },
+  "engines": { "vscode": "^1.85.0", "node": ">=22" },
+  "categories": ["Programming Languages"],
+  "keywords": ["jpp", "syntax", "highlighting"],
+  "contributes": {
+    "languages": [{
+      "id": "jpp",
+      "aliases": ["JPP", "jpp"],
+      "extensions": [".jpp"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "jpp",
+      "scopeName": "source.jpp",
+      "path": "./syntaxes/jpp.tmLanguage.json",
+      "embeddedLanguages": { "meta.embedded.block.zig": "zig" }
+    }]
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "package": "vsce package --no-dependencies --allow-missing-repository --skip-license --out jpp-language.vsix",
+    "render": "node scripts/render.mjs"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "4.0.0",
+    "shiki": "4.4.3",
+    "vscode-oniguruma": "2.0.1",
+    "vscode-textmate": "9.3.2"
+  }
+}
