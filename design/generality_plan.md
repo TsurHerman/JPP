@@ -1,6 +1,6 @@
 # Generality implementation sequence
 
-Revised 2026-09-18 after the representation and definition-operator discussion. This supersedes
+Revised 2026-09-19 after the native enum wrapper correction. This supersedes
 the earlier feature-by-feature sequence, which postponed dependency visibility
 and static fields until after consumers were already built.
 
@@ -21,10 +21,11 @@ jpp's collection, ownership or declaration model.
 
 The next milestone is one modular scalar comparison library:
 
-1. Consolidate enums and tagged unions into the proposed
-   [case-family model](dispatch_tables.md#one-case-family-model): a family, a
-   selected case and a possibly empty payload. First specify the common facts
-   and how native adapters supply them. Keep source spelling separate.
+1. Start with the [composed source example](dispatch_tables.md#start-with-the-program-we-want-to-write)
+   and derive the generic primitives needed for a tight jpp wrapper around Zig
+   enums. Preserve native type identity, cases and representation. Keep wrapper
+   bodies in jpp; design the native boundary from their needs. Shared dispatch
+   behavior does not require a new representation for enum and union values.
 2. Expose defined case values in method patterns. Make signature evaluation's
    stage and context explicit; keep fresh names as binders. Existing member
    expressions are the small completed prerequisite.
@@ -220,8 +221,10 @@ be the next step; the surface may keep representation categories opaque.
 
 ### Opaque representations, explicit capabilities
 
-OPEN research direction, 2026-09-18: source programs may use ordinary constructors,
-predicates and dispatch without separate enum/struct declaration syntax. Existing
+OPEN research direction, 2026-09-18, narrowed by the 2026-09-19 enum decision:
+the enum interface is a tight Zig wrapper authored in jpp. Source programs may
+use ordinary constructors, predicates and dispatch without separate enum/struct
+declaration syntax. Existing
 native enum recognition does not establish that enums must be a primitive source
 declaration category. Types remain real values with identity; opacity concerns
 how their representation and capabilities are exposed.

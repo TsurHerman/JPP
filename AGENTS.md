@@ -66,6 +66,12 @@ a feature; preserve the ratified semantics unless the task changes them.
   arm coverage, runtime exhaustiveness, and return joins into the owning union.
   Variant groups are ordinary predicates. Do not introduce JSON-specific compiler
   rules, implicit catch-alls, or automatically split fields hidden inside records.
+- The enum interface is to be a tight Zig wrapper authored in the jpp library:
+  preserve native type identity, cases, tag values and layout. Shared enum/union
+  dispatch does not require a new common value representation. The wrapper API
+  and primitive set remain OPEN. Try generic native primitives beneath jpp-only
+  wrapper bodies, deriving them from composed source examples. Current table
+  injection and enum member lookup still live in the core.
 - The JSON case adapts Zig std types as a foreign test fixture. It does not choose
   jpp's array representation, collection/iteration model, allocation or ownership.
   Keep those language decisions open; the objective is dispatch replacing switches.

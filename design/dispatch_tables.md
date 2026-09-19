@@ -3,7 +3,7 @@
 Status: automatic enum/tagged-union calls RUN in the active machinery. The
 serialization case below is executable jpp, not proposed syntax. Plain enum
 value patterns are currently native method data; enum declaration/pattern
-surface syntax remains unbuilt. Revised 2026-09-15.
+surface syntax remains unbuilt. Wrapper direction revised 2026-09-19.
 
 RATIFIED principle: a branch establishes a fact that ordinary dispatch can use
 inside that branch; knowing the fact at comptime removes the runtime test.
@@ -41,38 +41,129 @@ coordinate, even when subsequent optimization can merge equivalent work. Sharing
 arms safely requires considering their specialized bodies and nested calls;
 selecting the same outer method alone does not prove the arms equivalent.
 
-## One case-family model
+## Native types, jpp wrapper
 
-Proposed consolidation, 2026-09-18; common library protocol and source spelling
-remain OPEN. A family defines alternatives, each with a payload shape. A value
-has that family, one selected case, and the selected payload. An enum is the
-special case in which every alternative has an empty payload. A tagged union
-uses the same model with data in some alternatives.
+RATIFIED direction, 2026-09-19: the enum interface is a tight wrapper around Zig,
+authored in jpp. This narrows the proposed case-family model from 2026-09-18 to
+a native wrapper. The common idea is branch refinement and ordinary dispatch; it does
+not require replacing native enums and tagged unions with one new value format.
 
-| Example family | Alternatives | Payloads |
-|---|---|---|
-| Order | less, equal, greater | empty for each |
-| Reading | absent, present | empty; one numeric value |
+Wrapping an existing enum preserves its actual Zig type, declared cases, tag
+values and layout. Same-spelled cases from unrelated enums remain different
+values. Reflection derives the cases from the native declaration, including
+explicit tag values; the wrapper does not copy a handwritten list or renumber it.
+It adds no required runtime storage. Native enum creation, if exposed, should
+likewise be an ordinary library operation over Zig's type construction facilities;
+its API and declaration identity rules remain OPEN.
 
-A record holds its fields together; it can describe the payload of an alternative.
-The existing pack model is a candidate for those payload shapes. This is a
-semantic model, not a mandated wrapper allocation, tag width, layout or ABI.
-Family and case identities must be explicit; equal tag spellings from different
-families remain different cases.
+The responsibilities are:
 
-There is one dispatch contract: establish the selected case, refine what is known
-about the input, and apply the ordinary context and specificity rules. The payload
-can remain runtime data. Known cases need only their selected arm; unknown cases
-need coverage of the family's alternatives. An arbitrary predicate collection
-does not establish a closed family. Whole-family annotations on refined inputs
-and general result joins still need decisions.
+| Layer | Responsibility |
+|---|---|
+| Zig | Native representation, reflection and code generation |
+| jpp enum library | Expose native cases and facts through ordinary words |
+| Authored jpp methods | Compose behavior, shared definitions and contextual overrides |
+| Dispatch machinery | Establish branch facts, resolve methods and emit remaining control flow |
 
-The current implementation has two native representations of a refined arm: a
-static enum field, and Variant(owner, tag) with .payload for a union. These are
-working adapters, not evidence that jpp needs two independent declaration systems.
-The next consolidation should expose common case facts while retaining native
-representation details behind the adapter. Construction may be library-defined;
-an explicit semantic representation need not imply an enum or union keyword.
+An ordinary call is still the user interface. Passing two runtime enums can
+produce nested implicit switches; a known case removes its test. The enum
+wrapper must not demand explicit visitors, switches or value conversions at
+every call. Merely calling Zig's existing Order.compare in a ground would not
+meet the goal: its internal calls cannot acquire jpp context. The comparison
+definitions themselves must live in jpp.
+
+The chosen experiment is generic native primitives composed by jpp-only wrapper
+bodies. Derive those primitives from desired source programs before implementing
+a reflection API. The exact primitive set remains OPEN. No primitive may re-enter
+dispatch with hidden caller context.
+The current core still hard-codes enum member lookup and table injection. Moving
+all refinement policy into jpp needs reflection, static application and staged
+branch construction; changing a file extension would not supply those features.
+
+Known cases require only the selected arm; runtime cases require complete
+coverage. Listing a non-exhaustive enum's named cases must not make it appear
+closed. An arbitrary predicate collection also cannot establish exhaustiveness.
+For unions, preserve the native owner and payload type. The current refined
+Variant(owner, tag) with .payload is implementation evidence, not a requirement
+to wrap plain enums in empty-payload objects. Whole-union annotations on refined
+inputs and general result joins still need decisions.
+
+## Start with the program we want to write
+
+OPEN source sketch, 2026-09-19. This is a top-down design target, not runnable
+syntax. In particular, Base.Zig and its namespace access, exported value bindings,
+general case expressions in signatures, and Base's comparison words are unbuilt.
+The sketch reuses the existing explicit imports, packs and splats. Here Base.Zig
+would export the native namespace root Zig, and Base would supply Any, == and ||.
+
+```jpp
+using Base
+using Base.Zig
+export Order, Op, accepts, compare
+
+Order = Zig.std.math.Order
+Op = Zig.std.math.CompareOperator
+
+accepts(Op.lt) = (Order.lt,)
+accepts(Op.eq) = (Order.eq,)
+accepts(Op.gt) = (Order.gt,)
+
+accepts(Op.lte) = (accepts(Op.lt)..., accepts(Op.eq)...)
+accepts(Op.gte) = (accepts(Op.gt)..., accepts(Op.eq)...)
+accepts(Op.neq) = (accepts(Op.lt)..., accepts(Op.gt)...)
+
+compare(r::Order, op::Op) = oneOf(r, accepts(op)...)
+
+oneOf(<:Any) = false
+oneOf(value, candidate, rest...) = (value == candidate) || oneOf(value, rest...)
+```
+
+The accepted cases are ordinary small static packs. The six definitions describe
+three elementary choices and three compositions. The recursion above reduces
+these finite metadata packs; it is not an iteration strategy for runtime arrays.
+The enum type and its cases come from Zig once. No jpp constructor duplicates
+Order's declaration, and no compiler rule knows these comparison equations.
+
+An application imports this module and can replace one cell with an ordinary
+method: `compare(Order.eq, Op.lte) = false`. Calls inside other modules still see
+that caller policy. The shared accepts definitions are also explicit extension
+points; their compositions retain normal context propagation.
+
+`compare(runtimeOrder, runtimeOp)` injects decisions for both inputs before its
+body is selected. Inside each arm both cases are known, so accepts can return a
+case-dependent static pack and oneOf can specialize to a boolean. With a known
+operator only Order's choice remains; with both cases known neither choice needs
+a runtime test. This describes intended specialization, not newly inspected
+generated code. Identical branches may be merged by optimization.
+
+The static boundary matters: calling `accepts(runtimeOp)` directly would require
+a common runtime result representation for its differently shaped packs. The
+example relies on its call occurring inside the refined compare body; it does
+not silently add heterogeneous runtime return joins.
+
+Working backward gives these requirements:
+
+1. Generic native namespace/member access and stable value bindings. Looking up
+   Order or Order.lt returns the original type or value. Enum case access should
+   not require a separate compiler-owned constructor protocol.
+2. General static value expressions in signatures. Op.lt denotes its actual
+   declared value. It is not a fresh binder or a type predicate: every Op case
+   has the same native type. Signature evaluation still needs an explicit stage
+   and context rule; defining the signature must not execute a runtime producer.
+3. Native reflection that supplies possible alternatives and tag/payload access.
+   These are generic facts about native types. Enum-specific composition belongs
+   in jpp. Generic type construction is needed when authoring new native types,
+   but wrapping this existing enum does not require it.
+4. A staged branch primitive that runs only the selected continuation under its
+   established facts, evaluates producers once and retains the call's context.
+   The library can describe splitting policy; the backend supplies branch regions.
+   Passing eagerly evaluated branch results to an ordinary function cannot do
+   this. Continuation/region representation and result joins remain OPEN.
+
+The first source milestone is this 18-cell example and a contextual override.
+Expose the missing bindings and case patterns before trying to move the whole
+working bridge into jpp. Use the example to constrain the generic native boundary;
+do not build a broad reflection library without a consumer.
 
 ## A smaller source example: comparison
 
@@ -337,11 +428,12 @@ branch construction needed to express the complete mechanism without Zig grounds
 
 ## Next small increments
 
-1. Give already defined case values usable exact patterns. Member expressions on
-   native enum types now RUN (`enum_members`, 2026-09-18). Dedicated enum declaration
-   syntax remains undecided; prefer investigating ordinary type/case-producing
-   words and general static patterns. Undefined names must remain binders, never
-   invented tags. Signature computation needs an explicit stage/context rule.
+1. Specify the tight jpp enum wrapper and its native boundary, then give its
+   defined case values usable exact patterns. Member expressions on native enum
+   types now RUN (`enum_members`, 2026-09-18). The missing surface facility is
+   general static patterns, not a dedicated enum keyword. Undefined names must
+   remain binders, never invented tags. Signature computation needs an explicit
+   stage/context rule.
 2. Reproduce Order.compare through source modules; check all 18 cells with known,
    runtime and mixed selectors. Factor shared definitions before adding policy.
    A separate application word, such as acceptsBound, can delegate comparison

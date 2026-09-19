@@ -58,6 +58,7 @@ Status of the major features:
 | delegation `M.f` (select in M, propagate caller) | VALIDATED (machinery) — no surface |
 | specificity policy as shadowable word; stratum-0 self-reference break | VALIDATED (probe + machinery) |
 | automatic enum/tagged-union tables in ordinary calls | RUNS (variant_dispatch, json_dispatch and rejection cases); exact enum-value patterns VALIDATED in native method data |
+| enum interface as a tight Zig wrapper authored in jpp | RATIFIED direction; generic primitive route under investigation, API OPEN |
 | general selectors `{}` and integer range arms | VALIDATED (probes); surface syntax remains unbuilt |
 | tuples/records, static projections, two-section named calls, name-aligned dispatch and bound-instance convergence | RUNS (pack_values, pack_static, named_arguments, named_specificity, named_instances, named_context) |
 | positional/named rest capture, splats, elementwise predicates, uniform rest types, and shrinking reductions | RUNS (varargs, varargs_dispatch, varargs_forward, varargs_scale, checkout; rejection cases) |
@@ -578,6 +579,19 @@ Variadic and tuples (RUNS):
   predicate to cover U's variants. The wrapper is a shallow value copy, not a
   mutable view or an ownership transfer. References inside payloads retain their
   ordinary lifetimes. No enum/union declaration is duplicated in the serializer.
+- **Enums are a tight Zig wrapper (RATIFIED direction, 2026-09-19).** The enum
+  interface belongs in an ordinary jpp library. Zig supplies the actual type,
+  cases, tag representation and layout; wrapping an existing enum must preserve
+  that type's identity and its values. There is no second enum definition to
+  maintain or required runtime container around each value. Shared dispatch
+  behavior for enums and tagged unions does not require a new case-family
+  representation. The library exposes native facts; ordinary jpp methods
+  compose the behavior whose unresolved choices become implicit switches.
+  Investigate generic native primitives beneath jpp-only wrapper bodies, starting
+  from composed source examples. The wrapper API and primitive set remain OPEN.
+  Today member lookup and table injection still live in `src/jpp.zig`; this
+  direction is not a claim that the mechanism has moved into jpp. See the
+  [wrapper boundary](design/dispatch_tables.md#native-types-jpp-wrapper).
 - **Table obligations and scope.** Every possible runtime arm must resolve;
   missing coverage and competing maxima fail during compilation. A known static
   tag requires only its selected arm. Runtime arms must share a return type, or
