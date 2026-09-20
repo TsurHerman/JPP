@@ -1,0 +1,4 @@
+target(::int64) = 1
+Alias = target
+unused() = Alias(3)
+main() = 0

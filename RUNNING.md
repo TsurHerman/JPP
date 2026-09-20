@@ -55,6 +55,18 @@ For injected variant tables and runtime traversal, read the
 std.json.Value union, compare with Zig's serializer, and apply caller policies
 inside nested arrays and objects. Types/reflection and IO still use Zig grounds.
 
+For a small binary-reader example using native enum cases directly in signatures,
+read [DWARF offsets](tests/dwarf_offsets/test.md):
+
+```sh
+zig run src/jppc.zig -- tests/dwarf_offsets tests/.gen/dwarf_offsets
+zig run tests/.gen/dwarf_offsets/run.zig
+```
+
+The dwarf facade chooses the offset width; Binary.Input chooses byte order.
+Two native IO leaves do the actual read. The case covers all four combinations,
+truncated input, producer order and a caller's audit override in a second context.
+
 **The case contract (unix, self-judging, ONE artifact):** jppc emits a
 single `run.zig` per tree. Each program (root module defining `main`)
 runs as a fresh root context; `check(name, got, want)` (from
@@ -81,7 +93,7 @@ pack syntax, and module paths; they do not reach Zig compilation.
 | `src/jppc.zig` | the transpiler: lexer -> parser -> ANF -> data-literal printer -> module graph -> driver; parsing/normalization stay file-local, dispatch stays in jpp.zig |
 | `src/ast.zig` | the ratified three-layer AST model (Expr/Method/FlatBody); jppc does not consume it yet — acknowledged debt |
 | `tests/` | the language cases: each folder a tree; programs are root modules that define `main` (see `tests/README.md`) |
-| `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Any, Test and Tuple; source modules can shadow matching bundled paths. Zig's `std` is only inside `zig{}` |
+| `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Any, Test, Tuple and Zig; source modules can shadow matching bundled paths. Explicit `using Base.Zig` exposes native namespaces/types/constants; native calls still use `zig{}` |
 | `design/` | rewritten design notebook: modules, packs, contracts, type families, numerics, binary artifacts and implementation sequence |
 | `editors/vscode/` | JPP TextMate grammar, VS Code/Cursor extension, and local HTML renderer; optional Node tooling |
 | `tests/README.md` | the promise catalog and suite conventions (machinery tests live inline in `src/jpp.zig`) |

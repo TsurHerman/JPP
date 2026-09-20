@@ -1,9 +1,9 @@
 # Methods describe cases; specialization builds control flow
 
 Status: automatic enum/tagged-union calls RUN in the active machinery. The
-serialization case below is executable jpp, not proposed syntax. Plain enum
-value patterns are currently native method data; enum declaration/pattern
-surface syntax remains unbuilt. Wrapper direction revised 2026-09-19.
+serialization and DWARF cases below are executable jpp, not proposed syntax.
+Defined enum values/member paths now work in signatures (2026-09-20). General
+static application and dedicated enum declarations remain unbuilt.
 
 RATIFIED principle: a branch establishes a fact that ordinary dispatch can use
 inside that branch; knowing the fact at comptime removes the runtime test.
@@ -76,7 +76,8 @@ The chosen experiment is generic native primitives composed by jpp-only wrapper
 bodies. Derive those primitives from desired source programs before implementing
 a reflection API. The exact primitive set remains OPEN. No primitive may re-enter
 dispatch with hidden caller context.
-The current core still hard-codes enum member lookup and table injection. Moving
+Base.Zig now exposes a native namespace root; generic static member access serves
+namespace/type declarations and enum cases. Table injection remains in the core. Moving
 all refinement policy into jpp needs reflection, static application and staged
 branch construction; changing a file extension would not supply those features.
 
@@ -88,11 +89,73 @@ Variant(owner, tag) with .payload is implementation evidence, not a requirement
 to wrap plain enums in empty-payload objects. Whole-union annotations on refined
 inputs and general result joins still need decisions.
 
-## Start with the program we want to write
+## The working use case: reading DWARF offsets
 
-OPEN source sketch, 2026-09-19. This is a top-down design target, not runnable
-syntax. In particular, Base.Zig and its namespace access, exported value bindings,
-general case expressions in signatures, and Base's comparison words are unbuilt.
+RUNS, 2026-09-20: [dwarf_offsets](../tests/dwarf_offsets/test.md) replaces the
+earlier comparison sketch as the first source milestone. A debugger reads section
+offsets using a file's DWARF format (32 or 64) and byte order (little or big).
+The native reference is Zig's private std.debug.Dwarf.readFormatSizedInt; the
+fixture copies that small switch using the same std.Io.Reader primitives.
+
+The dwarf facade contains:
+
+```jpp
+using Base.Zig
+using Binary.Input
+export Format, Endian, offsetType, readOffset
+
+Format = Zig.std.dwarf.Format
+offsetType(Format.32) = uint32
+offsetType(Format.64) = uint64
+
+readOffset(reader, format::Format, endian::Endian) =
+    readUnsigned(reader, offsetType(format), endian)
+```
+
+The separate Binary.Input module contains:
+
+```jpp
+using Base.Zig
+using Binary.Native
+export Endian, readUnsigned, readUnsignedLE, readUnsignedBE
+
+Endian = Zig.std.builtin.Endian
+readUnsigned(reader, T::type, Endian.little) = readUnsignedLE(reader, T)
+readUnsigned(reader, T::type, Endian.big) = readUnsignedBE(reader, T)
+```
+
+Binary.Native supplies two explicit IO grounds. Both return Reader.Error!u64;
+the 32-bit read widens without changing sign. An ordinary call composes the
+independent width and byte-order decisions. Inside each arm offsetType returns
+a known type; no runtime-selected type escapes. Reader producers execute once
+before selection and only one field is consumed. No enum list is duplicated.
+
+The second caller context contributes an audit method only for
+`readUnsigned(reader, uint32, Endian.little)`. It runs audit(), then the existing
+readUnsignedLE leaf. The other three combinations retain their base behavior.
+Tests cover all four combinations, high-bit unsigned values, truncated input,
+native error propagation, sequential reads, producer order and selected-only
+static coverage through helpers.
+
+ReleaseFast LLVM inspection on aarch64-macos confirms the residual decisions:
+runtime selectors retain width/endian branches; explicit static 32/little fields
+leave one 32-bit load and zero-extension, plus reader buffer/error handling.
+This is evidence for this compiler/target, not a claim about every optimizer.
+
+The supporting source increment is deliberately bounded. Module constants admit
+names, member paths, scalar literals and explicit grounds. Their values and
+signature member paths resolve in the declaring module at comptime, with local
+names preceding imports in source order. Re-export/folder/cycle aggregation
+preserves identity, coalesces identical values and rejects conflicting values or
+value/method collisions. Private constants stay file-local. Arbitrary initializer
+calls, callable values, general static patterns and a staged branch library remain
+unbuilt. The reader's slices, allocation and errors are native fixture details.
+
+## Earlier comparison sketch (deferred)
+
+OPEN source sketch, 2026-09-19, retained for its factoring idea. The user chose a
+concrete binary-reader use case instead. Base.Zig, value bindings and member-path
+patterns now run; this whole example still does not, including Base's comparison words.
 The sketch reuses the existing explicit imports, packs and splats. Here Base.Zig
 would export the native namespace root Zig, and Base would supply Any, == and ||.
 
@@ -160,10 +223,10 @@ Working backward gives these requirements:
    Passing eagerly evaluated branch results to an ordinary function cannot do
    this. Continuation/region representation and result joins remain OPEN.
 
-The first source milestone is this 18-cell example and a contextual override.
-Expose the missing bindings and case patterns before trying to move the whole
-working bridge into jpp. Use the example to constrain the generic native boundary;
-do not build a broad reflection library without a consumer.
+The DWARF case above now supplies the first source milestone and contextual
+override. Its bindings and case patterns constrain the native boundary before
+moving the whole working bridge into jpp. Do not build a broad reflection library
+without a consumer.
 
 ## A smaller source example: comparison
 
@@ -428,22 +491,17 @@ branch construction needed to express the complete mechanism without Zig grounds
 
 ## Next small increments
 
-1. Specify the tight jpp enum wrapper and its native boundary, then give its
-   defined case values usable exact patterns. Member expressions on native enum
-   types now RUN (`enum_members`, 2026-09-18). The missing surface facility is
-   general static patterns, not a dedicated enum keyword. Undefined names must
-   remain binders, never invented tags. Signature computation needs an explicit
-   stage/context rule.
-2. Reproduce Order.compare through source modules; check all 18 cells with known,
-   runtime and mixed selectors. Factor shared definitions before adding policy.
-   A separate application word, such as acceptsBound, can delegate comparison
-   and let an open-bound policy replace its equality cases in a second context.
-3. Extend that scalar case to numeric operands and six operators. Cover integers,
-   floats, signed zero, infinities and NaN, plus producer order and single
-   evaluation. Inspect known-operator and runtime-operator generated code.
-4. Use that evidence to design symbolic interval refinement and the smallest
-   staged branch primitive needed by ordinary jpp libraries. General value guards
-   and result joins require separate decisions before implementation.
+1. Completed: native namespaces, module constants and enum member-path patterns,
+   exercised by the modular DWARF reader and an inner caller override.
+2. Define the stage/context rules for ordinary static application before allowing
+   calls in module initializers or signature patterns. Existing member paths are
+   lexical; extending them must not accidentally change declaration identity.
+3. Use the reader to specify the smallest reflection and staged-branch primitives
+   that let a jpp library express the remaining enum refinement policy. Preserve
+   explicit continuations, producer evaluation and native error result identity.
+4. Numeric cases and symbolic interval refinement remain separate research.
+   The comparison analysis records NaN constraints but is not the next required
+   feature. General guards and result joins still need explicit decisions.
 
 JSON expansion and large-array experiments are paused. Its foreign representation
 and recursive walk do not settle the language's memory or iteration model. The

@@ -70,8 +70,15 @@ a feature; preserve the ratified semantics unless the task changes them.
   preserve native type identity, cases, tag values and layout. Shared enum/union
   dispatch does not require a new common value representation. The wrapper API
   and primitive set remain OPEN. Try generic native primitives beneath jpp-only
-  wrapper bodies, deriving them from composed source examples. Current table
-  injection and enum member lookup still live in the core.
+  wrapper bodies, deriving them from composed source examples. Base.Zig exposes
+  native namespaces through generic static member access. Table injection still
+  lives in the core; native calls still require grounds.
+- Module constants and exact enum member-path patterns are lexical comptime
+  values. Preserve native identity through aliases, facades and re-export cycles.
+  Initializers admit names, member paths, scalar literals and explicit grounds;
+  ordinary calls await a staging contract. Aggregate constants may coalesce only
+  when identical; different values or value/method collisions must error. Private
+  constants stay file-local. These bindings do not implement overridable `=`.
 - The JSON case adapts Zig std types as a foreign test fixture. It does not choose
   jpp's array representation, collection/iteration model, allocation or ownership.
   Keep those language decisions open; the objective is dispatch replacing switches.

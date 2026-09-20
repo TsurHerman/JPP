@@ -1,0 +1,5 @@
+using Base.Zig
+Format = Zig.std.dwarf.Format
+only(Format.32) = 1
+runtimeFormat() = zig{ @as(std.dwarf.Format, .@"32") }
+main() = only(runtimeFormat())

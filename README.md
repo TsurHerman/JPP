@@ -47,6 +47,7 @@ Status of the major features:
 | infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
 | explicit Base namespace/facade, recursive folder imports, wildcard siblings, and public import-cycle units | RUNS (base_folder, folder_modules, cycle_imports, cycle_folder; facade and privacy negatives) |
 | immutable local bindings name ANF values without repeating calls | RUNS (local_bindings, checkout; binding_* frontend rejection cases) |
+| immutable module constants, native namespace access, and lexical enum case patterns | RUNS (static_bindings, dwarf_offsets; static_binding_* and enum_pattern_* rejection cases) |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
 | declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs | RUNS (declaration_names, unused_ground; negative: undeclared_order, unused_input, unused_untyped_ground, unused_anonymous) |
@@ -57,8 +58,8 @@ Status of the major features:
 | direct mutual `<:` pairs; no implicit equivalence closure; cyclic strict order diagnosed | RUNS (type_bindings; negative: order_cycle); legacy gated edges VALIDATED in machinery |
 | delegation `M.f` (select in M, propagate caller) | VALIDATED (machinery) — no surface |
 | specificity policy as shadowable word; stratum-0 self-reference break | VALIDATED (probe + machinery) |
-| automatic enum/tagged-union tables in ordinary calls | RUNS (variant_dispatch, json_dispatch and rejection cases); exact enum-value patterns VALIDATED in native method data |
-| enum interface as a tight Zig wrapper authored in jpp | RATIFIED direction; generic primitive route under investigation, API OPEN |
+| automatic enum/tagged-union tables in ordinary calls | RUNS (variant_dispatch, json_dispatch, dwarf_offsets and rejection cases), including source enum case patterns |
+| enum interface as a tight Zig wrapper authored in jpp | native types/cases accessible through Base.Zig; generic staged branch/library protocol remains OPEN |
 | general selectors `{}` and integer range arms | VALIDATED (probes); surface syntax remains unbuilt |
 | tuples/records, static projections, two-section named calls, name-aligned dispatch and bound-instance convergence | RUNS (pack_values, pack_static, named_arguments, named_specificity, named_instances, named_context) |
 | positional/named rest capture, splats, elementwise predicates, uniform rest types, and shrinking reductions | RUNS (varargs, varargs_dispatch, varargs_forward, varargs_scale, checkout; rejection cases) |
@@ -173,6 +174,23 @@ Status of the major features:
 
 - Types are ordinary compile-time values. Functions on types are
   ordinary functions that run at compile time.
+- **Module constants (RUNS, 2026-09-20).** `Name = value` binds an immutable
+  comptime value in its declaring module. Initializers currently admit scalar
+  literals, defined names, member paths and explicit `zig{}` grounds. Module
+  dependencies may point forward; value cycles error. Ordinary calls in module
+  initializers await a general staging/context contract and are rejected today.
+  Constants are private unless exported; facades, re-exports and public import
+  cycles preserve their identity. Local declarations precede imports; imports
+  are searched in source order. An aggregate can coalesce identical values but
+  rejects different values or a value/method collision under one public name.
+  A module cannot redefine a builtin type or give one name both a value binding
+  and methods. Binding a callable value does not implement callable application.
+- **Native namespaces (RUNS).** `using Base.Zig` imports an ordinary library
+  constant, Zig. `Format = Zig.std.dwarf.Format` retains the actual native type;
+  `Format.32` retains its actual case value. Static member access also reads
+  native namespaces and public constant declarations on types. It creates no
+  new enum owner or runtime wrapper. Native function invocation still uses
+  explicit grounds. Base's default facade does not re-export Zig.
 - Top level runs at compile time; there is no "load time".
 - `for` at top level runs at comptime and can *generate methods* —
   this is jpp's `eval`: staged codegen, closed by the build. (RATIFIED
@@ -566,8 +584,13 @@ Variadic and tuples (RUNS):
   position as a specific type value. Enum member expressions RUN (2026-09-18):
   `orderType().lt`, or `Order.lt` after a local `Order = orderType()` binding,
   selects an existing member of a known enum type and retains its static value.
-  Missing members and non-enum owners error. Enum declaration and signature
-  pattern syntax remain unbuilt. Recognizing native enum/union types for dispatch
+  Missing members error. Generic static member access now also exposes native
+  namespaces and public constant declarations (2026-09-20). Exact enum patterns
+  RUN in source: `offsetType(Format.32) = uint32`, or a named constant bound to
+  that case. Member paths and bare defined values resolve at comptime in the
+  method's lexical declaration scope, independently of caller overrides. Fresh
+  bare names still bind inputs. Calls/arbitrary expressions in signatures remain
+  unbuilt, as does dedicated enum declaration syntax. Recognizing native enum/union types for dispatch
   does not ratify enum or struct declaration keywords in jpp. A tagged union
   instead supplies `Variant(U, tag)`, with a
   `.payload` field and type metadata retaining its owning union and tag. Methods
@@ -589,8 +612,9 @@ Variadic and tuples (RUNS):
   compose the behavior whose unresolved choices become implicit switches.
   Investigate generic native primitives beneath jpp-only wrapper bodies, starting
   from composed source examples. The wrapper API and primitive set remain OPEN.
-  Today member lookup and table injection still live in `src/jpp.zig`; this
-  direction is not a claim that the mechanism has moved into jpp. See the
+  Base.Zig now supplies the namespace root through one native ground; generic
+  member access replaces the enum-only lookup. Table injection still lives in
+  `src/jpp.zig`; moving its policy into jpp remains future work. See the
   [wrapper boundary](design/dispatch_tables.md#native-types-jpp-wrapper).
 - **Table obligations and scope.** Every possible runtime arm must resolve;
   missing coverage and competing maxima fail during compilation. A known static
@@ -601,7 +625,8 @@ Variadic and tuples (RUNS):
   enums are rejected for runtime splitting. Bool/integer-range splitting is not
   activated by this change; range arms remain a separate probe. `resolve` itself
   resolves a refined leaf pack; `call`, return inference and delegation inject
-  tables. General surface braces and value-pattern spelling remain future work.
+  tables. General surface braces and patterns beyond defined type/enum values
+  remain future work.
   Evidence: native enum/delegation/ledger tests, `variant_dispatch`, six rejection
   cases, and the modular [JSON case study](tests/json_dispatch/test.md).
   The [design walkthrough](design/dispatch_tables.md) shows shared scalar and
@@ -1195,6 +1220,12 @@ print/algebra demo):
   runtime cursor traversal. Two policy modules specialize strings/integers for
   one writer family, including nested values. Ground code retains std parsing
   and writing primitives; the case is not a complete replacement of std.json.
+- [DWARF offsets](tests/dwarf_offsets/test.md) is a scalar RUNS case using the
+  native Format and Endian enums. Separate modules choose width and byte order;
+  ordinary calls compose both switches. All four runtime combinations, unsigned
+  widening, errors, single evaluation and an inner caller audit policy are tested.
+  Known cases can produce type values; runtime calls return one native error
+  union. The two IO leaves remain grounds, with no hidden callback into jpp.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across

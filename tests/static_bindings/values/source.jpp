@@ -1,0 +1,11 @@
+using Base.Zig
+export Order, Less, Answer, pick, both, answer
+Order = Zig.std.math.Order
+Less = Order.lt
+Answer = 42
+Secret = 7
+
+pick(Order.lt) = 1
+pick(::Order) = 2
+both(Less, Less) = true
+answer() = Answer

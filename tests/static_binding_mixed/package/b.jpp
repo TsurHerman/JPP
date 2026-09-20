@@ -1,0 +1,2 @@
+export T
+T(::type) = uint64

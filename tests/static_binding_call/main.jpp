@@ -1,0 +1,2 @@
+T = uint32
+main() = T()

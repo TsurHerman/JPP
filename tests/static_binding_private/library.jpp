@@ -1,0 +1,3 @@
+Secret = uint32
+export visible
+visible() = Secret

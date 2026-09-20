@@ -59,6 +59,7 @@ pub const ValRef = union(enum) {
     bound_type: []const u8, // a uniform type binding, including empty-rest witnesses
     param_type: usize, // a where-bound type, obtained from an input field
     type_value: type,
+    constant: type, // Constant(value): an explicitly static module value
     param: usize, //  bound pack field, by slot index
     local: usize, //  result of an earlier op
     lit_i: i64, //    integer literal (jpp default: int64)
@@ -124,7 +125,9 @@ pub fn MultiMethod(comptime word: []const u8, comptime list: []const Method) typ
             for (m.signature[0..i]) |previous| if (previous.rest and previous.section == slot.section)
                 @compileError("jpp: rest input must be last in its section.");
             for (m.signature[0..i]) |previous| if (std.mem.eql(u8, slot.name, previous.name) and
-                !(slot.section == .positional and previous.section == .positional and slot.qual == .type_value and previous.qual == .type_value))
+                !(slot.section == .positional and previous.section == .positional and
+                    (slot.qual == .type_value or slot.qual == .enum_value) and
+                    (previous.qual == .type_value or previous.qual == .enum_value)))
                 @compileError("jpp: duplicate input '" ++ slot.name ++ "'; use distinct inputs and an explicit type constraint.");
         }
         for (m.variables) |v| if (!hasTypeBinding(m, v))
@@ -157,6 +160,7 @@ pub fn MultiMethod(comptime word: []const u8, comptime list: []const Method) typ
 pub fn ReexportWord(comptime word: []const u8, comptime roots: anytype) type {
     comptime {
         @setEvalBranchQuota(1_000_000);
+        if (findConstant(roots, word)) |C| return C;
         var pending: [512]type = undefined;
         var n: usize = 0;
         for (roots) |mod| {
@@ -195,6 +199,65 @@ pub fn ReexportWord(comptime word: []const u8, comptime roots: anytype) type {
             }
         }
         return MultiMethod(word, list);
+    }
+}
+
+/// Static declarations travel through the same public graph as words, but
+/// never fuse into method tables. Read raw declarations to terminate cycles.
+pub fn Constant(comptime value: anytype) type {
+    return struct {
+        pub const is_constant = true;
+        pub const Value = value;
+    };
+}
+
+pub fn moduleConstant(comptime name: []const u8, comptime value: anytype) type {
+    if (builtinType(name) != null) @compileError("jpp: cannot redefine builtin type '" ++ name ++ "'.");
+    return Constant(value);
+}
+
+fn findConstant(comptime roots: anytype, comptime name: []const u8) ?type {
+    comptime {
+        var pending: [512]type = undefined;
+        var n: usize = 0;
+        for (roots) |mod| {
+            if (contains(pending[0..n], mod)) continue;
+            if (n == pending.len) @compileError("jpp: constant module limit exceeded.");
+            pending[n] = mod;
+            n += 1;
+        }
+        var result: ?type = null;
+        var methods = false;
+        var i: usize = 0;
+        while (i < n) : (i += 1) {
+            const mod = pending[i];
+            if (@hasDecl(mod, "VALUES") and @hasDecl(mod.VALUES, name)) {
+                const C = @field(mod.VALUES, name);
+                if (result) |previous| {
+                    if (previous != C) @compileError("jpp: conflicting exported values '" ++ name ++ "'.");
+                }
+                result = C;
+                continue;
+            }
+            if (@hasDecl(mod, "LOCAL") and @hasDecl(mod.LOCAL, name)) {
+                methods = true;
+                continue;
+            }
+            if (!@hasDecl(mod, "EXPORTED") or !exportedName(mod, name)) continue;
+            const sources = @hasDecl(mod, "SOURCES");
+            const raw_members = @hasDecl(mod, "IS_DISPATCH_UNIT");
+            const next = if (sources) mod.SOURCES else if (@hasDecl(mod, "STATIC")) mod.STATIC else .{};
+            for (next) |source| {
+                if (!sources and source == mod) continue;
+                const target = if (raw_members) source else dispatchUnit(source);
+                if (contains(pending[0..n], target)) continue;
+                if (n == pending.len) @compileError("jpp: constant module limit exceeded.");
+                pending[n] = target;
+                n += 1;
+            }
+        }
+        if (result != null and methods) @compileError("jpp: value and methods share exported name '" ++ name ++ "'.");
+        return result;
     }
 }
 
@@ -421,6 +484,13 @@ pub fn Word(comptime name: []const u8) type {
     };
 }
 
+fn WordValue(comptime name: []const u8) type {
+    return struct {
+        pub const is_word_value = true;
+        pub const Value = Word(name);
+    };
+}
+
 pub fn builtinType(comptime name: []const u8) ?type {
     const names = .{ "int64", "int32", "int16", "int8", "uint64", "uint32", "uint16", "uint8", "float64", "float32", "bool", "nothing", "string", "type" };
     const types = .{ i64, i32, i16, i8, u64, u32, u16, u8, f64, f32, bool, void, []const u8, type };
@@ -446,6 +516,10 @@ fn unitScopeHas(comptime mod: type, comptime name: []const u8) bool {
 pub fn validateCalls(comptime scope: anytype, comptime owner: []const u8, comptime words: []const []const u8) void {
     @setEvalBranchQuota(1_000_000);
     for (words) |word| {
+        if (declaredValue(scope, word)) |C| {
+            if (!@hasDecl(C, "is_word_value"))
+                @compileError("jpp: constant '" ++ word ++ "' is not callable.");
+        }
         const found = blk: {
             inline for (scope, 0..) |mod, i| {
                 const names = if (i == 0) mod.DECLARED else dispatchUnit(mod).EXPORTED;
@@ -459,21 +533,42 @@ pub fn validateCalls(comptime scope: anytype, comptime owner: []const u8, compti
 }
 
 pub fn declaredValue(comptime scope: anytype, comptime name: []const u8) ?type {
-    if (builtinType(name)) |T| return T;
+    if (builtinType(name)) |T| return Constant(T);
     inline for (scope, 0..) |mod, i| {
         const names = if (i == 0) mod.DECLARED else dispatchUnit(mod).EXPORTED;
         inline for (names) |n| if (std.mem.eql(u8, name, n)) {
-            if (i == 0 and !exportedName(mod, name) and !std.mem.eql(u8, name, "main"))
-                return Word(mod.MODULE_NAME ++ "#" ++ name);
-            return Word(name);
+            const key = if (i == 0 and !exportedName(mod, name) and !std.mem.eql(u8, name, "main")) mod.MODULE_NAME ++ "#" ++ name else name;
+            if (findConstant(.{if (i == 0) mod else dispatchUnit(mod)}, key)) |C| return C;
+            return WordValue(key);
         };
-        if (i == 0 and unitScopeHas(mod, name)) return Word(name);
+        if (i == 0 and unitScopeHas(mod, name)) {
+            const unit = if (@hasDecl(mod, "DISPATCH_HOME")) mod.DISPATCH_HOME else dispatchUnit(mod.UNIT);
+            if (findConstant(.{unit}, name)) |C| return C;
+            return WordValue(name);
+        }
     }
     return null;
 }
 
-pub fn requireValue(comptime scope: anytype, comptime name: []const u8) type {
+pub fn requireConstant(comptime scope: anytype, comptime name: []const u8) type {
+    @setEvalBranchQuota(1_000_000);
     return declaredValue(scope, name) orelse @compileError("jpp: undefined value '" ++ name ++ "' (define it or import its definition).");
+}
+
+pub fn requireValue(comptime scope: anytype, comptime name: []const u8) @TypeOf(requireConstant(scope, name).Value) {
+    return requireConstant(scope, name).Value;
+}
+
+pub fn requireType(comptime scope: anytype, comptime name: []const u8) type {
+    const value = requireValue(scope, name);
+    if (@TypeOf(value) != type) @compileError("jpp: type annotation requires a type value: '" ++ name ++ "'.");
+    return value;
+}
+
+pub fn valueQual(comptime value: anytype) Qual {
+    if (@TypeOf(value) == type) return .{ .type_value = value };
+    if (@typeInfo(@TypeOf(value)) == .@"enum") return .{ .enum_value = EnumValue(value) };
+    @compileError("jpp: static patterns currently require type or enum values.");
 }
 
 /// Declaration lookup is lexical; dispatch remains caller-contextual. A fresh
@@ -482,10 +577,12 @@ pub fn requireValue(comptime scope: anytype, comptime name: []const u8) type {
 /// anonymous ones; a misspelled class must not silently become a generic rule.
 pub fn declarationQual(comptime scope: anytype, comptime name: ?[]const u8, comptime q: Qual, comptime used: bool) Qual {
     if (name) |n| {
-        if (declaredValue(scope, n)) |V| {
+        if (declaredValue(scope, n)) |C| {
             if (q != .bare and !(q == .exact and q.exact == type))
                 @compileError("jpp: defined value '" ++ n ++ "' cannot be rebound by an input annotation.");
-            return .{ .type_value = V };
+            if (q == .exact and @TypeOf(C.Value) != type)
+                @compileError("jpp: defined value '" ++ n ++ "' is not a type value.");
+            return valueQual(C.Value);
         }
     }
     if (!used and q == .bare) {
@@ -1247,6 +1344,7 @@ fn refInfo(comptime r: ValRef, comptime B: type, comptime locals: []const ValueI
         .bound_type => |name| staticInfo(boundType(B, name)),
         .param_type => |p| staticInfo(fieldTypeAt(B, p)),
         .type_value => |V| staticInfo(V),
+        .constant => |C| staticInfo(C.Value),
         .param => |p| fieldInfo(@typeInfo(B).@"struct".fields[p]),
         .local => |l| locals[l],
         .lit_i => .{ .T = i64 },
@@ -1372,7 +1470,7 @@ fn argPack(comptime op: Op, comptime B: type, comptime locals: []const ValueInfo
 
 fn projectedInfo(comptime parent: ValueInfo, comptime field: []const u8) ValueInfo {
     if (parent.T == type and parent.value != null) {
-        return staticInfo(enumMember(staticValue(parent), field));
+        return staticInfo(memberValue(staticValue(parent), field));
     }
     if (@typeInfo(parent.T) != .@"struct") @compileError("jpp: field projection requires a tuple or record.");
     for (@typeInfo(parent.T).@"struct".fields) |f| {
@@ -1384,13 +1482,25 @@ fn projectedInfo(comptime parent: ValueInfo, comptime field: []const u8) ValueIn
     @compileError("jpp: no field '" ++ field ++ "' in tuple or record.");
 }
 
-/// Enum members are defined values of their owner, available at comptime.
-pub fn enumMember(comptime E: type, comptime name: []const u8) E {
-    if (@typeInfo(E) != .@"enum") @compileError("jpp: member selection requires an enum type.");
-    for (@typeInfo(E).@"enum".fields) |field| {
-        if (std.mem.eql(u8, name, field.name)) return @enumFromInt(field.value);
+/// Generic native member access. Enum cases use the same operation as public
+/// namespace/type declarations; the returned value keeps its native identity.
+fn Member(comptime owner: anytype, comptime name: []const u8) type {
+    if (@TypeOf(owner) == type) {
+        switch (@typeInfo(owner)) {
+            .@"struct", .@"union", .@"enum", .@"opaque" => {
+                if (@hasDecl(owner, name)) return Constant(@field(owner, name));
+                if (@typeInfo(owner) == .@"enum" and @hasField(owner, name)) return Constant(@field(owner, name));
+            },
+            else => {},
+        }
+    } else if (@typeInfo(@TypeOf(owner)) == .@"struct" and @hasField(@TypeOf(owner), name)) {
+        return Constant(@field(owner, name));
     }
-    @compileError("jpp: no enum member '" ++ name ++ "' in '" ++ @typeName(E) ++ "'.");
+    @compileError("jpp: no static member '" ++ name ++ "'.");
+}
+
+pub fn memberValue(comptime owner: anytype, comptime name: []const u8) @TypeOf(Member(owner, name).Value) {
+    return Member(owner, name).Value;
 }
 
 fn callInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ValueInfo {
@@ -1479,6 +1589,7 @@ fn refValue(comptime r: ValRef, bound: anytype, locals: anytype) refInfo(r, @Typ
         .bound_type => |name| boundType(@TypeOf(bound), name),
         .param_type => |p| fieldTypeAt(@TypeOf(bound), p),
         .type_value => |V| V,
+        .constant => |C| C.Value,
         .param => |p| fieldAt(bound, p),
         .local => |l| fieldAt(locals, l),
         .lit_i => |v| @as(i64, v),

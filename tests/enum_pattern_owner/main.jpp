@@ -1,0 +1,5 @@
+using Base.Zig
+Order = Zig.std.math.Order
+Other = zig{ enum { lt, eq, gt } }
+only(Order.lt) = 1
+main() = only(Other.lt)

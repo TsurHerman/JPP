@@ -1,0 +1,53 @@
+export newReader, releaseReader, position, resultValue, endOfStream, expected32, expected64
+export newCounter, releaseCounter, trace, tapReader, runtimeFormat, runtimeEndian
+export audit, auditCount, resetAudits, reference
+
+newReader(bytes::string) = zig{ blk: {
+    const reader = std.heap.page_allocator.create(std.Io.Reader) catch @panic("fixture allocation failed");
+    reader.* = .fixed(bytes);
+    break :blk reader;
+} }
+releaseReader(reader)::nothing = zig{ std.heap.page_allocator.destroy(reader) }
+position(reader)::int64 = zig{ @intCast(reader.seek) }
+resultValue(result)::uint64 = zig{ result catch @panic("unexpected read error") }
+endOfStream(result)::bool = zig{ if (result) |_| false else |err| err == error.EndOfStream }
+expected32()::uint64 = zig{ 0x84630201 }
+expected64()::uint64 = zig{ 0x9122334455667788 }
+
+counterType()::type = zig{ struct { trace: i64 = 0 } }
+newCounter() = allocateCounter(counterType())
+allocateCounter(T::type) = zig{ blk: {
+    const c = std.heap.page_allocator.create(T) catch @panic("fixture allocation failed");
+    c.* = .{};
+    break :blk c;
+} }
+releaseCounter(counter)::nothing = zig{ std.heap.page_allocator.destroy(counter) }
+trace(counter)::int64 = zig{ counter.trace }
+tapReader(counter, reader) = zig{ blk: { counter.trace = counter.trace * 10 + 1; break :blk reader; } }
+runtimeFormat(counter, wide::bool) = zig{ blk: {
+    counter.trace = counter.trace * 10 + 2;
+    break :blk @as(std.dwarf.Format, if (wide) .@"64" else .@"32");
+} }
+runtimeEndian(counter, big::bool) = zig{ blk: {
+    counter.trace = counter.trace * 10 + 3;
+    break :blk @as(std.builtin.Endian, if (big) .big else .little);
+} }
+
+auditState()::type = zig{ struct { pub var count: i64 = 0; } }
+audit() = bump(auditState())
+bump(S::type)::nothing = zig{ { S.count += 1; } }
+auditCount() = count(auditState())
+count(S::type)::int64 = zig{ S.count }
+resetAudits() = reset(auditState())
+reset(S::type)::nothing = zig{ { S.count = 0; } }
+
+# Independent copy of std.debug.Dwarf's private readFormatSizedInt reference.
+reference(bytes::string, wide::bool, big::bool) = zig{ struct {
+    fn read(data: []const u8, format: std.dwarf.Format, endian: std.builtin.Endian) std.Io.Reader.Error!u64 {
+        var reader: std.Io.Reader = .fixed(data);
+        return switch (format) {
+            .@"32" => try reader.takeInt(u32, endian),
+            .@"64" => try reader.takeInt(u64, endian),
+        };
+    }
+}.read(bytes, if (wide) .@"64" else .@"32", if (big) .big else .little) }

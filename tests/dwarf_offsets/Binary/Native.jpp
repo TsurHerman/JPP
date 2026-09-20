@@ -1,0 +1,16 @@
+# The foreign IO boundary. Both leaves have the same native error-union result.
+export readUnsignedLE, readUnsignedBE
+
+readUnsignedLE(reader, T::type) = zig{ struct {
+    fn read(r: *std.Io.Reader) std.Io.Reader.Error!u64 {
+        if (T != u32 and T != u64) @compileError("offset input requires uint32 or uint64");
+        return try r.takeInt(T, .little);
+    }
+}.read(reader) }
+
+readUnsignedBE(reader, T::type) = zig{ struct {
+    fn read(r: *std.Io.Reader) std.Io.Reader.Error!u64 {
+        if (T != u32 and T != u64) @compileError("offset input requires uint32 or uint64");
+        return try r.takeInt(T, .big);
+    }
+}.read(reader) }

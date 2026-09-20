@@ -1,0 +1,3 @@
+T = choose()
+choose() = uint32
+main() = T

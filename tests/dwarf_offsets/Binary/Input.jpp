@@ -1,0 +1,8 @@
+using Base.Zig
+using Binary.Native
+export Endian, readUnsigned, readUnsignedLE, readUnsignedBE
+
+Endian = Zig.std.builtin.Endian
+
+readUnsigned(reader, T::type, Endian.little) = readUnsignedLE(reader, T)
+readUnsigned(reader, T::type, Endian.big) = readUnsignedBE(reader, T)

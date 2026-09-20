@@ -1,0 +1,3 @@
+# Native namespaces are ordinary type values. Member access preserves Zig identity.
+export Zig
+Zig = zig{ struct { pub const std = @import("std"); } }

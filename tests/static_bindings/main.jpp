@@ -1,0 +1,41 @@
+using Base
+using Base.Zig
+using api
+using ring
+using duplicates
+
+# Local aliases do not change another module's constants or method patterns.
+Order = zig{ enum { lt, eq, gt } }
+Answer = 99
+NativeOrder = Zig.std.math.Order
+Namespace = zig{ struct { pub const Code = u16; pub const count: i64 = 5; } }
+LaterAlias = Later
+Later = uint32
+Sparse = zig{ enum(u16) { low = 3, high = 513 } }
+
+kind(::T)::type where T = T
+identity(x) = x
+staticPack(pack)::bool = zig{ @typeInfo(@TypeOf(pack)).@"struct".fields[0].is_comptime }
+sparse(Sparse.low) = 3
+sparse(Sparse.high) = 513
+runtimeSparse(T::type, high::bool) = zig{ @as(T, if (high) .high else .low) }
+
+main() = {
+    check("native type through namespace members", NativeOrder, Token)
+    check("enum case through facade and reexport", kind(Less), NativeOrder)
+    check("enum constant remains static through helpers", staticPack((identity(Less),)), true)
+    check("integer module constant retains static value", staticPack((Answer,)), true)
+    check("local value binding", Answer, 99)
+    check("callee retains its lexical binding", answer(), 42)
+    check("caller cannot change the signature owner", pick(NativeOrder.lt), 1)
+    check("enum-wide fallback still works", pick(NativeOrder.gt), 2)
+    check("repeated enum constants are fixed patterns", both(Less, Less), true)
+    check("public type declaration uses generic member access", Namespace.Code, uint16)
+    check("public data declaration uses generic member access", Namespace.count, 5)
+    check("module values follow acyclic dependencies", LaterAlias, uint32)
+    check("cyclic public unit preserves constant identity", kind(through()), NativeOrder)
+    check("same tag spelling keeps distinct owner", kind(Order.lt), Order)
+    check("identical aggregate values coalesce", Shared, NativeOrder)
+    check("sparse native tag values are retained", sparse(runtimeSparse(Sparse, true)), 513)
+    check("other sparse native tag resolves", sparse(runtimeSparse(Sparse, false)), 3)
+}

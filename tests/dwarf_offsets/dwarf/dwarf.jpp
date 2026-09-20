@@ -1,0 +1,11 @@
+using Base.Zig
+using Binary.Input
+export Format, Endian, offsetType, readOffset
+
+Format = Zig.std.dwarf.Format
+
+offsetType(Format.32) = uint32
+offsetType(Format.64) = uint64
+
+readOffset(reader, format::Format, endian::Endian) =
+    readUnsigned(reader, offsetType(format), endian)

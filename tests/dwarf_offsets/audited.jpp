@@ -1,0 +1,16 @@
+using Base.Test
+using policy.audit32
+using exercise
+using fixture
+
+main() = {
+    resetAudits()
+    exercise("audited 32-bit little endian", "\x01\x02\x63\x84padding!", false, false, expected32(), 4)
+    check("caller policy reaches nested binary reader once", auditCount(), 1)
+    exercise("32-bit big endian stays ordinary", "\x84\x63\x02\x01padding!", false, true, expected32(), 4)
+    exercise("64-bit little endian stays ordinary", "\x88\x77\x66\x55\x44\x33\x22\x91padding!", true, false, expected64(), 8)
+    exercise("64-bit big endian stays ordinary", "\x91\x22\x33\x44\x55\x66\x77\x88padding!", true, true, expected64(), 8)
+    check("policy only replaces one combination", auditCount(), 1)
+    shortRead(false, false)
+    check("failed read still executes the policy once", auditCount(), 2)
+}

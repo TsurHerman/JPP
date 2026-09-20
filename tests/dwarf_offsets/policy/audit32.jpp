@@ -1,0 +1,8 @@
+using Binary.Input
+using fixture
+export readUnsigned
+
+readUnsigned(reader, uint32, Endian.little) = {
+    audit()
+    readUnsignedLE(reader, uint32)
+}

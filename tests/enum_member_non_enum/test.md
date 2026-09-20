@@ -1,5 +1,4 @@
-# Enum member selection requires an enum owner
+# A primitive integer type has no lt member
 
-Projection from a known type currently exposes only declared enum members.
-It does not invent members on ordinary numeric types or expose arbitrary
-declarations from native types.
+Native member access exposes existing cases and public declarations. It does
+not invent an lt member on an ordinary numeric type.

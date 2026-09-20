@@ -1,6 +1,6 @@
 # Generality implementation sequence
 
-Revised 2026-09-19 after the native enum wrapper correction. This supersedes
+Revised 2026-09-20 after implementing the modular DWARF reader. This supersedes
 the earlier feature-by-feature sequence, which postponed dependency visibility
 and static fields until after consumers were already built.
 
@@ -19,22 +19,18 @@ A foreign representation can implement those contracts without determining every
 source-language rule. In particular, using Zig enum/union metadata does not choose
 jpp's collection, ownership or declaration model.
 
-The next milestone is one modular scalar comparison library:
+The first source milestone is now the [working DWARF reader](dispatch_tables.md#the-working-use-case-reading-dwarf-offsets),
+chosen in place of the abstract comparison/accepts sketch. Separate jpp modules
+choose width and byte order from real Zig enums, and their ordinary calls compose
+the switches. Tests cover the four runtime combinations, static type selection,
+errors, evaluation order and a caller's override inside the binary reader.
 
-1. Start with the [composed source example](dispatch_tables.md#start-with-the-program-we-want-to-write)
-   and derive the generic primitives needed for a tight jpp wrapper around Zig
-   enums. Preserve native type identity, cases and representation. Keep wrapper
-   bodies in jpp; design the native boundary from their needs. Shared dispatch
-   behavior does not require a new representation for enum and union values.
-2. Expose defined case values in method patterns. Make signature evaluation's
-   stage and context explicit; keep fresh names as binders. Existing member
-   expressions are the small completed prerequisite.
-3. Express Order.compare through shared jpp definitions, modules and one caller
-   policy. Check all 18 cells, selected-only static coverage, full runtime
-   coverage, owner identity and single evaluation of effects. Inspect generated
-   code for known and runtime selectors.
-4. Then extend comparison to numeric data, including unordered float results.
-   Use what this reveals to choose the next language change.
+Base.Zig supplies an ordinary native namespace value. Module constants and enum
+member-path patterns retain their lexical native identities through module
+composition. This completes the bounded source slice, not a general reflection
+or branch library. Next specify ordinary static application's stage/context and
+derive the remaining generic primitives from this consumer. Arbitrary initializer
+calls, callable values and staged branch continuations remain unbuilt.
 
 A port earns its place when ordinary jpp definitions make shared behavior or
 contextual customization useful and can be checked against the native reference.
@@ -47,7 +43,7 @@ Overridable `=` for both bindings and method definitions is an agreed eventual
 direction. Preserve room for it while completing this slice; building its staged
 definition engine immediately would turn the scalar milestone into a compiler
 bootstrap project. Runtime collections, memory policy and a general value-guard
-solver likewise have no role in the first comparison proof.
+solver likewise have no role in this scalar binary-reader proof.
 
 ## 1. Foundations
 
@@ -194,7 +190,8 @@ No general compile-time or stack-scaling claim follows from this sample.
 
 ### 4b. Scalar cases and partial evaluation
 
-OPEN — next bounded research and implementation sequence, not new syntax or
+Historical proposal, superseded as the first consumer by the DWARF reader above.
+OPEN research sequence, not new syntax or
 ratified runtime-predicate semantics. The [dispatch notebook](dispatch_tables.md)
 separates method regions, knowledge established by a branch, and residual control
 flow. The existing small integer-range probe enumerates values; symbolic interval
@@ -218,6 +215,11 @@ value. The enum_members case covers ownership and forwarding; two rejection
 cases cover missing members and non-enum owners. Declarations and signature
 patterns remain unbuilt. Dedicated enum declarations are no longer assumed to
 be the next step; the surface may keep representation categories opaque.
+
+Progress, 2026-09-20: module constants and exact enum member paths in signatures
+now RUN (`static_bindings`, `dwarf_offsets`). Generic native member access also
+exposes namespaces/public constant declarations. Initializers are bounded to
+values/member paths or explicit grounds; general static application remains OPEN.
 
 ### Opaque representations, explicit capabilities
 

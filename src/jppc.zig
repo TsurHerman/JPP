@@ -190,7 +190,7 @@ const Arg = struct { label: []const u8 = "", splat: Splat = .none, value: *Node 
 // `pred` is the slot-position form `x<:Integer`. README §4: it is sugar
 // for `x::T where Integer(T)` with T fresh, so it lowers to a binder
 // plus a gate and needs nothing new from the machinery.
-const Param = struct { name: []const u8, named: bool = false, rest: bool = false, anonymous: bool = false, ty: ?[]const u8, pred: ?[]const u8 = null };
+const Param = struct { name: []const u8, named: bool = false, rest: bool = false, anonymous: bool = false, ty: ?[]const u8, pred: ?[]const u8 = null, value: ?*Node = null };
 
 const Where = struct {
     vars: []const []const u8,
@@ -212,7 +212,10 @@ const Mod = struct {
     usings: [][]const u8,
     exports: [][]const u8,
     defs: []Def,
+    bindings: []Binding,
 };
+
+const Binding = struct { name: []const u8, value: ?*Node, ground: ?[:0]const u8 };
 
 // ---------------------------------------------------------------- parser
 
@@ -251,6 +254,7 @@ const Parser = struct {
         var usings = try std.ArrayList([]const u8).initCapacity(p.a, 8);
         var exports = try std.ArrayList([]const u8).initCapacity(p.a, 16);
         var defs = try std.ArrayList(Def).initCapacity(p.a, 32);
+        var bindings = try std.ArrayList(Binding).initCapacity(p.a, 8);
         p.skipNl();
         while (p.peek().kind != .eof) {
             switch (p.peek().kind) {
@@ -283,7 +287,20 @@ const Parser = struct {
                         break;
                     }
                 },
-                .ident, .op, .subtype => try defs.append(p.a, try p.parseDef()),
+                .ident, .op, .subtype => {
+                    if (p.peek().kind == .ident and p.toks[p.i + 1].kind == .eq) {
+                        const binding_name = p.next().text;
+                        if (std.mem.eql(u8, binding_name, "_") or std.mem.eql(u8, binding_name, "true") or std.mem.eql(u8, binding_name, "false"))
+                            return bindingError(error.InvalidBinding, binding_name);
+                        _ = p.next();
+                        p.skipNlOnlyNewlinesBeforeBody();
+                        if (p.peek().kind == .ground) {
+                            try bindings.append(p.a, .{ .name = binding_name, .ground = try p.a.dupeZ(u8, p.next().text), .value = null });
+                        } else {
+                            try bindings.append(p.a, .{ .name = binding_name, .value = try p.parseExpr(0), .ground = null });
+                        }
+                    } else try defs.append(p.a, try p.parseDef());
+                },
                 else => {
                     std.debug.print("jppc: unexpected token '{s}' at byte {d}\n", .{ p.peek().text, p.peek().pos });
                     return error.Parse;
@@ -291,7 +308,13 @@ const Parser = struct {
             }
             p.skipNl();
         }
-        return .{ .name = name, .usings = usings.items, .exports = exports.items, .defs = defs.items };
+        for (bindings.items, 0..) |b, i| {
+            for (bindings.items[0..i]) |previous| if (std.mem.eql(u8, b.name, previous.name))
+                return bindingError(error.DuplicateBinding, b.name);
+            for (defs.items) |d| if (std.mem.eql(u8, b.name, d.name))
+                return bindingError(error.BindingMethodCollision, b.name);
+        }
+        return .{ .name = name, .usings = usings.items, .exports = exports.items, .defs = defs.items, .bindings = bindings.items };
     }
 
     fn parseDef(p: *Parser) !Def {
@@ -310,15 +333,19 @@ const Parser = struct {
             }
             if (p.peek().kind != .ident and p.peek().kind != .dcolon and p.peek().kind != .subtype) return error.Parse;
             const spelling = if (p.peek().kind == .ident) p.next().text else "_";
-            const anonymous = std.mem.eql(u8, spelling, "_");
+            const value = if (p.peek().kind == .dot) try p.parseMembers(try p.node(.{ .ident = spelling })) else null;
+            if (value != null and named) return bindingError(error.NamedValuePattern, spelling);
+            const anonymous = value != null or std.mem.eql(u8, spelling, "_");
             if (named and anonymous) return bindingError(error.NamedInputNeedsName, spelling);
             const pn = if (anonymous) try std.fmt.allocPrint(p.a, "__slot{d}", .{params.items.len}) else spelling;
             var ty: ?[]const u8 = null;
             var pred: ?[]const u8 = null;
             if (p.peek().kind == .dcolon) {
+                if (value != null) return bindingError(error.AnnotatedValuePattern, spelling);
                 _ = p.next();
                 ty = (try p.expect(.ident)).text;
             } else if (p.peek().kind == .subtype) {
+                if (value != null) return bindingError(error.AnnotatedValuePattern, spelling);
                 _ = p.next();
                 pred = (try p.expect(.ident)).text;
             }
@@ -326,7 +353,7 @@ const Parser = struct {
             if (rest) _ = p.next();
             for (params.items) |previous| if (previous.named == named and previous.rest)
                 return bindingError(error.RestMustBeLast, pn);
-            try params.append(p.a, .{ .name = pn, .named = named, .rest = rest, .anonymous = anonymous, .ty = ty, .pred = pred });
+            try params.append(p.a, .{ .name = pn, .named = named, .rest = rest, .anonymous = anonymous, .ty = ty, .pred = pred, .value = value });
             p.skipNlOnlyNewlinesBeforeBody();
             if (p.peek().kind == .comma) {
                 _ = p.next();
@@ -422,7 +449,11 @@ const Parser = struct {
     }
 
     fn parsePostfix(p: *Parser) anyerror!*Node {
-        var value = try p.parsePrimary();
+        return p.parseMembers(try p.parsePrimary());
+    }
+
+    fn parseMembers(p: *Parser, root: *Node) anyerror!*Node {
+        var value = root;
         while (p.peek().kind == .dot) {
             _ = p.next();
             const field = p.next();
@@ -694,7 +725,7 @@ fn emitVR(o: *Out, r: VR) void {
     switch (r) {
         .bound_type => |name| o.add(".{{ .bound_type = \"{s}\" }}", .{name}),
         .param_type => |p| o.add(".{{ .param_type = {d} }}", .{p}),
-        .name => |n| o.add(".{{ .type_value = jpp.requireValue(STATIC, \"{s}\") }}", .{n}),
+        .name => |n| o.add(".{{ .constant = jpp.requireConstant(STATIC, \"{s}\") }}", .{n}),
         .param => |p| o.add(".{{ .param = {d} }}", .{p}),
         .local => |l| o.add(".{{ .local = {d} }}", .{l}),
         .lit_i => |v| o.add(".{{ .lit_i = {d} }}", .{v}),
@@ -715,7 +746,31 @@ fn localWord(a: std.mem.Allocator, m: Mod, name: []const u8) ![]const u8 {
     for (m.exports) |x| if (std.mem.eql(u8, x, name)) return name;
     for (m.defs) |d| if (std.mem.eql(u8, d.name, name))
         return std.fmt.allocPrint(a, "{s}#{s}", .{ m.name, name });
+    for (m.bindings) |b| if (std.mem.eql(u8, b.name, name))
+        return std.fmt.allocPrint(a, "{s}#{s}", .{ m.name, name });
     return name;
+}
+
+// Static declarations initially admit values and member paths, plus explicit
+// native grounds. Ordinary calls need a separate staging/context contract.
+fn emitStaticExpr(o: *Out, n: *Node) anyerror!void {
+    switch (n.*) {
+        .ident => |name| o.add("jpp.requireValue(STATIC, \"{s}\")", .{name}),
+        .project => |proj| {
+            o.add("jpp.memberValue(", .{});
+            try emitStaticExpr(o, proj.value);
+            o.add(", \"{s}\")", .{proj.field});
+        },
+        .lit_i => |v| o.add("@as(i64, {d})", .{v}),
+        .lit_f => |v| {
+            o.add("@as(f64, ", .{});
+            emitFloat(o, v);
+            o.add(")", .{});
+        },
+        .lit_s => |v| o.add("@as([]const u8, \"{s}\")", .{v}),
+        .lit_b => |v| o.add("{}", .{v}),
+        else => return bindingError(error.StaticExpressionNotSupported, "use a value, member path, or explicit module ground"),
+    }
 }
 
 fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name: ?[]const u8, is_facade: bool) !void {
@@ -735,10 +790,23 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
     o.add("pub const MODULE_NAME = \"{s}\";\n", .{m.name});
     o.add("pub const DECLARED = .{{", .{});
     for (m.defs) |d| o.add("\"{s}\",", .{d.name});
+    for (m.bindings) |b| o.add("\"{s}\",", .{b.name});
     for (m.exports) |x| o.add("\"{s}\",", .{x});
     o.add(" }};\npub const EXPORTED = .{{", .{});
     for (m.exports) |x| o.add("\"{s}\",", .{x});
     o.add(" }};\n", .{});
+    o.add("pub const VALUES = struct {{\n", .{});
+    for (m.bindings) |b| {
+        const key = try localWord(a, m, b.name);
+        o.add("    pub const @\"{s}\" = jpp.moduleConstant(\"{s}\", ", .{ key, b.name });
+        if (b.ground) |g| o.add("{s}", .{g}) else try emitStaticExpr(o, b.value.?);
+        o.add(");\n", .{});
+    }
+    o.add("}};\n", .{});
+    for (m.bindings) |b| {
+        const key = try localWord(a, m, b.name);
+        o.add("pub const @\"{s}\" = VALUES.@\"{s}\";\ncomptime {{ _ = @field(VALUES, \"{s}\"); }}\n", .{ key, key, key });
+    }
     // Lexical dependency metadata is emitted without inspecting any imports.
     // The machinery checks even unused bodies against their declaration home.
     o.add("pub const REQUIREMENTS = .{{\n", .{});
@@ -753,9 +821,11 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
     }
     o.add("}};\ncomptime {{ for (REQUIREMENTS) |r| jpp.validateCalls(STATIC, r.owner, r.words); }}\n", .{});
     for (m.exports) |x| {
-        const implemented = for (m.defs) |d| {
-            if (std.mem.eql(u8, d.name, x)) break true;
-        } else false;
+        const implemented = blk: {
+            for (m.defs) |d| if (std.mem.eql(u8, d.name, x)) break :blk true;
+            for (m.bindings) |b| if (std.mem.eql(u8, b.name, x)) break :blk true;
+            break :blk false;
+        };
         if (!implemented) o.add("pub const @\"{s}\" = jpp.ReexportWord(\"{s}\", .{{this_module}});\n", .{ x, x });
     }
 
@@ -811,6 +881,12 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
             for (e.params, 0..) |prm, pi| {
                 if (pi > 0) o.add(",", .{});
                 o.add(" .{{ .name = \"{s}\", .section = .{s}, .rest = {}, .elementwise = {}, .qual = ", .{ prm.name, if (prm.named) "named" else "positional", prm.rest, prm.rest and prm.pred != null });
+                if (prm.value) |value| {
+                    o.add("jpp.valueQual(", .{});
+                    try emitStaticExpr(o, value);
+                    o.add(") }}", .{});
+                    continue;
+                }
                 if (prm.anonymous)
                     o.add("jpp.declarationQual(STATIC, null, ", .{})
                 else
@@ -821,7 +897,7 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
                     if (isTVar(e, t)) {
                         o.add(".{{ .tvar = \"{s}\" }}", .{t});
                     } else {
-                        o.add(".{{ .exact = jpp.requireValue(STATIC, \"{s}\") }}", .{t});
+                        o.add(".{{ .exact = jpp.requireType(STATIC, \"{s}\") }}", .{t});
                     }
                 } else {
                     o.add(".bare", .{});
@@ -857,7 +933,7 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
             }
             if (e.ret) |r| {
                 if (e.ground == null) {
-                    if (boundTypeName(e, r)) o.add(" .ret_variable = \"{s}\",", .{r}) else o.add(" .ret = jpp.requireValue(STATIC, \"{s}\"),", .{r});
+                    if (boundTypeName(e, r)) o.add(" .ret_variable = \"{s}\",", .{r}) else o.add(" .ret = jpp.requireType(STATIC, \"{s}\"),", .{r});
                 }
             }
             if (e.ground != null) {
@@ -947,7 +1023,7 @@ fn boundTypeName(d: Def, name: []const u8) bool {
 fn emitBoundType(o: *Out, d: Def, name: []const u8) void {
     if (boundTypeName(d, name)) {
         o.add("jpp.boundType(B, \"{s}\")", .{name});
-    } else o.add("jpp.requireValue(STATIC, \"{s}\")", .{name});
+    } else o.add("jpp.requireType(STATIC, \"{s}\")", .{name});
 }
 
 fn groundUsesAny(d: Def, g: [:0]const u8) bool {

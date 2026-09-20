@@ -114,17 +114,18 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
 | 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` and precedence); `base_import`, `base_shadow`, `base_missing`, `base_mixed`; `checkout` (Base arithmetic); machinery tests (`+` shadowed) | more widths and promotion |
 | 10 | Binder: packs, named args (§4) | named_arguments, named_specificity, named_context, named_instances; varargs, varargs_dispatch, varargs_forward; binderprobe | defaults |
-| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; variant_static; enum_members; json_dispatch; variant rejection cases, enum_open, enum_missing_member, enum_member_non_enum | enum declaration/pattern syntax; general result joins |
+| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; variant_static; enum_members; dwarf_offsets; enum_pattern_*; json_dispatch; variant rejection cases, enum_open, enum_missing_member, enum_member_non_enum | arbitrary static pattern expressions; general result joins |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: facade, wildcard, dotted (§1) | folder_modules, folder_scope, cycle_folder, private_helpers | binary artifact boundaries |
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
 | 15 | Library resolution: modules from `Base/`, tree shadows Base | all check-based cases; `base_import`, `base_shadow`, `base_missing`, `any_shadow`, `module_encoding` | — |
-| 17 | Defined signature names require lexical definitions/imports | `declaration_names`, `undeclared_order`, `undefined_export` | user-defined type/constant declarations after that surface exists |
+| 17 | Defined signature names require lexical definitions/imports | `declaration_names`, `undeclared_order`, `undefined_export`, `static_bindings`, `enum_pattern_*` | general static application |
 | 18 | Annotated inputs may be unused; anonymous universal predicate inputs use `<:Any` | `unused_ground`, `any` (positive); `unused_input`, `unused_untyped_ground`, `unused_anonymous` (negative) | richer pattern syntax |
 | 19 | Type values and bound return types survive calls | `type_values`, `type_bindings`; machinery pack test | general static computation and braces |
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
 | 21 | Ground inference preserves runtime data and intentional static fields (§7) | `ground_records`; `checkout` (native record pipeline and void statement emission) | richer record surface |
 | 22 | Immutable local bindings alias ANF values (§6) | `local_bindings`, `checkout`; `binding_*` frontend rejection cases | typed local annotations; application of callable values |
+| 23 | Module constants and native member paths preserve lexical identity | `static_bindings`, `dwarf_offsets`; `static_binding_*` rejection cases | calls in static initializers; callable values |
 
 `variant_static` preserves known results from static union arms through helpers,
 named calls and rest forwarding. A returned known tag needs only its selected
@@ -135,6 +136,21 @@ remain data even alongside static coordinates.
 type-returning calls and local aliases. Static values and enum owner identity
 survive forwarding. `enum_missing_member` and `enum_member_non_enum` reject
 undefined members and invalid owners.
+
+`static_bindings` covers native namespaces/public constant members, module value
+bindings, enum aliases, repeated fixed patterns, sparse native tags, lexical
+declaration homes, forward value dependencies, facades, re-exports, identical
+aggregate values and public import-cycle units. Its negative companions reject
+private access, rebinding, value/method collisions, differing aggregate values,
+value cycles, builtin replacement, calling constants and unstaged initializers.
+`enum_pattern_member`, `enum_pattern_missing`, `enum_pattern_owner` and
+`enum_pattern_order` enforce declared cases even in unused signatures, runtime
+coverage, native owner identity and the type-only order word.
+
+`dwarf_offsets` replaces a real binary-reader switch with composed width and
+endianness methods. It uses native enums through Base.Zig, covers all four runtime
+combinations and native error results, and verifies single producer evaluation,
+cursor advancement, static type selection and a nested caller audit override.
 
 Lexical call/gate validation and export-only declarations now RUN. Typed input/
 result contracts remain OPEN. `declaration_tunnel` and repaired `override` prove

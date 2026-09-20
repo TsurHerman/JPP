@@ -1,0 +1,27 @@
+using Base.Test
+using dwarf
+using fixture
+export exercise, shortRead
+
+exercise(label::string, bytes::string, wide::bool, big::bool, expected::uint64, size::int64) = {
+    reader = newReader(bytes)
+    counter = newCounter()
+    result = readOffset(tapReader(counter, reader), runtimeFormat(counter, wide), runtimeEndian(counter, big))
+    check(label, resultValue(result), expected)
+    check("matches native DWARF reader", resultValue(result), resultValue(reference(bytes, wide, big)))
+    check("one field consumed", position(reader), size)
+    check("producers execute once in source order", trace(counter), 123)
+    releaseCounter(counter)
+    releaseReader(reader)
+}
+
+shortRead(wide::bool, big::bool) = {
+    reader = newReader("\x01\x02\x03")
+    counter = newCounter()
+    result = readOffset(tapReader(counter, reader), runtimeFormat(counter, wide), runtimeEndian(counter, big))
+    check("truncated offset preserves native error", endOfStream(result), true)
+    check("failed fixed read consumes no field", position(reader), 0)
+    check("error does not repeat producers", trace(counter), 123)
+    releaseCounter(counter)
+    releaseReader(reader)
+}

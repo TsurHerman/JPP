@@ -1,0 +1,4 @@
+using Base.Zig
+Order = Zig.std.math.Order
+unused(Order.missing) = 1
+main() = 0
