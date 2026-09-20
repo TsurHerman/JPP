@@ -1,5 +1,4 @@
-# byte-identical to tests/lattice_gap/rules.jpp — the library is NOT
-# edited to cure anything.
+# Same method definitions as lattice_gap: the caller supplies the missing edge.
 using preds
 export gap, itsy
 

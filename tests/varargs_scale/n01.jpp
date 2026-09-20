@@ -1,3 +1,4 @@
 using forward
 using Base.Test
+
 main() = check("1-element reduction", total(1), 1)

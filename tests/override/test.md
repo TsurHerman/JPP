@@ -1,12 +1,16 @@
-# override
+# A caller changes a library's declared dependency
 
-**Validates (README §1):** shadowing by position — BY CONTRAST. Two
-programs, same calls: `plain` gets base's tag (1); `shadowed` leads
-with `loud` (same signature, same rank) and gets 99, both at the
-call site and inside `lib.probe`, which has no explicit import for `tag`.
-Equal specificity, so position alone flips the answer.
+Two programs make the same calls with different imports:
 
-The absent `tag` dependency in `lib` is a current language gap, not a
-promise that names acquire lexical definitions from callers. A future
-contract check must repair this fixture while preserving both answers;
-see `design/word_contracts.md`.
+| Program | Leading provider | Direct `tag(21)` | Library `probe(21)` |
+|---|---|---:|---:|
+| `plain.jpp` | `base` | 1 | 1 |
+| `shadowed.jpp` | `loud` | 99 | 99 |
+
+The numbers identify the provider that answered. Both providers have the same
+signature; only their context positions differ.
+
+`lib.jpp` declares `export probe, tag`. Its `probe(x) = tag(x)` therefore has a
+valid local declaration for `tag`, with no invented fallback implementation.
+The caller supplies the implementation and retains priority inside the library.
+Neither an implicit import nor an undefined name is involved.

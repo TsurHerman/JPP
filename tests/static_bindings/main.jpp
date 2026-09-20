@@ -5,19 +5,32 @@ using ring
 using duplicates
 
 # Local aliases do not change another module's constants or method patterns.
-Order = zig{ enum { lt, eq, gt } }
+Order = zig{
+    enum { lt, eq, gt }
+}
 Answer = 99
 NativeOrder = Zig.std.math.Order
-Namespace = zig{ struct { pub const Code = u16; pub const count: i64 = 5; } }
+Namespace = zig{
+    struct {
+        pub const Code = u16;
+        pub const count: i64 = 5;
+    }
+}
 LaterAlias = Later
 Later = uint32
-Sparse = zig{ enum(u16) { low = 3, high = 513 } }
+Sparse = zig{
+    enum(u16) { low = 3, high = 513 }
+}
 
 kind(::T)::type where T = T
+
 identity(x) = x
+
 staticPack(pack)::bool = zig{ @typeInfo(@TypeOf(pack)).@"struct".fields[0].is_comptime }
+
 sparse(Sparse.low) = 3
 sparse(Sparse.high) = 513
+
 runtimeSparse(T::type, high::bool) = zig{ @as(T, if (high) .high else .low) }
 
 main() = {

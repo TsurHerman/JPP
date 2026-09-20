@@ -1,1 +1,1 @@
-f(; xs..., ys...) = xs
+options(; first..., second...) = first

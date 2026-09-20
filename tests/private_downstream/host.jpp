@@ -1,4 +1,6 @@
 using guest
 export enter
+
 hidden(::int64) = 42
+
 enter() = visit()

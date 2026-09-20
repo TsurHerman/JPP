@@ -1,3 +1,4 @@
 using a
 export gamma
+
 gamma() = 42

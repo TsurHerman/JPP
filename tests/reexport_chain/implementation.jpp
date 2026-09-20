@@ -1,4 +1,6 @@
 using Base.Arithmetic
 export exposed
+
 exposed(x) = helper(x)
+
 helper(x) = x + 1

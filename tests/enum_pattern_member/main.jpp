@@ -1,4 +1,8 @@
 using Base.Zig
-Order = Zig.std.math.Order
-unused(Order.missing) = 1
+
+Level = Zig.std.log.Level
+
+# Zig calls this case warn, not warning. Even an unused signature must reject it.
+label(Level.warning) = "WARNING"
+
 main() = 0

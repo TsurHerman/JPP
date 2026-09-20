@@ -1,36 +1,32 @@
-# lattice
+# Four predicates form a dispatch diamond
 
-**Validates (README §4):** predicates plus authored `<:` edges express
-a LATTICE, not a tree. A class may sit below two incomparable classes
-at once.
+The predicates describe numeric types, small numeric types, signed integers,
+and small signed integers. The authored order is a diamond:
 
+```text
+         Numeric
+         /     \
+      Small   Signed
+         \     /
+        SmallSigned
 ```
-        Numeric
-        /     \
-     Small   Signed
-        \     /
-      SmallSigned
-```
 
-Every `int16` answers all four predicates, so all four gated methods
-are candidates on every such call. Nothing about the types decides;
-the authored order does.
+Every int16 satisfies all four predicates. Each predicate has its own `kind`
+method, and the four authored edges leave SmallSigned as the sole winner.
+Other inputs demonstrate the two incomparable middle rules and the fallback:
 
-**Why this is not expressible as a tree.** Single inheritance forces
-`SmallSigned` to pick one parent. Julia's abstract hierarchy has this
-exact limitation — it is why `LinearAlgebra` cannot make `Diagonal` a
-subtype of both `UpperTriangular` and `LowerTriangular` and reaches for
-traits instead. Here the diamond is four lines of ordinary facts,
-because membership (a predicate over types) and order (facts about
-class names) are separate planes and neither constrains the other.
+| Input type | Winning rule | Result marker |
+|---|---|---:|
+| int16 | SmallSigned | 4 |
+| int64 | Signed | 3 |
+| uint16 | Small | 2 |
+| float64 | Numeric | 1 |
+| string | Any | 0 |
 
-**The five calls walk the diamond.** `int16` lands at the bottom;
-`int64` is Signed but not Small; `uint16` is Small but not Signed —
-the two incomparable middles, separated only by which predicates the
-argument answers; `float64` reaches only Numeric; a string reaches only
-the Any predicate method. Base's ordinary order rule places each of the
-diamond's predicates below Any; the caller imports that order explicitly.
+The numbers identify the selected method. Base supplies the ordinary order
+placing the four domain predicates ahead of Any.
 
-**Transitivity is not authored here, and is not needed here.** See
-`tests/lattice_gap` for why that holds only while the middle classes
-carry methods of their own.
+There is deliberately no direct `SmallSigned <: Numeric` edge. This succeeds
+because the middle methods eliminate Numeric before losing to SmallSigned.
+No transitive edge is inferred. [lattice_gap](../lattice_gap/test.md) shows what
+happens when an intermediate predicate has no method at the call.

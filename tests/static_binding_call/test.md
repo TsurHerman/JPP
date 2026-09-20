@@ -1,4 +1,6 @@
-# Native callable application is not implied by member access
+# A type alias does not declare a constructor
 
-Calling a constant must not silently dispatch a same-spelled word. General
-application of callable values and type constructors remains unbuilt.
+`OffsetWidth = uint32` binds a native type value. `OffsetWidth()` then tries to
+call it as if it were a method. Compilation must report that the constant is
+not callable; reading its value is valid, calling it has no application
+protocol yet. A same-spelled word must not be selected accidentally.

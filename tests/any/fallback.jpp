@@ -1,3 +1,4 @@
 using Base.Any
 export forward
+
 forward(<:Any) = 99

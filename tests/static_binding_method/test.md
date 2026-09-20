@@ -1,3 +1,6 @@
-# A module name cannot be both a value and a word
+# A type alias and method cannot replace each other
 
-A binding and method definition cannot silently replace one another.
+The module first binds `OffsetWidth = uint32`, then defines
+`OffsetWidth() = uint64`. One local name cannot simultaneously denote that
+constant and a method table. The frontend rejects the collision even though
+`main` only reads the name.

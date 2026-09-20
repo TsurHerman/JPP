@@ -1,9 +1,12 @@
 using Base
 using api
 export inspect
+
 inspect(x::int64) = x
+
 main() = {
     check("declared word uses caller implementation", probe(9), 9)
     check("declaration has a stable word identity", same(inspect, exportedWord()), true)
 }
+
 same(A::type, B::type)::bool = zig{ A == B }

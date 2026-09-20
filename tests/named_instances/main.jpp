@@ -1,17 +1,30 @@
 using Base
+
 boundPack(; selected::type, data::int64)::type = zig{ @TypeOf(bound) }
-nextInstance(; selected::type, data::int64)::int64 = zig{ blk: {
-    const State = struct { const Pack = @TypeOf(bound); var count: i64 = 0; };
-    _ = State.Pack;
-    State.count += 1;
-    break :blk State.count;
-} }
+
+nextInstance(; selected::type, data::int64)::int64 = zig{
+    blk: {
+        const State = struct {
+            const Pack = @TypeOf(bound);
+            var count: i64 = 0;
+        };
+        _ = State.Pack;
+        State.count += 1;
+        break :blk State.count;
+    }
+}
+
 main() = {
-    check("permutation and data preserve bound pack identity", boundPack(; selected = int64, data = 1), boundPack(; data = 9, selected = int64))
+    check(
+        "permutation and data preserve bound pack identity",
+        boundPack(; selected = int64, data = 1),
+        boundPack(; data = 9, selected = int64)
+    )
     same = sameTypeValue(boundPack(; selected = int64, data = 1), boundPack(; selected = float64, data = 1))
     check("different static values change bound pack identity", same, false)
     check("first bound instance", nextInstance(; selected = int64, data = 1), 1)
     check("permutation and runtime data reuse the instance", nextInstance(; data = 9, selected = int64), 2)
     check("pack-dependent state distinguishes static inputs", nextInstance(; data = 9, selected = float64), 1)
 }
+
 sameTypeValue(A::type, B::type)::bool = zig{ A == B }

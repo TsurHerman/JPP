@@ -3,7 +3,7 @@
 # rank exactly as the long form does. int64 answers both predicates, so
 # nothing but the declared order can separate them.
 using preds
-export g
+export category
 
-g(<:Wide) = 1
-g(<:Signed) = 2
+category(<:Wide) = 1
+category(<:Signed) = 2

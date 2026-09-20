@@ -4,5 +4,5 @@ using clash
 using Base.Test
 
 main() = {
-    check("injected edge cures the clash", g(1), 2)
+    check("injected edge cures the clash", category(1), 2)
 }

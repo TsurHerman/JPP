@@ -4,4 +4,5 @@ export lineDiscount, discountRate
 
 # A real default: ten or more units receive ten percent off that line.
 discountRate(count::int64) = choose(atLeast(count, 10), 1000, 0)
+
 lineDiscount(gross_cents::int64, count::int64) = rateAmount(gross_cents, discountRate(count))

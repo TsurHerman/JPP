@@ -1,2 +1,3 @@
 using a
+
 main() = crossed(1, 2)

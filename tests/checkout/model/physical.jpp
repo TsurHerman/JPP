@@ -5,15 +5,19 @@ line(price_cents::int64, count::int64, unit_grams::int64) = zig{
     .{ .price_cents = price_cents, .count = count, .unit_grams = unit_grams }
 }
 
-Physical(T::type)::bool = zig{ blk: {
-    if (@typeInfo(T) != .@"struct") break :blk false;
-    inline for (.{ "price_cents", "count", "unit_grams" }) |field| {
-        if (!@hasField(T, field)) break :blk false;
-        if (@TypeOf(@field(@as(T, undefined), field)) != i64) break :blk false;
+Physical(T::type)::bool = zig{
+    blk: {
+        if (@typeInfo(T) != .@"struct") break :blk false;
+        inline for (.{ "price_cents", "count", "unit_grams" }) |field| {
+            if (!@hasField(T, field)) break :blk false;
+            if (@TypeOf(@field(@as(T, undefined), field)) != i64) break :blk false;
+        }
+        break :blk true;
     }
-    break :blk true;
-} }
+}
 
 unitPrice(item<:Physical) = zig{ item.price_cents }
+
 unitCount(item<:Physical) = zig{ item.count }
+
 unitGrams(item<:Physical) = zig{ item.unit_grams }

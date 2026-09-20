@@ -1,2 +1,6 @@
 word(x) = x
-main() = { word = 7; word(1) }
+
+main() = {
+    word = 7
+    word(1)
+}

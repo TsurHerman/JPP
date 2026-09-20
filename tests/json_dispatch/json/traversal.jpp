@@ -5,6 +5,7 @@ export emit, walk
 # emit is an explicit required word; the package supplies its implementations.
 # The same walk consumes array elements and object fields at runtime.
 walk(cursor, writer)::nothing = consume(nextStep(JsonStep(typeOf(cursor)), cursor, writer), writer)
+
 consume(<:StepDone, <:Any)::nothing = nothingValue()
 consume(step<:StepItem, writer)::nothing = {
     emit(step.payload.value, writer)

@@ -1,3 +1,4 @@
-# named_duplicate
+# One parcel cannot supply its weight twice
 
-Reject this invalid program with `DuplicateNamedArgument 'x'`. This is a frontend promise.
+The call supplies `grams = 1` and `grams = 2`. Named arguments are not a sequence of
+overwrites: the frontend must report `DuplicateNamedArgument` before binding.

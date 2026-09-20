@@ -1,3 +1,4 @@
 using group
 using Base.Test
+
 main() = check("gate uses declaring child imports", chosen(1), 1)

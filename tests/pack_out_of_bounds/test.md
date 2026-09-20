@@ -1,3 +1,4 @@
-# pack_out_of_bounds
+# A singleton tuple has only position zero
 
-Reject this invalid program with `jpp: no field '1'`. This is a compilation promise.
+`(1,)` contains one element at `.0`. Projecting `.1` must fail compilation with `no
+field '1'`, rather than read past the tuple or return a placeholder.

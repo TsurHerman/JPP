@@ -5,5 +5,16 @@
 # false statement about the classes.
 export Wide, Signed
 
-Wide(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits >= 32, else => false } }
-Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }
+Wide(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.bits >= 32,
+        else => false,
+    }
+}
+
+Signed(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.signedness == .signed,
+        else => false,
+    }
+}

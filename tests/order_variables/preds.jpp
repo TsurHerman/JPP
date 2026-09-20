@@ -1,5 +1,16 @@
 # two predicates that OVERLAP: every signed integer answers both.
 export Integer, Signed
 
-Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
-Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }
+Integer(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => true,
+        else => false,
+    }
+}
+
+Signed(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.signedness == .signed,
+        else => false,
+    }
+}

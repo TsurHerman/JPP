@@ -1,3 +1,5 @@
 using Base
-f(; a::int64, b::int64) = a + b
-main() = f(; a = 1)
+
+totalCost(; goods::int64, delivery::int64) = goods + delivery
+
+main() = totalCost(; goods = 1)

@@ -1,3 +1,5 @@
 using Base
-f(; a::int64) = a
-main() = f(; other = 1)
+
+shippingWeight(; grams::int64) = grams
+
+main() = shippingWeight(; height = 1)

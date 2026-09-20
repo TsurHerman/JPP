@@ -1,5 +1,8 @@
 using Base.Zig
 export <:
+
 Endian = Zig.std.builtin.Endian
+
 <:(Endian.little, Endian.big) = true
+
 main() = 0

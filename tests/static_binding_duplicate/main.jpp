@@ -1,3 +1,4 @@
-T = uint32
-T = uint64
-main() = T
+OffsetWidth = uint32
+OffsetWidth = uint64
+
+main() = OffsetWidth

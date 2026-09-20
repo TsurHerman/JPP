@@ -5,21 +5,38 @@ export forward
 
 # Any is an ordinary predicate, so the later gated method beats this bare one.
 forward(x) = x
+
 identity(x<:Any) = x
+
 groundIdentity(x<:Any) = zig{ x }
+
 ignored(x<:Any) = 11
+
 groundIgnored(x<:Any)::int64 = zig{ 12 }
+
 anonymous(<:Any) = 13
-Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
+
+Integer(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => true,
+        else => false,
+    }
+}
+
 kind(<:Any) = 0
 kind(<:Integer) = 1
 kind(::int64) = 2
 kind(::type) = 3
 kind(Any) = 4
+
 same(P::type, Q::type)::bool = zig{ P == Q }
+
 sameString(a::string, b::string)::bool = zig{ std.mem.eql(u8, a, b) }
+
 result(T::type, x<:Any)::T = x
+
 groundResult(T::type, x<:Any)::T = zig{ x }
+
 small(<:Any)::int32 = zig{ 7 }
 
 main() = {

@@ -2,6 +2,7 @@ using policy.masked
 using policy.numbers
 using suite
 using model
+
 main() = {
     # Same imported suite, two writer types in this caller context.
     expectDocument(Plain, "[17,\"x\",{\"name\":\"Ada\",\"n\":2}]", "[17,\"x\",{\"name\":\"Ada\",\"n\":2}]")

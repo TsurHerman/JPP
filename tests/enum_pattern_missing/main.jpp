@@ -9,7 +9,6 @@ label(Level.debug) = "DEBUG"
 
 # Deliberately missing: label(Level.warn) = "WARNING"
 # This case must fail compilation because warnings have no label.
-
 main() = {
     level = incomingLevel()
     label(level)
@@ -17,6 +16,4 @@ main() = {
 
 # Test fixture: stand in for a log record arriving at runtime.
 # An ordinary ground return is runtime data, even for this fixed sample.
-incomingLevel()::Level = zig{
-    .info
-}
+incomingLevel()::Level = zig{ .info }

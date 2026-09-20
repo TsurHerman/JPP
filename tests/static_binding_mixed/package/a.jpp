@@ -1,2 +1,3 @@
-export T
-T = uint32
+export OffsetWidth
+
+OffsetWidth = uint32

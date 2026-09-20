@@ -1,5 +1,4 @@
-# One generic serves integer and floating domains. Algebra now implicitly
-# imports Base, while these explicit arithmetic providers remain ahead of it.
+# One generic double function uses the caller's explicit arithmetic providers.
 using ints
 using floats
 using algebra

@@ -1,3 +1,4 @@
-# pack_missing_field
+# Reading a field that the record does not have
 
-Reject this invalid program with `jpp: no field 'b'`. This is a compilation promise.
+The record `(; a = 1)` contains only `a`; projecting `.b` must fail compilation with
+`no field 'b'`. A missing field is not a new variable or an optional value.

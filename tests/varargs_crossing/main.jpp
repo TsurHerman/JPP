@@ -1,5 +1,7 @@
 using Base
-export f
-f(x<:Any, xs<:Any...) = 1
-f(xs::int64...) = 2
-main() = f(1, 2)
+export chooseRule
+
+chooseRule(headValue<:Any, rest<:Any...) = 1
+chooseRule(rest::int64...) = 2
+
+main() = chooseRule(1, 2)

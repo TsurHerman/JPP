@@ -1,3 +1,5 @@
-export f
-f(xs::T...) where T = T
-main() = f()
+export elementType
+
+elementType(values::T...) where T = T
+
+main() = elementType()

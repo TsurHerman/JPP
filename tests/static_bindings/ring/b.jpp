@@ -1,3 +1,4 @@
 using ring.a
 export Token, through
+
 through() = readToken()

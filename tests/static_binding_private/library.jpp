@@ -1,3 +1,5 @@
-Secret = uint32
-export visible
-visible() = Secret
+InternalWidth = uint32
+
+export offsetWidth
+
+offsetWidth() = InternalWidth

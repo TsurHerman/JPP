@@ -5,12 +5,24 @@ using fixture
 
 main() = {
     resetAudits()
-    exercise("audited 32-bit little endian", "\x01\x02\x63\x84padding!", false, false, expected32(), 4)
+    exercise(
+        "audited 32-bit little endian", "\x01\x02\x63\x84padding!";
+        wide = false, big = false, expected = expected32(), size = 4
+    )
     check("caller policy reaches nested binary reader once", auditCount(), 1)
-    exercise("32-bit big endian stays ordinary", "\x84\x63\x02\x01padding!", false, true, expected32(), 4)
-    exercise("64-bit little endian stays ordinary", "\x88\x77\x66\x55\x44\x33\x22\x91padding!", true, false, expected64(), 8)
-    exercise("64-bit big endian stays ordinary", "\x91\x22\x33\x44\x55\x66\x77\x88padding!", true, true, expected64(), 8)
+    exercise(
+        "32-bit big endian stays ordinary", "\x84\x63\x02\x01padding!";
+        wide = false, big = true, expected = expected32(), size = 4
+    )
+    exercise(
+        "64-bit little endian stays ordinary", "\x88\x77\x66\x55\x44\x33\x22\x91padding!";
+        wide = true, big = false, expected = expected64(), size = 8
+    )
+    exercise(
+        "64-bit big endian stays ordinary", "\x91\x22\x33\x44\x55\x66\x77\x88padding!";
+        wide = true, big = true, expected = expected64(), size = 8
+    )
     check("policy only replaces one combination", auditCount(), 1)
-    shortRead(false, false)
+    shortRead(; wide = false, big = false)
     check("failed read still executes the policy once", auditCount(), 2)
 }

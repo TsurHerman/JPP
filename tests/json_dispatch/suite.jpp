@@ -14,6 +14,7 @@ compare(text::string, numbers::bool)::nothing = {
     releaseWriter(writer)
     releaseParsed(parsed)
 }
+
 expectDocument(P::type, text::string, expected::string)::nothing = {
     parsed = parse(text, true)
     writer = newWriter(writerType(P), 8192)
@@ -23,6 +24,7 @@ expectDocument(P::type, text::string, expected::string)::nothing = {
     releaseWriter(writer)
     releaseParsed(parsed)
 }
+
 checkFailure()::nothing = {
     parsed = parse("[123456789,1,2,3]", true)
     writer = newWriter(writerType(Plain), 2)
@@ -34,6 +36,7 @@ checkFailure()::nothing = {
 }
 
 export compareSequence
+
 compareSequence(n::int64)::nothing = {
     text = sequence(n)
     compare(text, true)

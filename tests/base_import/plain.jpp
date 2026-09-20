@@ -2,6 +2,7 @@ using lib
 using Base
 
 minimum()::int64 = zig{ std.math.minInt(i64) }
+
 maximum()::int64 = zig{ std.math.maxInt(i64) }
 
 main() = {

@@ -1,3 +1,4 @@
 using sum
 export total
+
 total(xs...) = sum(xs...)

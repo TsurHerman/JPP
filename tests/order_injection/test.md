@@ -1,31 +1,24 @@
-# order_injection
+# One authored priority resolves an overlap
 
-**Validates (README §4, §9):** injecting one order fact cures a
-gated-vs-gated clash, in the same module that raised it.
+An int64 input satisfies both `Integer` and `Signed`. These same-module methods
+therefore compete at the same predicate rank:
 
-This folder is `where_gate_clash` plus a single line. That case does not
-compile: `Integer` and `Signed` overlap, `g(1)` matches both gated
-methods, both sit at rank 2 because a gate lifts a binder to the
-predicate rung, and rank alone cannot separate them. Add
-
+```jpp
+category(::T) where T <: Integer = 1
+category(::T) where T <: Signed = 2
 ```
+
+This case adds exactly the priority the library needs:
+
+```jpp
 <:(Signed, Integer) = true
 ```
 
-and the narrower gate answers 2. Diff the two folders and the diff IS
-the promise.
+`category(1)` must select the Signed method and return its marker, 2. The
+[where_gate_clash](../where_gate_clash/test.md) case keeps the same overlap but
+omits this edge, so compilation must fail.
 
-**Why "injection" and not "partial order".** jpp's `<:` is authored,
-never proven. There is no transitive closure — chains are declared or
-absent — and a mutual pair ties the two classes for that direct
-comparison without inferring a transitive equivalence. So what a module injects is a set of edges, not an order with
-laws the machinery will extend on its own. A missing edge is false
-rather than a gap to be inferred.
-
-**The order is a word, so injection is ordinary shadowing.** The fact is
-a method on `<:`, its arguments are existing class values imported from `preds`, and a negative fact
-is `= false`. A later module leading the context can therefore turn this
-edge off by position, exactly like shadowing any other method.
-
-The sibling `order_refines` case injects the edge from a SEPARATE module
-and reverses it to flip the winner.
+The edge is an ordinary method whose arguments are defined predicate values.
+It can be provided or overridden by caller context; `order_refines` shows an
+edge in a separate module. The compiler checks authored pairs directly and
+does not infer transitive links or prove relationships from predicate bodies.

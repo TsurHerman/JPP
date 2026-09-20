@@ -1,17 +1,35 @@
 using Base.Arithmetic
 using Base.Test
 
-next()::int64 = zig{ blk: {
-    const State = struct { var count: i64 = 0; };
-    State.count += 1;
-    break :blk State.count;
-} }
+next()::int64 = zig{
+    blk: {
+        const State = struct {
+            var count: i64 = 0;
+        };
+        State.count += 1;
+        break :blk State.count;
+    }
+}
 
-pack(x) = zig{ .{ .value = x } }
+pack(x) = zig{
+    .{ .value = x }
+}
+
 recordValue(record) = zig{ record.value }
+
 same(a::type, b::type)::bool = zig{ a == b }
-aliasType(T::type) = { chosen = T; chosen }
-boundType(x::T) where T = { saved = T; _ = x; saved }
+
+aliasType(T::type) = {
+    chosen = T
+    chosen
+}
+
+boundType(x::T) where T = {
+    saved = T
+    _ = x
+    saved
+}
+
 symbol() = 88
 
 main() = {
@@ -32,7 +50,10 @@ main() = {
     selected = aliasType(int64)
     check("type-valued results retain identity", same(selected, int64), true)
     check("where type bindings retain identity through aliases", same(boundType(1.5), float64), true)
-    result = { nested = 9; nested + 1 }
+    result = {
+        nested = 9
+        nested + 1
+    }
     check("a nested block returns its last value", result, 10)
     check("blocks share the method binding environment", nested, 9)
     symbol = 3

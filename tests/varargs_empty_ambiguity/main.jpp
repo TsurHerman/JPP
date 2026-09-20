@@ -1,5 +1,7 @@
 using Base
-export f
-f(xs::int64...) = 1
-f(xs::float64...) = 2
-main() = f()
+export elementKind
+
+elementKind(values::int64...) = 1
+elementKind(values::float64...) = 2
+
+main() = elementKind()

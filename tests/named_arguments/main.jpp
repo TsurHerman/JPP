@@ -1,10 +1,24 @@
 using Base
 export scale, record, typed, kind
+
 scale(x; factor::float64) = x * factor
+
 record(; tax::int64, freight::int64) = (; tax = tax, freight = freight)
+
 typed(; selected::type, value::selected) where selected = value
+
 kind(::T) where T = T
-mark(x::int64) = zig{ blk: { const S = struct { var value: i64 = 0; }; S.value = S.value * 10 + x; break :blk S.value; } }
+
+mark(x::int64) = zig{
+    blk: {
+        const S = struct {
+            var value: i64 = 0;
+        };
+        S.value = S.value * 10 + x;
+        break :blk S.value;
+    }
+}
+
 main() = {
     check("required named argument", scale(3.0; factor = 2.0), 6.0)
     check("permuted named values route by name", record(; freight = 500, tax = 1069).tax, 1069)

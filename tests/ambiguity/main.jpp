@@ -3,5 +3,5 @@
 using crossing
 
 main() = {
-    g(1, 2)
+    chooseRule(1, 2)
 }

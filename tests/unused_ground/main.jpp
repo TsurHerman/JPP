@@ -2,17 +2,30 @@ using Base.Any
 using Base.Test
 
 # x participates in the signature. Neither the string nor xx uses its value.
-second(x::int64, xx::int64) = zig{ blk: { _ = "x"; break :blk xx; } }
+second(x::int64, xx::int64) = zig{
+    blk: {
+        _ = "x";
+        break :blk xx;
+    }
+}
 
 # The same rule applies across the ground boundary: both are constant methods.
 constant(x::int64)::int64 = zig{ 11 }
 constant(x::float64) = 22
 constant(<:Any) = 0
 
-Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
+Integer(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => true,
+        else => false,
+    }
+}
+
 gated(x<:Integer) = 3
 gated(<:Any) = 0
+
 sameKind(a::T, b::T) where T = true
+
 ignoredType(T::type) = 4
 
 main() = {

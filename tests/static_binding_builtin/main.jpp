@@ -1,2 +1,3 @@
 int64 = uint32
+
 main() = int64

@@ -1,9 +1,22 @@
 using Base
 export kind, sameType
+
 kind(::T) where T = T
+
 sameType(a::T, b::S) where T, S = zig{ T == S }
-mark(x::int64) = zig{ blk: { const S = struct { var value: i64 = 0; }; S.value = S.value * 10 + x; break :blk S.value; } }
+
+mark(x::int64) = zig{
+    blk: {
+        const S = struct {
+            var value: i64 = 0;
+        };
+        S.value = S.value * 10 + x;
+        break :blk S.value;
+    }
+}
+
 voidValue()::nothing = zig{ {} }
+
 main() = {
     check("empty tuple length", len(()), 0)
     check("singleton distinct from grouping", sameType((1,), (1)), false)

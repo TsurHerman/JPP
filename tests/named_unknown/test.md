@@ -1,3 +1,5 @@
-# named_unknown
+# Parcel height cannot stand in for weight
 
-Reject this invalid program with `jpp: no method 'main#f' matches`. This is a compilation promise.
+`shippingWeight` declares the named input `grams`. The call provides `height`
+instead. Compilation must fail: an unknown label must not fill a required slot by
+position.

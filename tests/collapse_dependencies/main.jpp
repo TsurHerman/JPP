@@ -2,4 +2,5 @@ using order
 using ends
 using middle
 using Base.Test
+
 main() = check("losing middle candidate remains a dependency", pick(1), 1)

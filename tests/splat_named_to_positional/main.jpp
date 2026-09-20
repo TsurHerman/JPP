@@ -1,3 +1,5 @@
-export f
-f(xs...) = xs
-main() = f((; x = 1)...)
+export gather
+
+gather(values...) = values
+
+main() = gather((; width = 1)...)

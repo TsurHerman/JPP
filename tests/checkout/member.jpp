@@ -5,13 +5,58 @@ using model
 using verify
 
 main() = {
-    verifyQuote("member / small basket", quote(basket(line(1299, 2, 250), line(2500, 1, 800))), 5098, 255, 4843, 500, 1069, 6412)
-    verifyQuote("member / bulk basket", quote(basket(line(1299, 10, 250), line(2500, 2, 800))), 17990, 2199, 15791, 0, 3158, 18949)
-    verifyQuote("member / empty basket", quote(basket(line(1299, 0, 250), line(2500, 0, 800))), 0, 0, 0, 0, 0, 0)
-    verifyQuote("member / free delivery", quote(basket(line(3000, 1, 500), line(3000, 1, 500))), 6000, 300, 5700, 0, 1140, 6840)
-    verifyQuote("member / discount before threshold", quote(basket(line(2500, 1, 500), line(2500, 1, 500))), 5000, 250, 4750, 425, 1035, 6210)
-    verifyQuote("member / round each line", quote(basket(line(110, 1, 500), line(110, 1, 500))), 220, 12, 208, 425, 127, 760)
-    verifyQuote("member / zero lines", quote(basket()), 0, 0, 0, 0, 0, 0)
-    verifyQuote("member / digital only", quote(basket(digital("book", 499, 2))), 998, 50, 948, 0, 190, 1138)
-    verifyQuote("member / three mixed lines", quote(basket(line(1000, 1, 500), digital("book", 500, 2), line(200, 3, 100))), 2600, 130, 2470, 425, 579, 3474)
+    verifyQuote(
+        "member / small basket",
+        quote(basket(line(1299, 2, 250), line(2500, 1, 800)));
+        gross = 5098, discount = 255, net = 4843,
+        freight = 500, tax = 1069, total = 6412
+    )
+    verifyQuote(
+        "member / bulk basket",
+        quote(basket(line(1299, 10, 250), line(2500, 2, 800)));
+        gross = 17990, discount = 2199, net = 15791,
+        freight = 0, tax = 3158, total = 18949
+    )
+    verifyQuote(
+        "member / empty basket",
+        quote(basket(line(1299, 0, 250), line(2500, 0, 800)));
+        gross = 0, discount = 0, net = 0,
+        freight = 0, tax = 0, total = 0
+    )
+    verifyQuote(
+        "member / free delivery",
+        quote(basket(line(3000, 1, 500), line(3000, 1, 500)));
+        gross = 6000, discount = 300, net = 5700,
+        freight = 0, tax = 1140, total = 6840
+    )
+    verifyQuote(
+        "member / discount before threshold",
+        quote(basket(line(2500, 1, 500), line(2500, 1, 500)));
+        gross = 5000, discount = 250, net = 4750,
+        freight = 425, tax = 1035, total = 6210
+    )
+    verifyQuote(
+        "member / round each line",
+        quote(basket(line(110, 1, 500), line(110, 1, 500)));
+        gross = 220, discount = 12, net = 208,
+        freight = 425, tax = 127, total = 760
+    )
+    verifyQuote(
+        "member / zero lines",
+        quote(basket());
+        gross = 0, discount = 0, net = 0,
+        freight = 0, tax = 0, total = 0
+    )
+    verifyQuote(
+        "member / digital only",
+        quote(basket(digital("book", 499, 2)));
+        gross = 998, discount = 50, net = 948,
+        freight = 0, tax = 190, total = 1138
+    )
+    verifyQuote(
+        "member / three mixed lines",
+        quote(basket(line(1000, 1, 500), digital("book", 500, 2), line(200, 3, 100)));
+        gross = 2600, discount = 130, net = 2470,
+        freight = 425, tax = 579, total = 3474
+    )
 }

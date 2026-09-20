@@ -4,5 +4,16 @@
 # type tree anywhere in jpp — this file is the whole of "Integer".
 export Integer, Float
 
-Integer(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => true, else => false } }
-Float(T::type)::bool = zig{ switch (@typeInfo(T)) { .float => true, else => false } }
+Integer(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => true,
+        else => false,
+    }
+}
+
+Float(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .float => true,
+        else => false,
+    }
+}

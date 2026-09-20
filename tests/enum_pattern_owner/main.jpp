@@ -1,5 +1,9 @@
 using Base.Zig
-Order = Zig.std.math.Order
-Other = zig{ enum { lt, eq, gt } }
-only(Order.lt) = 1
-main() = only(Other.lt)
+
+NativeOrder = Zig.std.math.Order
+DatabaseOrder = zig{ enum { lt, eq, gt } }
+
+isEarlier(NativeOrder.lt) = true
+
+# A database's separately declared order is not the native comparison enum.
+main() = isEarlier(DatabaseOrder.lt)

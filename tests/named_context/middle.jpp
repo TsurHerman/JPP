@@ -1,3 +1,4 @@
 using leaf
 export inner
+
 inner(value; bonus::int64) = score(; bonus = bonus, value = value)

@@ -1,2 +1,3 @@
 typed(; value::T, T::type) where T = value
+
 main() = typed(; T = int64, value = 2.5)

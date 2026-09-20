@@ -1,3 +1,5 @@
 export probe
+
 hidden(::int64) = 42
+
 probe(x::int64) = hidden(x)

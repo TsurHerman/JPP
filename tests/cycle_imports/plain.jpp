@@ -1,5 +1,6 @@
 using a
 using Base.Test
+
 main() = {
     check("three-file cycle executes through original homes", alpha(), 42)
     check("importing one member exposes every public unit word", gamma(), 42)

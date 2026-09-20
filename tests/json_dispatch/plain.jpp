@@ -1,5 +1,6 @@
 using suite
 using model
+
 main() = {
     compare("null", true)
     compare("true", true)

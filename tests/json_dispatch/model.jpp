@@ -6,95 +6,271 @@ export arrayCursor, objectCursor, JsonStep, nextStep, StepDone, StepItem, StepFi
 export parse, releaseParsed, reference, releaseReference, <:
 
 # These predicates inspect genuine variants of std.json.Value. No duplicate union.
-JsonScalar(T::type)::bool = zig{ if (!jpp.isVariantOf(T, std.json.Value)) false else switch (T.Tag) { .bool, .integer, .float, .string => true, else => false } }
-JsonContainer(T::type)::bool = zig{ if (!jpp.isVariantOf(T, std.json.Value)) false else switch (T.Tag) { .array, .object => true, else => false } }
+JsonScalar(T::type)::bool = zig{
+    if (!jpp.isVariantOf(T, std.json.Value)) false else switch (T.Tag) {
+        .bool, .integer, .float, .string => true,
+        else => false,
+    }
+}
+
+JsonContainer(T::type)::bool = zig{
+    if (!jpp.isVariantOf(T, std.json.Value)) false else switch (T.Tag) {
+        .array, .object => true,
+        else => false,
+    }
+}
+
 JsonNull(T::type)::bool = zig{ jpp.isVariant(T, std.json.Value, .null) }
+
 JsonRawNumber(T::type)::bool = zig{ jpp.isVariant(T, std.json.Value, .number_string) }
+
 JsonArray(T::type)::bool = zig{ jpp.isVariant(T, std.json.Value, .array) }
+
 JsonObject(T::type)::bool = zig{ jpp.isVariant(T, std.json.Value, .object) }
+
 JsonString(T::type)::bool = zig{ jpp.isVariant(T, std.json.Value, .string) }
+
 JsonInteger(T::type)::bool = zig{ jpp.isVariant(T, std.json.Value, .integer) }
+
 <:(JsonString, JsonScalar) = true
 <:(JsonInteger, JsonScalar) = true
 
 # The writer's policy is a static field. Policy names are defined predicates.
-Plain(T::type)::bool = zig{ if (@typeInfo(T) != .pointer) false else if (!@hasField(@typeInfo(T).pointer.child, "Policy")) false else @as(@typeInfo(T).pointer.child, undefined).Policy == jpp.Word("Plain") }
-Masked(T::type)::bool = zig{ if (@typeInfo(T) != .pointer) false else if (!@hasField(@typeInfo(T).pointer.child, "Policy")) false else @as(@typeInfo(T).pointer.child, undefined).Policy == jpp.Word("Masked") }
-writerType(P::type)::type = zig{ struct {
-    comptime Policy: type = P,
-    buffer: [8192]u8,
-    output_writer: std.Io.Writer,
-    json: std.json.Stringify,
-    failure: ?std.json.Stringify.Error = null,
-    count: i64 = 0,
-} }
-newWriter(T::type, capacity::int64) = zig{ blk: {
-    const w = std.heap.page_allocator.create(T) catch @panic("test fixture allocation failed");
-    w.* = .{ .buffer = undefined, .output_writer = undefined, .json = undefined };
-    const n: usize = @intCast(capacity);
-    std.debug.assert(n <= w.buffer.len);
-    w.output_writer = .fixed(w.buffer[0..n]);
-    w.json = .{ .writer = &w.output_writer };
-    break :blk w;
-} }
+Plain(T::type)::bool = zig{
+    if (@typeInfo(T) != .pointer)
+        false
+    else if (!@hasField(@typeInfo(T).pointer.child, "Policy"))
+        false
+    else
+        @as(@typeInfo(T).pointer.child, undefined).Policy == jpp.Word("Plain")
+}
+
+Masked(T::type)::bool = zig{
+    if (@typeInfo(T) != .pointer)
+        false
+    else if (!@hasField(@typeInfo(T).pointer.child, "Policy"))
+        false
+    else
+        @as(@typeInfo(T).pointer.child, undefined).Policy == jpp.Word("Masked")
+}
+
+writerType(P::type)::type = zig{
+    struct {
+        comptime Policy: type = P,
+        buffer: [8192]u8,
+        output_writer: std.Io.Writer,
+        json: std.json.Stringify,
+        failure: ?std.json.Stringify.Error = null,
+        count: i64 = 0,
+    }
+}
+
+newWriter(T::type, capacity::int64) = zig{
+    blk: {
+        const w = std.heap.page_allocator.create(T) catch @panic("test fixture allocation failed");
+        w.* = .{ .buffer = undefined, .output_writer = undefined, .json = undefined };
+        const n: usize = @intCast(capacity);
+        std.debug.assert(n <= w.buffer.len);
+        w.output_writer = .fixed(w.buffer[0..n]);
+        w.json = .{ .writer = &w.output_writer };
+        break :blk w;
+    }
+}
+
 releaseWriter(w)::nothing = zig{ std.heap.page_allocator.destroy(w) }
+
 output(w)::string = zig{ w.output_writer.buffered() }
+
 failed(w)::bool = zig{ w.failure != null }
+
 writes(w)::int64 = zig{ w.count }
 
 # Native leaves retain std's escaping, number formatting and punctuation.
 # The fixture records the first output error; traversal checks it before advancing.
-writeScalar(value::T, w)::nothing where T = zig{ {
-    if (T != bool and T != i64 and T != f64 and T != []const u8) @compileError("JSON scalar leaf has no implementation for this type");
-    if (w.failure == null) { w.count += 1; w.json.write(value) catch |err| { w.failure = err; }; }
-} }
-writeNull(w)::nothing = zig{ { if (w.failure == null) { w.count += 1; w.json.write(null) catch |err| { w.failure = err; }; } } }
-writeRaw(value::string, w)::nothing = zig{ { if (w.failure == null) { w.count += 1; w.json.print("{s}", .{value}) catch |err| { w.failure = err; }; } } }
-writeIntegerAsString(value::int64, w)::nothing = zig{ { if (w.failure == null) {
-    var buffer: [32]u8 = undefined;
-    const text = std.fmt.bufPrint(&buffer, "{d}", .{value}) catch unreachable;
-    w.count += 1;
-    w.json.write(text) catch |err| { w.failure = err; };
-} } }
-writeField(key::string, w)::nothing = zig{ { if (w.failure == null) { w.count += 1; w.json.objectField(key) catch |err| { w.failure = err; }; } } }
-beginArray(w)::nothing = zig{ { if (w.failure == null) { w.count += 1; w.json.beginArray() catch |err| { w.failure = err; }; } } }
-endArray(w)::nothing = zig{ { if (w.failure == null) { w.count += 1; w.json.endArray() catch |err| { w.failure = err; }; } } }
-beginObject(w)::nothing = zig{ { if (w.failure == null) { w.count += 1; w.json.beginObject() catch |err| { w.failure = err; }; } } }
-endObject(w)::nothing = zig{ { if (w.failure == null) { w.count += 1; w.json.endObject() catch |err| { w.failure = err; }; } } }
+writeScalar(value::T, w)::nothing where T = zig{
+    {
+        if (T != bool and T != i64 and T != f64 and T != []const u8) @compileError("JSON scalar leaf has no implementation for this type");
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.write(value) catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+writeNull(w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.write(null) catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+writeRaw(value::string, w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.print("{s}", .{value}) catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+writeIntegerAsString(value::int64, w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            var buffer: [32]u8 = undefined;
+            const text = std.fmt.bufPrint(&buffer, "{d}", .{value}) catch unreachable;
+            w.count += 1;
+            w.json.write(text) catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+writeField(key::string, w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.objectField(key) catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+beginArray(w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.beginArray() catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+endArray(w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.endArray() catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+beginObject(w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.beginObject() catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
+
+endObject(w)::nothing = zig{
+    {
+        if (w.failure == null) {
+            w.count += 1;
+            w.json.endObject() catch |err| {
+                w.failure = err;
+            };
+        }
+    }
+}
 
 # Cursor data are immutable views into the parsed document; it outlives render.
 arrayCursor(array) = arrayAt(array, 0)
-arrayAt(array, index::int64) = zig{ .{ .values = array.items, .keys = @as(void, {}), .index = @as(usize, @intCast(index)) } }
-objectCursor(object) = objectAt(object, 0)
-objectAt(object, index::int64) = zig{ .{ .values = object.values(), .keys = object.keys(), .index = @as(usize, @intCast(index)) } }
-typeOf(::T)::type where T = T
-nothingValue()::nothing = zig{ {} }
-JsonStep(C::type)::type = zig{ union(enum) {
-    pub const Family = jpp.Word("JsonStep");
-    done,
-    item: struct { value: std.json.Value, rest: C },
-    field: struct { key: []const u8, value: std.json.Value, rest: C },
-} }
-nextStep(S::type, cursor, writer)::S = zig{ blk: {
-    if (writer.failure != null or cursor.index == cursor.values.len) break :blk .done;
-    var rest = cursor;
-    rest.index += 1;
-    if (@TypeOf(cursor.keys) == void) break :blk .{ .item = .{ .value = cursor.values[cursor.index], .rest = rest } };
-    break :blk .{ .field = .{ .key = cursor.keys[cursor.index], .value = cursor.values[cursor.index], .rest = rest } };
-} }
-StepDone(T::type)::bool = zig{ if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "Union")) false else if (!@hasDecl(T.Union, "Family") or T.Union.Family != jpp.Word("JsonStep")) false else jpp.isVariant(T, T.Union, .done) }
-StepItem(T::type)::bool = zig{ if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "Union")) false else if (!@hasDecl(T.Union, "Family") or T.Union.Family != jpp.Word("JsonStep")) false else jpp.isVariant(T, T.Union, .item) }
-StepField(T::type)::bool = zig{ if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "Union")) false else if (!@hasDecl(T.Union, "Family") or T.Union.Family != jpp.Word("JsonStep")) false else jpp.isVariant(T, T.Union, .field) }
 
-parse(text::string, numbers::bool) = zig{ std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, text, .{ .parse_numbers = numbers, .allocate = .alloc_always }) catch @panic("invalid test input") }
+arrayAt(array, index::int64) = zig{
+    .{ .values = array.items, .keys = @as(void, {}), .index = @as(usize, @intCast(index)) }
+}
+
+objectCursor(object) = objectAt(object, 0)
+
+objectAt(object, index::int64) = zig{
+    .{ .values = object.values(), .keys = object.keys(), .index = @as(usize, @intCast(index)) }
+}
+
+typeOf(::T)::type where T = T
+
+nothingValue()::nothing = zig{ {} }
+
+JsonStep(C::type)::type = zig{
+    union(enum) {
+        pub const Family = jpp.Word("JsonStep");
+        done,
+        item: struct { value: std.json.Value, rest: C },
+        field: struct { key: []const u8, value: std.json.Value, rest: C },
+    }
+}
+
+nextStep(S::type, cursor, writer)::S = zig{
+    blk: {
+        if (writer.failure != null or cursor.index == cursor.values.len) break :blk .done;
+        var rest = cursor;
+        rest.index += 1;
+        if (@TypeOf(cursor.keys) == void) break :blk .{ .item = .{ .value = cursor.values[cursor.index], .rest = rest } };
+        break :blk .{ .field = .{ .key = cursor.keys[cursor.index], .value = cursor.values[cursor.index], .rest = rest } };
+    }
+}
+
+StepDone(T::type)::bool = zig{
+    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "Union"))
+        false
+    else if (!@hasDecl(T.Union, "Family") or T.Union.Family != jpp.Word("JsonStep"))
+        false
+    else
+        jpp.isVariant(T, T.Union, .done)
+}
+
+StepItem(T::type)::bool = zig{
+    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "Union"))
+        false
+    else if (!@hasDecl(T.Union, "Family") or T.Union.Family != jpp.Word("JsonStep"))
+        false
+    else
+        jpp.isVariant(T, T.Union, .item)
+}
+
+StepField(T::type)::bool = zig{
+    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "Union"))
+        false
+    else if (!@hasDecl(T.Union, "Family") or T.Union.Family != jpp.Word("JsonStep"))
+        false
+    else
+        jpp.isVariant(T, T.Union, .field)
+}
+
+parse(text::string, numbers::bool) = zig{
+    std.json.parseFromSlice(std.json.Value, std.heap.page_allocator, text, .{ .parse_numbers = numbers, .allocate = .alloc_always }) catch @panic("invalid test input")
+}
+
 releaseParsed(parsed)::nothing = zig{ parsed.deinit() }
-reference(parsed)::string = zig{ std.json.Stringify.valueAlloc(std.heap.page_allocator, parsed.value, .{}) catch @panic("test fixture allocation failed") }
+
+reference(parsed)::string = zig{
+    std.json.Stringify.valueAlloc(std.heap.page_allocator, parsed.value, .{}) catch @panic("test fixture allocation failed")
+}
+
 releaseReference(text::string)::nothing = zig{ std.heap.page_allocator.free(text) }
 
 export sequence
-sequence(n::int64)::string = zig{ blk: {
-    const values = std.heap.page_allocator.alloc(i64, @intCast(n)) catch @panic("test fixture allocation failed");
-    defer std.heap.page_allocator.free(values);
-    for (values, 0..) |*value, i| value.* = @intCast(i);
-    break :blk std.json.Stringify.valueAlloc(std.heap.page_allocator, values, .{}) catch @panic("test fixture allocation failed");
-} }
+
+sequence(n::int64)::string = zig{
+    blk: {
+        const values = std.heap.page_allocator.alloc(i64, @intCast(n)) catch @panic("test fixture allocation failed");
+        defer std.heap.page_allocator.free(values);
+        for (values, 0..) |*value, i| value.* = @intCast(i);
+        break :blk std.json.Stringify.valueAlloc(std.heap.page_allocator, values, .{}) catch @panic("test fixture allocation failed");
+    }
+}

@@ -1,6 +1,6 @@
 # the SHADOWED world: loud leads — same signature, same rank as base's
 # tag, so POSITION decides. same calls, different answers, including
-# inside lib (which has no explicit import for tag).
+# inside lib (which declares tag as an exported requirement).
 using loud
 using base
 using lib

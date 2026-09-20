@@ -1,2 +1,3 @@
 orderType()::type = zig{ std.math.Order }
+
 main() = orderType().missing

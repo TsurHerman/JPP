@@ -1,3 +1,4 @@
 # The exported word is a dependency declaration, with no local candidate.
 export probe, tag
+
 probe(x) = tag(x)

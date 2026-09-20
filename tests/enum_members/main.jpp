@@ -1,11 +1,19 @@
 using Base.Test
 
 orderType()::type = zig{ std.math.Order }
-otherType()::type = zig{ enum { lt, eq, gt } }
+
+otherType()::type = zig{
+    enum { lt, eq, gt }
+}
+
 identity(value) = value
+
 kind(::T)::type where T = T
+
 equal(a::T, b::T)::bool where T = zig{ a == b }
+
 isStatic(pack)::bool = zig{ @typeInfo(@TypeOf(pack)).@"struct".fields[0].is_comptime }
+
 main() = {
     Order = orderType()
     less = Order.lt

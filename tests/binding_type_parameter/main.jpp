@@ -1,2 +1,6 @@
-f(x::T) where T = { T = int64; x }
-main() = f(1.5)
+replaceInputType(x::T) where T = {
+    T = int64
+    x
+}
+
+main() = replaceInputType(1.5)

@@ -71,8 +71,8 @@ tax is 20% of net goods plus freight, rounded once.
 
 Additional cases pin exact and just-below freight and bulk thresholds,
 discounts applied before the freight threshold, and per-line rounding
-(two 5.5-cent discounts become 12 cents together, not 11). Each quote checks
-all six fields plus `gross − discount = net` and
+(two 5.5-cent discounts become 12 cents together, not 11). The assertions name every expected field at the call site (`gross`, `discount`,
+`net`, `freight`, `tax`, `total`). Each quote checks all six fields plus `gross − discount = net` and
 `net + freight + tax = total`. The two programs begin with fresh contexts.
 
 ## What is comfortable, and what is missing

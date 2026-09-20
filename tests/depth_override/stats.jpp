@@ -1,4 +1,5 @@
 # an intermediate module — a transparent carrier of meaning
 using algebra
 export report
+
 report(x) = double(x)

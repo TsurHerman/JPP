@@ -1,4 +1,6 @@
-export f
-f(; opts::int64...) = 1
-f(; opts::float64...) = 2
-main() = f()
+export optionKind
+
+optionKind(; options::int64...) = 1
+optionKind(; options::float64...) = 2
+
+main() = optionKind()

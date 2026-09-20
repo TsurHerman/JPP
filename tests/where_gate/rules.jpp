@@ -1,4 +1,5 @@
 using Base.Any
+
 # global rules, julia style: one generic per SHAPE, the `where` gate is
 # the rule. `where T <: Integer` is sugar for the gate `Integer(T)`.
 using preds

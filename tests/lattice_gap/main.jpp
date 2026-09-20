@@ -5,5 +5,5 @@ using rules
 using Base.Test
 
 main() = {
-    check("chain conducts across the gap", gap(itsy()), 10)
+    check("missing direct edge must reject the call", gap(itsy()), 10)
 }

@@ -1,3 +1,5 @@
-export f
-f(; xs...) = xs
-main() = f(; (1,)... )
+export options
+
+options(; fields...) = fields
+
+main() = options(; (1,)... )

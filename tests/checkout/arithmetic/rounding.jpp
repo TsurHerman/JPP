@@ -3,4 +3,5 @@ export roundQuotient, ceilQuotient
 
 # Nonnegative numerator, positive denominator. Ties round upward.
 roundQuotient(n::int64, d::int64) = div(n + div(d, 2), d)
+
 ceilQuotient(n::int64, d::int64) = div(n + d - 1, d)

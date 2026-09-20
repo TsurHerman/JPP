@@ -3,5 +3,5 @@
 using clash
 
 main() = {
-    g(1)
+    category(1)
 }

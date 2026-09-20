@@ -1,1 +1,1 @@
-f(xs..., x) = xs
+gather(values..., last) = values

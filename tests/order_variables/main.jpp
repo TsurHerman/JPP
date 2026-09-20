@@ -5,5 +5,5 @@ using rules
 using Base.Test
 
 main() = {
-    check("specific fact beats general rule", g(1), 2)
+    check("specific fact beats general rule", category(1), 2)
 }

@@ -4,8 +4,10 @@ using pricing.discounts
 export grossLine, netLine, gramsLine
 
 grossLine(item<:Line) = unitPrice(item) * unitCount(item)
+
 netLine(item<:Line) = {
     gross = grossLine(item)
     gross - lineDiscount(gross, unitCount(item))
 }
+
 gramsLine(item<:Line) = unitGrams(item) * unitCount(item)

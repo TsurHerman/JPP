@@ -1,5 +1,5 @@
 using Base.Arithmetic
-# Implicit Base makes + source-visible; explicit caller providers still fuse.
-# General lexical call validation remains open; see design/word_contracts.md.
 export double
+
+# The library declares its own dependency; callers can supply other + methods.
 double(x) = x + x

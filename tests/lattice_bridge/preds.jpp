@@ -1,5 +1,23 @@
 export Numeric, Small, Tiny
 
-Numeric(T::type)::bool = zig{ switch (@typeInfo(T)) { .int, .float => true, else => false } }
-Small(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits <= 16, .float => |f| f.bits <= 16, else => false } }
-Tiny(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits <= 8, else => false } }
+Numeric(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int, .float => true,
+        else => false,
+    }
+}
+
+Small(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.bits <= 16,
+        .float => |f| f.bits <= 16,
+        else => false,
+    }
+}
+
+Tiny(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.bits <= 8,
+        else => false,
+    }
+}

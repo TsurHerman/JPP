@@ -1,3 +1,4 @@
 # A source-tree module shadows the same-named Base module normally.
 export Any
+
 Any(T::type)::bool = zig{ T == bool }

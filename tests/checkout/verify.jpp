@@ -3,7 +3,7 @@ using model.quote
 using Base.Test
 export verifyQuote
 
-verifyQuote(label::string, quoted, gross::int64, discount::int64, net::int64, freight::int64, tax::int64, total::int64) = {
+verifyQuote(label::string, quoted; gross::int64, discount::int64, net::int64, freight::int64, tax::int64, total::int64) = {
     showQuote(label, quoted)
     check("gross goods", grossCents(quoted), gross)
     check("line discounts", discountCents(quoted), discount)
@@ -12,7 +12,11 @@ verifyQuote(label::string, quoted, gross::int64, discount::int64, net::int64, fr
     check("tax", taxCents(quoted), tax)
     check("payable", totalCents(quoted), total)
     check("goods accounting identity", grossCents(quoted) - discountCents(quoted), netCents(quoted))
-    check("invoice accounting identity", netCents(quoted) + freightCents(quoted) + taxCents(quoted), totalCents(quoted))
+    check(
+        "invoice accounting identity",
+        netCents(quoted) + freightCents(quoted) + taxCents(quoted),
+        totalCents(quoted)
+    )
 }
 
 showQuote(label::string, quoted)::nothing = zig{

@@ -1,7 +1,10 @@
 using Base
 export reduce, pair
+
 pair(x::int64, y::int64) = x + y
+
 reduce(x) = x
 reduce(x, y) = pair(x, y)
 reduce(x, y, z, rest...) = reduce(pair(x, y), z, rest...)
+
 main() = reduce(1, 2.0, 3)

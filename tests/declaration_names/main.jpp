@@ -1,6 +1,7 @@
 using rules
 using preds
 using Base.Test
+
 main() = {
     check("defined name in an ordinary signature", identify(Signed), 1)
     check("another defined name", identify(Wide), 2)

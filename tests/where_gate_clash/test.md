@@ -1,21 +1,13 @@
-# where_gate_clash (negative)
+# Overlapping predicates need an authored priority
 
-**Validates (README §4, §9):** two gated methods on the same rung, in one
-module, matching the same argument, with NO order declared between their
-predicates = comptime error at the call.
+Both `Integer` and `Signed` accept int64. The two `category` methods each
+require one of these predicates, and `category(1)` matches both. Neither
+constraint is declared more specific than the other.
 
-`Integer` and `Signed` overlap — every signed integer answers both — so
-`g(1)` matches `g(x::T) where T <: Integer` and `g(x::T) where T <:
-Signed` alike. Both sit at rank 2, because a gate lifts a binder to the
-predicate rung. Nothing breaks the tie: no `<:` edge relates the two
-predicate words, and jpp builds no prover, so a missing edge is simply
-false. Neither dominates, both are maximal, same module — the promise is
-the ambiguity error, naming the cure.
+Both methods belong to the same module, so import position cannot choose
+between them. Compilation must report `call of 'category' is AMBIGUOUS`.
+The compiler does not inspect predicate bodies to prove containment.
 
-`where_gate_pass` is this exact folder plus one line, `<:(Signed,
-Integer) = true`, which cures it. Diff the two to see the whole promise:
-overlap without a declared order is an error, and declaring the order is
-what makes it a choice.
-
-`expect.err` greps `call of 'g' is AMBIGUOUS`; compile SUCCESS fails the
-case.
+Adding `<:(Signed, Integer) = true` supplies the missing priority. The positive
+[order_injection](../order_injection/test.md) case demonstrates that repair.
+This test intentionally omits it, preserving the ambiguity diagnostic.

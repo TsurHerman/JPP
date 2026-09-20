@@ -1,4 +1,7 @@
 export A, B, C
+
 A(::type) = true
+
 B(::type) = true
+
 C(::type) = true

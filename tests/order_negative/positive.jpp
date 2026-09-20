@@ -1,4 +1,5 @@
 using yes
 using no
 using Base.Test
+
 main() = check("positive first", <:(int64, float64), true)

@@ -1,3 +1,4 @@
 using preds
 export pick
+
 pick(<:B) = 2

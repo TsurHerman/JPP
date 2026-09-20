@@ -1,2 +1,6 @@
-f(x) = { x = 2; x }
-main() = f(1)
+replaceInput(x) = {
+    x = 2
+    x
+}
+
+main() = replaceInput(1)

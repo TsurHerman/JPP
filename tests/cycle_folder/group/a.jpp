@@ -1,4 +1,6 @@
 using group
 export alpha
+
 helper() = 42
+
 alpha() = helper()

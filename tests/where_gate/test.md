@@ -1,52 +1,34 @@
-# where_gate
+# Type predicates qualify a method
 
-**Two spellings, one meaning.** `terse` repeats `describe`'s ladder in
-the short slot form — `terse(x<:Integer)` where `describe` wrote
-`describe(x::T) where T <: Integer` — and answers the same rung for
-every argument. README §4: `x<:Integer` ≡ `x::T where Integer(T)` with
-T fresh, so jppc lowers it to a binder plus a gate and the machinery
-never learns there were two spellings. `::` takes a TYPE and `<:` takes
-a PREDICATE; the rank is read off the symbol, which is why `x::Integer`
-is ill-formed rather than a third way to write this.
+The long and short spellings ask the same membership question:
 
-**Validates (README §4, §8):** `where` carries a PREDICATE GATE on
-qualification, and `where T <: Integer` is sugar for the gate
-`Integer(T)`.
+```jpp
+describe(::T) where T <: Integer = 1
+terse(<:Integer) = 1
+```
 
-Three promises, one case:
+`Integer` is an ordinary function taking a type and returning a boolean.
+The compiler does not supply an integer class hierarchy.
 
-**Predicates are ordinary words, not a type tree.** `preds.jpp` defines
-`Integer(T::type)::bool` — a normal method whose slot is qualed on
-`type`, so the argument IS a type travelling as a value and the body
-reads its structure at comptime. There is no `Integer <: Real <: Number`
-hierarchy anywhere; the predicate is the whole of it.
+The complete `describe` and `terse` tables have an Any fallback, integer and
+float gates, and an exact `int64` method. Both spellings must choose the same
+result:
 
-**A gate is METHOD data, not a slot qualifier.** That is what lets it
-compose with repeated-binder identity: in `pairup(a::T, b::T) where T <:
-Integer`, the repeated `T` still demands one type and the gate then
-demands that type be an integer. Both constraints survive because they
-live in different places. `pairup(1, 1.5)` fails identity;
-`pairup(1.5, 2.5)` passes identity and fails the gate; only
-`pairup(1, 2)` gets through.
+| Argument | Winning constraint | Result marker |
+|---|---|---:|
+| `1` | Exact `int64` | 3 |
+| `1.5` | Float predicate | 2 |
+| `"hi"` | Any predicate | 0 |
 
-**A gated binder sits on the PREDICATE rung.** The ledger's ladder is
-`::` exact 3 > `<:` predicate 2 > bare 1, and `x<:Integer` is the same
-statement as `x::T where T <: Integer`, so the two must rank alike.
-`describe(1)` answers 3 because the exact input type outranks a gate.
-Its fallback is now the ordinary Any predicate, also on rank 2.
-`describe(1.5)` answers 2 because Base explicitly authors other classes
-below Any; `describe("hi")` answers 0 because only Any accepts strings.
-Both spellings use that same authored order. The `any` case separately
-checks that a predicate beats an unconstrained binder at rank 1.
+The numbers identify methods. Exact input types outrank predicates. Base's
+ordinary authored order places the specific predicates ahead of Any; Any is
+not a compiler wildcard. `kindof` removes the exact int64 method to show the
+Integer gate winning on its own.
 
-`kindof` exists because `describe`'s exact rung hides the Integer gate
-ever winning — with the exact method gone, the gate is what answers.
+`pairup(::T, ::T) where T <: Integer` checks two independent requirements:
+both arguments have the same type, and that type is an integer. Two integers
+pass. An integer and float fail identity; two floats fail membership.
 
-**Gates do not leak onto callers.** `main.jpp` never imports `preds`. A
-gate resolves caller-first with the defining module's static context as
-fallback — the same reach a body gets — so applicability stays
-caller-derived (a caller that extends `Integer` leads by position)
-without every caller having to import the predicate module.
-The caller imports Any here for its order rule when comparing gates;
-predicate applicability and the context used for order comparisons are
-distinct. `any_override` tests membership with Any imported only by the library.
+`main.jpp` intentionally does not import `preds`. A gate uses caller context
+followed by its declaration home's imports, so the library declares its own
+dependency. The caller imports Any to supply the ordinary fallback order.

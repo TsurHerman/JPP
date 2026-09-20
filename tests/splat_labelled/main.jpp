@@ -1,2 +1,3 @@
-f(; x) = x
-main() = f(; x = (1,)...)
+dimensions(; width) = width
+
+main() = dimensions(; width = (1,)...)

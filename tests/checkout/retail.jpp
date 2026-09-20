@@ -4,16 +4,71 @@ using verify
 using Base.Test
 
 main() = {
-    verifyQuote("retail / small basket", quote(basket(line(1299, 2, 250), line(2500, 1, 800))), 5098, 0, 5098, 500, 1120, 6718)
-    verifyQuote("retail / bulk basket", quote(basket(line(1299, 10, 250), line(2500, 2, 800))), 17990, 1299, 16691, 0, 3338, 20029)
-    verifyQuote("retail / empty basket", quote(basket(line(1299, 0, 250), line(2500, 0, 800))), 0, 0, 0, 0, 0, 0)
-    verifyQuote("retail / exact delivery threshold", quote(basket(line(5000, 1, 500), line(5000, 1, 500))), 10000, 0, 10000, 0, 2000, 12000)
-    verifyQuote("retail / below delivery threshold", quote(basket(line(4999, 1, 500), line(5000, 1, 500))), 9999, 0, 9999, 425, 2085, 12509)
-    verifyQuote("retail / below bulk quantity", quote(basket(line(100, 9, 100), line(2500, 0, 800))), 900, 0, 900, 425, 265, 1590)
-    verifyQuote("retail / exact bulk quantity", quote(basket(line(100, 10, 100), line(2500, 0, 800))), 1000, 100, 900, 425, 265, 1590)
-    verifyQuote("retail / zero lines", quote(basket()), 0, 0, 0, 0, 0, 0)
-    verifyQuote("retail / one physical line", quote(basket(line(1000, 1, 500))), 1000, 0, 1000, 425, 285, 1710)
-    verifyQuote("retail / digital only", quote(basket(digital("book", 499, 2))), 998, 0, 998, 0, 200, 1198)
-    verifyQuote("retail / three mixed lines", quote(basket(line(1000, 1, 500), digital("book", 500, 2), line(200, 3, 100))), 2600, 0, 2600, 425, 605, 3630)
+    verifyQuote(
+        "retail / small basket",
+        quote(basket(line(1299, 2, 250), line(2500, 1, 800)));
+        gross = 5098, discount = 0, net = 5098,
+        freight = 500, tax = 1120, total = 6718
+    )
+    verifyQuote(
+        "retail / bulk basket",
+        quote(basket(line(1299, 10, 250), line(2500, 2, 800)));
+        gross = 17990, discount = 1299, net = 16691,
+        freight = 0, tax = 3338, total = 20029
+    )
+    verifyQuote(
+        "retail / empty basket",
+        quote(basket(line(1299, 0, 250), line(2500, 0, 800)));
+        gross = 0, discount = 0, net = 0,
+        freight = 0, tax = 0, total = 0
+    )
+    verifyQuote(
+        "retail / exact delivery threshold",
+        quote(basket(line(5000, 1, 500), line(5000, 1, 500)));
+        gross = 10000, discount = 0, net = 10000,
+        freight = 0, tax = 2000, total = 12000
+    )
+    verifyQuote(
+        "retail / below delivery threshold",
+        quote(basket(line(4999, 1, 500), line(5000, 1, 500)));
+        gross = 9999, discount = 0, net = 9999,
+        freight = 425, tax = 2085, total = 12509
+    )
+    verifyQuote(
+        "retail / below bulk quantity",
+        quote(basket(line(100, 9, 100), line(2500, 0, 800)));
+        gross = 900, discount = 0, net = 900,
+        freight = 425, tax = 265, total = 1590
+    )
+    verifyQuote(
+        "retail / exact bulk quantity",
+        quote(basket(line(100, 10, 100), line(2500, 0, 800)));
+        gross = 1000, discount = 100, net = 900,
+        freight = 425, tax = 265, total = 1590
+    )
+    verifyQuote(
+        "retail / zero lines",
+        quote(basket());
+        gross = 0, discount = 0, net = 0,
+        freight = 0, tax = 0, total = 0
+    )
+    verifyQuote(
+        "retail / one physical line",
+        quote(basket(line(1000, 1, 500)));
+        gross = 1000, discount = 0, net = 1000,
+        freight = 425, tax = 285, total = 1710
+    )
+    verifyQuote(
+        "retail / digital only",
+        quote(basket(digital("book", 499, 2)));
+        gross = 998, discount = 0, net = 998,
+        freight = 0, tax = 200, total = 1198
+    )
+    verifyQuote(
+        "retail / three mixed lines",
+        quote(basket(line(1000, 1, 500), digital("book", 500, 2), line(200, 3, 100)));
+        gross = 2600, discount = 0, net = 2600,
+        freight = 425, tax = 605, total = 3630
+    )
     check("order has a real line record", Line(int64), false)
 }

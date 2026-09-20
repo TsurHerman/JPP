@@ -5,6 +5,7 @@ using pricing.lines
 export priceBasket
 
 priceBasket(bag) = priceLines(bag...)
+
 priceLines() = pricedCart(0, 0, 0)
 priceLines(item<:Line, rest<:Line...) = {
     remaining = priceLines(rest...)

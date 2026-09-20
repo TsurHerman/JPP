@@ -1,3 +1,5 @@
-export f
-f(; opts::int64...) = 1
-main() = f(; a = 1, b = true)
+export requireIntegerOptions
+
+requireIntegerOptions(; options::int64...) = 1
+
+main() = requireIntegerOptions(; retries = 1, timeout = true)

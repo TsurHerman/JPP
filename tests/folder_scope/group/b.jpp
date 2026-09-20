@@ -1,3 +1,4 @@
 using accept
 export chosen
+
 chosen(<:P) = 1

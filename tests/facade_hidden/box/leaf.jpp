@@ -1,3 +1,5 @@
 export public, hidden
+
 public() = 42
+
 hidden() = 21

@@ -4,15 +4,34 @@
 export Signed, Unsigned, Small, Integer, SmallSigned, Prec, ||, &&
 
 ||(a::bool, b::bool)::bool = zig{ a or b }
+
 &&(a::bool, b::bool)::bool = zig{ a and b }
 
-Signed(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .signed, else => false } }
-Unsigned(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.signedness == .unsigned, else => false } }
-Small(T::type)::bool = zig{ switch (@typeInfo(T)) { .int => |i| i.bits <= 16, else => false } }
+Signed(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.signedness == .signed,
+        else => false,
+    }
+}
+
+Unsigned(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.signedness == .unsigned,
+        else => false,
+    }
+}
+
+Small(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int => |i| i.bits <= 16,
+        else => false,
+    }
+}
 
 # a JOIN and a MEET, both DEFINED rather than restated. this is the
 # shape of `Triangular(T) = Upper(T) || Lower(T)`.
 Integer(T::type)::bool = Signed(T) || Unsigned(T)
+
 SmallSigned(T::type)::bool = Signed(T) && Small(T)
 
 # precedence probe: `&&` binds tighter than `||`, so on an unsigned

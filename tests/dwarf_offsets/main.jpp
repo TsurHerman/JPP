@@ -4,24 +4,41 @@ using exercise
 using fixture
 
 only32(Format.32) = uint32
+
 relay(value) = only32(value)
 
 main() = {
     resetAudits()
-    exercise("32-bit little endian", "\x01\x02\x63\x84padding!", false, false, expected32(), 4)
-    exercise("32-bit big endian", "\x84\x63\x02\x01padding!", false, true, expected32(), 4)
-    exercise("64-bit little endian", "\x88\x77\x66\x55\x44\x33\x22\x91padding!", true, false, expected64(), 8)
-    exercise("64-bit big endian", "\x91\x22\x33\x44\x55\x66\x77\x88padding!", true, true, expected64(), 8)
-    shortRead(false, false)
-    shortRead(false, true)
-    shortRead(true, false)
-    shortRead(true, true)
+    exercise(
+        "32-bit little endian", "\x01\x02\x63\x84padding!";
+        wide = false, big = false, expected = expected32(), size = 4
+    )
+    exercise(
+        "32-bit big endian", "\x84\x63\x02\x01padding!";
+        wide = false, big = true, expected = expected32(), size = 4
+    )
+    exercise(
+        "64-bit little endian", "\x88\x77\x66\x55\x44\x33\x22\x91padding!";
+        wide = true, big = false, expected = expected64(), size = 8
+    )
+    exercise(
+        "64-bit big endian", "\x91\x22\x33\x44\x55\x66\x77\x88padding!";
+        wide = true, big = true, expected = expected64(), size = 8
+    )
+    shortRead(; wide = false, big = false)
+    shortRead(; wide = false, big = true)
+    shortRead(; wide = true, big = false)
+    shortRead(; wide = true, big = true)
     check("known enum selects a type", offsetType(Format.32), uint32)
     check("other known enum selects its type", offsetType(Format.64), uint64)
     check("known helper needs only its selected arm", relay(Format.32), uint32)
     check("base context has no audit policy", auditCount(), 0)
     reader = newReader("\x01\x02\x63\x84\x91\x22\x33\x44\x55\x66\x77\x88")
-    check("known selectors read first offset", resultValue(readOffset(reader, Format.32, Endian.little)), expected32())
+    check(
+        "known selectors read first offset",
+        resultValue(readOffset(reader, Format.32, Endian.little)),
+        expected32()
+    )
     check("next offset starts after first", resultValue(readOffset(reader, Format.64, Endian.big)), expected64())
     check("sequential cursor advancement", position(reader), 12)
     releaseReader(reader)

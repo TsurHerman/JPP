@@ -1,3 +1,5 @@
-T = choose()
-choose() = uint32
-main() = T
+OffsetWidth = chooseWidth()
+
+chooseWidth() = uint32
+
+main() = OffsetWidth

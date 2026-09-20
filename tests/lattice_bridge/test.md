@@ -1,24 +1,20 @@
-# lattice_bridge
+# A caller supplies the missing comparison
 
-**Validates (README §9):** a gap in the order is the CALLER's to close.
-`<:` is an ordinary word resolving in the caller's context, so a fact
-the library never stated can be supplied downstream, about two classes
-the caller does not own.
+The library is the same as [lattice_gap](../lattice_gap/test.md): its Tiny and
+Numeric methods overlap, and its Tiny→Small→Numeric chain provides no direct
+comparison between those two candidates.
 
-This tree is `tests/lattice_gap` — which does not compile — with
-`preds.jpp`, `order.jpp` and `rules.jpp` unchanged. The only additions
-are `bridge.jpp`, holding the single fact `<:(Tiny, Numeric) = true`,
-and the `using bridge` line in `main.jpp`.
+The caller imports `bridge.jpp`, which contributes one ordinary method:
 
-**Why the library could not have fixed it for everyone.** The author of
-`rules.jpp` gated on `Tiny` and on `Numeric` and genuinely may not know
-which should win — that is a claim about the class order, not about the
-methods. Shipping the clash and letting each caller state the edge is
-the honest factoring, and it is the same move as
-`tests/order_injection` applied to a missing transitive link rather
-than to two unrelated classes.
+```jpp
+using preds
+export <:
 
-**Contrast with `tests/order_refines`.** There the edge decides BETWEEN
-two comparable answers and reversing it flips the winner. Here the edge
-does not choose a winner so much as connect a chain that was already
-authored end to end; without it the two ends are simply incomparable.
+<:(Tiny, Numeric) = true
+```
+
+That direct edge selects the Tiny method. `gap(itsy())` must return its marker,
+10, without changes to the library's methods or predicates.
+
+The promise is caller-authored ordering across module boundaries. The compiler
+still performs no transitive closure; the caller wrote the exact missing pair.

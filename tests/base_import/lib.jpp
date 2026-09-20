@@ -1,5 +1,7 @@
 using inner
 using Base
 export double, report
+
 double(x) = x + x
+
 report(x) = nestedDouble(x)

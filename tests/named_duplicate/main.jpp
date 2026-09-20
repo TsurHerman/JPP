@@ -1,2 +1,3 @@
-f(; x::int64) = x
-main() = f(; x = 1, x = 2)
+shippingWeight(; grams::int64) = grams
+
+main() = shippingWeight(; grams = 1, grams = 2)

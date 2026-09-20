@@ -1,3 +1,4 @@
 using package
 export hidden
+
 main() = hidden()

@@ -1,4 +1,5 @@
 using Base.Any
+
 # VALIDATES: predicates + authored edges express a LATTICE, not a tree.
 # each call lands on a different depth of the diamond, and the two
 # incomparable middle classes (Small, Signed) are separated only by

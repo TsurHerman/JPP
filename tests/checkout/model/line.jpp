@@ -4,4 +4,5 @@ export Line, line, digital, unitPrice, unitCount, unitGrams
 
 # One interface composes independently defined physical and digital lines.
 Line(T::type) = either(Physical(T), Digital(T))
+
 either(a::bool, b::bool)::bool = zig{ a or b }

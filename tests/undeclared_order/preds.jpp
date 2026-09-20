@@ -1,3 +1,5 @@
 export Signed, Wide
+
 Signed(::type) = true
+
 Wide(::type) = true

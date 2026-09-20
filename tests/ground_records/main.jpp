@@ -1,14 +1,27 @@
 using Base.Test
 
-pack(x::T) where T = zig{ .{ .kind = T, .value = x, .version = @as(i64, 1) } }
-nest(item) = zig{ .{ .item = item } }
+pack(x::T) where T = zig{
+    .{ .kind = T, .value = x, .version = @as(i64, 1) }
+}
+
+nest(item) = zig{
+    .{ .item = item }
+}
+
 selectRecord(flag::bool, a::T, b::T) where T = zig{ if (flag) a else b }
+
 unnest(wrapped) = zig{ wrapped.item }
+
 value(record) = zig{ record.value }
+
 kind(record)::type = zig{ record.kind }
+
 version(record) = zig{ record.version }
+
 recordType(::T) where T = T
+
 same(a::type, b::type)::bool = zig{ a == b }
+
 valueIsRuntime(record)::bool = zig{ !@typeInfo(@TypeOf(record)).@"struct".fields[1].is_comptime }
 
 main() = {
@@ -21,5 +34,9 @@ main() = {
     check("a static type field retains its identity", same(kind(pack(7)), int64), true)
     check("other type fields stay distinct", same(kind(pack(1.5)), float64), true)
     check("explicit constant fields retain their values", version(pack(7)), 1)
-    check("incidental input values do not change record type", same(recordType(pack(7)), recordType(pack(9))), true)
+    check(
+        "incidental input values do not change record type",
+        same(recordType(pack(7)), recordType(pack(9))),
+        true
+    )
 }

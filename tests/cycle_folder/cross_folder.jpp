@@ -1,5 +1,6 @@
 using left
 using Base.Test
+
 main() = {
     check("folder import exposes the whole cross-folder unit", rightValue(), 22)
     check("the local unit member is not duplicated", leftValue(), 11)

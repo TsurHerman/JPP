@@ -1,7 +1,9 @@
 using Base.Any
+
 # one module, two crossing generals: (exact, Any) and (Any, exact).
-# g(1, 2) matches both and neither dominates — same module, so the
+# chooseRule(1, 2) matches both and neither dominates — same module, so the
 # promise is a comptime ERROR at the call, naming the cure.
-export g
-g(::int64, <:Any) = 1
-g(<:Any, ::int64) = 2
+export chooseRule
+
+chooseRule(::int64, <:Any) = 1
+chooseRule(<:Any, ::int64) = 2

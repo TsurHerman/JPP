@@ -1,2 +1,3 @@
-f(x::int64) = x
-main() = f(; x = 1)
+identity(x::int64) = x
+
+main() = identity(; x = 1)

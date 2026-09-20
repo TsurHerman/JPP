@@ -1,13 +1,30 @@
 using Base
-export choiceType, Left, Right, Both
-choiceType()::type = zig{ union(enum) { left: i64, right: i64 } }
-make(S::type, n::int64)::S = zig{ if (n == 0) .{ .left = 7 } else .{ .right = 9 } }
-Left(T::type) = isLeft(T, choiceType())
-Right(T::type) = isRight(T, choiceType())
-Both(T::type) = inFamily(T, choiceType())
-isLeft(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .left) }
-isRight(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .right) }
+export shipmentType, Express, Standard, Shipment
+
+shipmentType()::type = zig{
+    union(enum) {
+        express: i64,
+        standard: i64,
+    }
+}
+
+shipment(S::type, express::bool)::S = zig{
+    if (express) .{ .express = 7 } else .{ .standard = 9 }
+}
+
+Express(T::type) = isExpress(T, shipmentType())
+
+Standard(T::type) = isStandard(T, shipmentType())
+
+Shipment(T::type) = inFamily(T, shipmentType())
+
+isExpress(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .express) }
+
+isStandard(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .standard) }
+
 inFamily(T::type, Owner::type)::bool = zig{ jpp.isVariantOf(T, Owner) }
-pick(value<:Left) = value.payload
-pick(<:Right) = "right"
-main() = pick(make(choiceType(), 0))
+
+quote(value<:Express) = value.payload
+quote(<:Standard) = "standard"
+
+main() = quote(shipment(shipmentType(), true))

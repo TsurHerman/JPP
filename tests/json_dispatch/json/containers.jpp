@@ -11,7 +11,9 @@ emit(value<:JsonContainer, writer)::nothing = {
 
 openContainer(<:JsonArray, writer)::nothing = beginArray(writer)
 openContainer(<:JsonObject, writer)::nothing = beginObject(writer)
+
 closeContainer(<:JsonArray, writer)::nothing = endArray(writer)
 closeContainer(<:JsonObject, writer)::nothing = endObject(writer)
+
 entries(value<:JsonArray) = arrayCursor(value.payload)
 entries(value<:JsonObject) = objectCursor(value.payload)

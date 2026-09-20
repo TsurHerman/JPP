@@ -1,4 +1,6 @@
 using package
 export exposed, hidden
+
 exposed() = hidden()
+
 hidden() = 42

@@ -1,4 +1,8 @@
-# Ordinary static application needs its own stage contract
+# Computing a module constant needs a staging rule
 
-This increment accepts names, member paths, scalar literals and explicit grounds
-in module bindings. It does not accidentally select a context for arbitrary calls.
+`chooseWidth()` returns `uint32`, but `OffsetWidth = chooseWidth()` still uses
+an ordinary call in a module initializer. That form is deliberately rejected
+until its evaluation stage and dispatch context have a general contract.
+
+Writing `OffsetWidth = uint32` is supported. This negative case ensures the
+compiler does not quietly invent different staging rules for convenient calls.

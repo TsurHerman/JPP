@@ -1,5 +1,7 @@
 using Base.Zig
 using ring.b
 export Token, readToken
+
 Token = Zig.std.math.Order
+
 readToken() = Token.lt

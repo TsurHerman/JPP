@@ -1,3 +1,5 @@
-# pack_duplicate_field
+# A record cannot define the same field twice
 
-Reject this invalid program with `DuplicateNamedArgument 'a'`. This is a frontend promise.
+`(; a = 1, a = 2)` tries to create two fields named `a`. The frontend reports
+`DuplicateNamedArgument`; it must not choose either value or silently overwrite the
+first.

@@ -1,2 +1,3 @@
-T = uint32
-main() = T()
+OffsetWidth = uint32
+
+main() = OffsetWidth()

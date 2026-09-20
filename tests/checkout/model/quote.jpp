@@ -2,9 +2,15 @@ export quoteRecord, grossCents, discountCents, netCents, freightCents, taxCents,
 
 quoteRecord(; gross::int64, discount::int64, net::int64, freight::int64, tax::int64, total::int64) =
     (; gross = gross, discount = discount, net = net, freight = freight, tax = tax, total = total)
+
 grossCents(quoted) = quoted.gross
+
 discountCents(quoted) = quoted.discount
+
 netCents(quoted) = quoted.net
+
 freightCents(quoted) = quoted.freight
+
 taxCents(quoted) = quoted.tax
+
 totalCents(quoted) = quoted.total

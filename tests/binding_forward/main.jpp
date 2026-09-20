@@ -1,2 +1,7 @@
 later() = 99
-main() = { x = later; later = 7; x }
+
+main() = {
+    x = later
+    later = 7
+    x
+}

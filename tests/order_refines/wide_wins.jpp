@@ -6,5 +6,5 @@ using rules
 using Base.Test
 
 main() = {
-    check("declared edge refines the gates", g(1), 1)
+    check("declared edge refines the gates", category(1), 1)
 }

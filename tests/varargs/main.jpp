@@ -2,21 +2,41 @@ using Base
 export gather, uniform, witness, classify
 
 gather(xs...) = xs
+
 uniform(xs::T...) where T = T
+
 witness(xs::T...; T::type) where T = T
+
 both(xs::T...; opts::T...) where T = T
+
 zero(xs::T...)::T where T = zig{ @as(T, 0) }
+
 groundWitness(xs::T...; T::type)::T where T = zig{ @as(T, 0) }
-nativeType()::type = zig{ struct { comptime dimension: i64 = 3, data: i64 } }
-makeNative(T::type, x::int64) = zig{ T{ .data = x } }
-assertStatic(value)::nothing = zig{ {
-    if (!@typeInfo(@TypeOf(value)).@"struct".fields[0].is_comptime) @compileError("rest lost static integer");
-} }
+
+nativeType()::type = zig{
+    struct { comptime dimension: i64 = 3, data: i64 }
+}
+
+makeNative(T::type, x::int64) = zig{
+    T{ .data = x }
+}
+
+assertStatic(value)::nothing = zig{
+    {
+        if (!@typeInfo(@TypeOf(value)).@"struct".fields[0].is_comptime) @compileError("rest lost static integer");
+    }
+}
+
 classify(T::type)::bool = zig{ T == i64 or T == f64 }
+
 accepted(xs<:classify...) = len(xs)
+
 options(; required::int64, rest...) = (; required = required, rest...)
+
 kind(::T) where T = T
+
 same(A::type, B::type)::bool = zig{ A == B }
+
 main() = {
     check("empty capture", len(gather()), 0)
     check("one capture", gather(7).0, 7)
@@ -44,6 +64,10 @@ main() = {
     check("named rest routes unknown fields", options(; z = 9, required = 2, a = 7).a, 7)
     check("empty named rest", options(; required = 2).required, 2)
     check("named pack expansion", (; (; a = 3)..., b = 4).b, 4)
-    check("named capture canonical identity", kind(options(; required = 2, a = 7, z = 9)), kind(options(; z = 9, a = 1, required = 8)))
+    check(
+        "named capture canonical identity",
+        kind(options(; required = 2, a = 7, z = 9)),
+        kind(options(; z = 9, a = 1, required = 8))
+    )
     check("different static fields distinguish values", same(kind(gather(int64)), kind(gather(float64))), false)
 }

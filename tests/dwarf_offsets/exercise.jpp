@@ -3,7 +3,7 @@ using dwarf
 using fixture
 export exercise, shortRead
 
-exercise(label::string, bytes::string, wide::bool, big::bool, expected::uint64, size::int64) = {
+exercise(label::string, bytes::string; wide::bool, big::bool, expected::uint64, size::int64) = {
     reader = newReader(bytes)
     counter = newCounter()
     result = readOffset(tapReader(counter, reader), runtimeFormat(counter, wide), runtimeEndian(counter, big))
@@ -15,7 +15,7 @@ exercise(label::string, bytes::string, wide::bool, big::bool, expected::uint64, 
     releaseReader(reader)
 }
 
-shortRead(wide::bool, big::bool) = {
+shortRead(; wide::bool, big::bool) = {
     reader = newReader("\x01\x02\x03")
     counter = newCounter()
     result = readOffset(tapReader(counter, reader), runtimeFormat(counter, wide), runtimeEndian(counter, big))

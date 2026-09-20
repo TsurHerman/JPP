@@ -1,4 +1,6 @@
 using middle
 export probe, surface
+
 probe(x) = step(x)
+
 surface(x) = x
