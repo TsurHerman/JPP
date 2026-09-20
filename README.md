@@ -563,6 +563,10 @@ Variadic and tuples (RUNS):
   selection. Each arm uses the same
   resolver, pointwise specificity, context position, private homes and accumulated
   caller context. An enum-wide fallback cannot hide more specific value methods.
+  The selected enum case remains comptime-known within its specialized branch
+  and through ordinary calls that forward it. Predicate functions use this same
+  mechanism. Method precedence is shared; table construction resolves each case
+  under the ordinary rules rather than introducing a separate enum priority.
   This supersedes the former rule that data slots never bridge.
   A comptime-known input selects its arm directly. A runtime input generates all
   possible arms, selecting only one at execution; argument producers execute once

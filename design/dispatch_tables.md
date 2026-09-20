@@ -13,6 +13,49 @@ The value itself may remain runtime data. General fact representation and
 runtime-predicate rules below remain OPEN. The implemented qualifiers do not
 support deciding a branch from unknown runtime numbers or payload contents.
 
+## One resolver, refined inputs
+
+Clarified with the user, 2026-09-20: enum tables inherit ordinary method
+precedence. A function called with a direct runtime enum input implicitly
+switches on that input. Inside each branch the selected case is known at
+compile time, and the normal resolver chooses the implementation using that
+refined argument pack and the same accumulated caller context.
+
+Conceptually:
+
+```text
+call f(runtime_enum, other_arguments) in context C
+    for each declared enum case K:
+        runtime branch K:
+            resolve f(static K, other_arguments) in context C
+            execute the selected implementation
+```
+
+The compiler resolves those branches before execution. Runtime chooses a branch;
+it does not search for methods. The case stays known within that specialized
+path, including ordinary nested calls that forward it. Other arguments and union
+payloads can remain runtime data. A case known before the call needs only its
+own branch. Results merged after different runtime branches need not retain one
+known case.
+
+This applies to predicate functions too. A predicate used by `where` has the
+same ordinary calls, context accumulation and enum specialization as any other
+function. Its boolean result determines applicability; the shared resolver
+determines preference among applicable methods.
+
+Predictable resolution currently means pointwise dominance with pairwise authored
+`<:` relationships, context position between surviving candidates in different
+modules, and an ambiguity error for competing maxima in the winning module/unit.
+This is a partial precedence relation, not a global sorted list. Applicability
+can differ between enum cases. Any future ordered decision plan must preserve the
+resolver's result in each case, including ambiguity and missing-coverage errors;
+linearizing candidates must not introduce implicit transitive `<:` edges.
+
+`src/jpp.zig` already implements this path through `bridgeRet`, `bridgeCall` and
+the normal `resolve`. `enum_guard_order` demonstrates authored predicate order;
+`log_labels` exercises a caller policy through nested predicate calls. Designing
+an inspectable method-ordering plan is a separate task from the enum bridge.
+
 ## Ordered predicates and staging
 
 Research and user clarification, 2026-09-20. This discussion concerns the
@@ -71,8 +114,9 @@ types bound by `source::T, destination::S`; those types are known at compile tim
 The current one-input guard implementation is not a reason to prohibit either
 kind of relation in the language.
 
-Predicate evaluation and method selection remain separate. The predicate answers
-whether a candidate applies. The existing pointwise specificity, authored `<:`
+Predicate evaluation and method preference answer different questions while using
+the same call machinery. The predicate answers whether a candidate applies.
+The existing pointwise specificity, authored `<:`
 priorities, caller-first context and ambiguity rules choose among applicable
 candidates. If two different methods' predicates are true, an internal branch
 order inside either predicate supplies no new preference between those methods.
