@@ -1,0 +1,7 @@
+sameAccount(left::int64, right::int64)::bool = zig{ left == right }
+
+# Account numbers are values: 101 and 202 have the same type but are not equal.
+transferKind(sourceAccount::int64, destinationAccount::int64) where
+    sameAccount(sourceAccount, destinationAccount) = "self transfer"
+
+main() = 0

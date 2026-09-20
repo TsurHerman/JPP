@@ -17,5 +17,5 @@ No runtime numeric switch is needed. This exercises the same guard evaluation
 used for a known enum case, without requiring an enum or tagged union.
 
 It does not implement runtime interval dispatch. An ordinary body literal or a
-runtime temperature reading is still data: `enum_guard_runtime` checks that an
+runtime temperature reading is still data: `value_guard_runtime` checks that an
 unknown value cannot silently become a compile-time fact.

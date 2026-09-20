@@ -176,6 +176,12 @@ checks direct predicate precedence, conjunction and named argument alignment.
 ambiguity checks; the remaining guard negatives enforce boolean results, lexical
 declarations, known inputs and the single-fixed-input scope.
 
+`value_guard_multi_input`, `value_guard_rest` and `value_guard_runtime` are
+general guard limits, not enum behavior. The first compares account-number
+values, not their int64 types. These cases record current implementation
+boundaries; they do not ratify a permanently unary guard language. General
+predicates on several known bound types are also still unimplemented.
+
 `value_guard_named_type` preserves named predicate arguments; `value_guard_named_multi`
 rejects a named comparison over two inputs instead of silently interpreting it
 as legacy type equality. `value_guard_static` selects sensor configuration from

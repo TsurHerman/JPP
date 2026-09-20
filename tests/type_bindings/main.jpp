@@ -1,5 +1,6 @@
 using Base.Any
 using Base.Test
+using Base.Equality
 export typeof, accepts, same, <:, typed, grounded, groundType
 
 typeof(::T) where T = T
@@ -23,6 +24,8 @@ main() = {
     check("bound return type in a ground", grounded(1.5), 1.5)
     check("ground sees inferred type", same(groundType(3), int64), true)
     check("body sees inferred type", same(typeof(3), int64), true)
+    check("different integer values are unequal", 3 == 9, false)
+    check("those unequal values have the same type", same(typeof(3), typeof(9)), true)
     check("identity gate", accepts(int64, int64), true)
     check("type values are not equal just because both are types", accepts(int64, float64), false)
     check("mutual surface facts satisfy equality gate", accepts(int32, uint32), true)

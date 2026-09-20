@@ -636,6 +636,11 @@ Variadic and tuples (RUNS):
   decide a guard; their known type facts can. Tagged-union type/tag classifiers may
   use ordinary jpp helpers without reading the runtime `.payload`; native
   predicates require known inputs.
+  A parameter name still denotes its value: `source::int64` does not make
+  `predicate(source)` mean `predicate(int64)`. Comparing argument types requires
+  an explicit type query or bound type names. General multi-input expressions,
+  including predicates on two known bound types such as `sameType(T, S)`, remain
+  an implementation gap; the unary restriction is not a desired language limit.
   No runtime producer or side effect is executed to determine applicability.
   Within the same base input domain, guarded methods outrank the unguarded
   default. Exact enum/error cases outrank a guard on their wider native type.

@@ -13,6 +13,76 @@ The value itself may remain runtime data. General fact representation and
 runtime-predicate rules below remain OPEN. The implemented qualifiers do not
 support deciding a branch from unknown runtime numbers or payload contents.
 
+## Ordered predicates and staging
+
+Research and user clarification, 2026-09-20. This discussion concerns the
+predicate evaluated by `where`, including decision tables within that predicate.
+It does not change the precedence of context-dispatched methods. Within an
+ordered decision, `if / else if / else` tests a row, continues when false, and
+executes the first successful row's body. Overlap is allowed and order is
+meaningful. This is fall-through between failed tests; one body executes.
+
+The native languages distinguish two mechanisms:
+
+- [Zig 0.16 switch](https://ziglang.org/documentation/0.16.0/#switch) requires
+  compile-time case values and rejects overlapping values/ranges. It has no
+  general runtime predicate guard on a prong. Local Zig 0.16 probes confirmed
+  `0...10` overlapping `5...20` produces `duplicate switch value`, and a case
+  `positive(x)` with runtime x produces `switch prong values must be comptime-known`.
+  An ordinary ordered if/else chain with overlapping conditions compiles.
+- [Rust match guards](https://doc.rust-lang.org/reference/expressions/match-expr.html#match-guards)
+  permit boolean predicates and examine alternatives in order. A failed guard
+  continues the search. The first successful pattern/guard selects the body.
+  Arbitrary guarded arms do not establish coverage by themselves; the
+  [Rust book](https://doc.rust-lang.org/book/ch19-03-pattern-syntax.html#adding-conditionals-with-match-guards)
+  explains this limit.
+- [Julia multiple dispatch](https://docs.julialang.org/en/v1/manual/methods/#Method-Ambiguities)
+  instead selects by specificity and reports unresolved overlaps. This is closer
+  to jpp's current method resolver than to an ordered predicate table.
+
+An upload-buffer predicate illustrates intentional overlap within one boolean
+calculation. Its Zig body makes the decision order explicit:
+
+```jpp
+mayBuffer(bytes::uint64, interactive::bool)::bool = zig{
+    if (bytes >= 1_048_576) false
+    else if (interactive) true
+    else bytes <= 65_536
+}
+```
+
+A large interactive upload satisfies both first and second conditions. The
+first returns false, keeping large uploads out of memory. A smaller interactive
+upload reaches the second condition and returns true. These are ordered branches
+inside one predicate, not priority declarations between separate jpp methods.
+
+The proposed extension lets a `where mayBuffer(bytes, interactive)` condition
+specialize this calculation using known facts, retaining unresolved decisions at
+runtime. The current compiler does not support that multi-input runtime guard.
+If interactive is known true but bytes is unknown, the size check must remain;
+knowing the second branch succeeds does not bypass the earlier condition. If both
+inputs are known, the whole predicate can reduce to a boolean. Arguments are
+produced once. A runtime branch establishes a fact without making the argument's
+full value known.
+
+Names retain their meaning across stages. `source::int64` binds an integer;
+`sameAccount(source, destination)` compares values. `sameType(T, S)` compares the
+types bound by `source::T, destination::S`; those types are known at compile time.
+The current one-input guard implementation is not a reason to prohibit either
+kind of relation in the language.
+
+Predicate evaluation and method selection remain separate. The predicate answers
+whether a candidate applies. The existing pointwise specificity, authored `<:`
+priorities, caller-first context and ambiguity rules choose among applicable
+candidates. If two different methods' predicates are true, an internal branch
+order inside either predicate supplies no new preference between those methods.
+
+Residual predicate facts, multi-input guard comparison, and effects remain OPEN
+implementation work. Specialization must preserve observable execution and cannot
+assume arbitrary predicates are pure or exhaustive. A predicate's own decision
+needs a reachable default or coverage proof; its total boolean result does not
+by itself prove that the surrounding method set covers every possible input.
+
 ## Start with the log viewer
 
 RUNS, 2026-09-20: [log_labels](../tests/log_labels/test.md) displays log records

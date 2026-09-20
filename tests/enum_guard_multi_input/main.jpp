@@ -1,5 +1,0 @@
-sameRegion(left, right)::bool = zig{ left == right }
-
-route(source::int64, destination::int64) where sameRegion(source, destination) = "local"
-
-main() = 0
