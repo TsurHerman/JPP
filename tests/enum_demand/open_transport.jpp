@@ -1,0 +1,9 @@
+using Base
+
+NativeCode = zig{ enum(u8) { known = 1, _ } }
+
+receiveCode()::NativeCode = zig{ @enumFromInt(42) }
+identity(value) = value
+numericCode(value::NativeCode)::int64 = zig{ @intFromEnum(value) }
+
+main() = check("an unnamed native enum value can pass through generic code", numericCode(identity(receiveCode())), 42)

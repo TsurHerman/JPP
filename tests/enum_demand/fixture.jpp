@@ -1,0 +1,31 @@
+using log
+
+export newInbox, releaseInbox, receiveLevel, readCount, runtimeFields
+
+newInbox() = zig{
+    blk: {
+        const count = std.heap.page_allocator.create(i64) catch @panic("fixture allocation failed");
+        count.* = 0;
+        break :blk count;
+    }
+}
+
+releaseInbox(inbox)::nothing = zig{ std.heap.page_allocator.destroy(inbox) }
+readCount(inbox)::int64 = zig{ inbox.* }
+
+receiveLevel(inbox, severity::int64)::Level = zig{
+    blk: {
+        inbox.* += 1;
+        break :blk @enumFromInt(@as(u2, @intCast(severity)));
+    }
+}
+
+# Inspect staging, not timing: unrelated inputs must never become static.
+runtimeFields(pack)::bool = zig{
+    blk: {
+        inline for (@typeInfo(@TypeOf(pack)).@"struct".fields) |field| {
+            if (field.is_comptime) break :blk false;
+        }
+        break :blk true;
+    }
+}

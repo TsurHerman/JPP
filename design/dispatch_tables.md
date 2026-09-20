@@ -1,7 +1,8 @@
 # Methods describe cases; specialization builds control flow
 
-Status: automatic enum/tagged-union/error-set/error-union calls RUN in the active machinery. The
-serialization and DWARF cases below are executable jpp, not proposed syntax.
+Status: demand-driven enum tables and automatic tagged-union/error-set/error-union
+tables RUN in the active machinery. The serialization and DWARF cases below are
+executable jpp, not proposed syntax.
 Defined enum/error values and member paths now work in signatures (2026-09-20).
 Boolean value qualifiers and explicit classifier comparisons run over known
 branch facts, with ordinary typed defaults. General
@@ -15,20 +16,25 @@ support deciding a branch from unknown runtime numbers or payload contents.
 
 ## One resolver, refined inputs
 
-Clarified with the user, 2026-09-20: enum tables inherit ordinary method
-precedence. A function called with a direct runtime enum input implicitly
-switches on that input. Inside each branch the selected case is known at
-compile time, and the normal resolver chooses the implementation using that
-refined argument pack and the same accumulated caller context.
+Revised with the user, 2026-09-20: enum tables inherit ordinary method
+precedence, but merely receiving several runtime enums must not enumerate their
+Cartesian product. A call splits an enum when an exact case pattern or value
+qualifier needs its case for applicability. A method body can also need a case
+to keep a type-valued result comptime-known. Inside each needed branch the selected case is
+known at compile time, and the normal resolver chooses the implementation using
+that refined argument pack and the same accumulated caller context.
 
 Conceptually:
 
 ```text
 call f(runtime_enum, other_arguments) in context C
-    for each declared enum case K:
-        runtime branch K:
-            resolve f(static K, other_arguments) in context C
-            execute the selected implementation
+    if applicability or a type-valued body result needs this enum's case:
+        for each declared enum case K:
+            runtime branch K:
+                resolve f(static K, other_arguments) in context C
+                execute the selected implementation
+    otherwise:
+        resolve and execute f with the enum still runtime
 ```
 
 The compiler resolves those branches before execution. Runtime chooses a branch;
@@ -37,6 +43,30 @@ path, including ordinary nested calls that forward it. Other arguments and union
 payloads can remain runtime data. A case known before the call needs only its
 own branch. Results merged after different runtime branches need not retain one
 known case.
+
+Generic forwarding therefore stays generic. Twelve log records can be processed
+by twelve independent calls to a four-case classifier rather than by one table
+with 4^12 rows. [enum_demand](../tests/enum_demand/test.md) checks runtime fields,
+producer counts, named/rest forwarding and branch pruning. A known mismatch or
+false guard can remove a method's demand for a later split. Inputs that genuinely
+interact can still require combinations; this is not a general minimum-table
+algorithm or a polynomial bound for arbitrary predicates. Dependencies through
+opaque calls and local pack results remain conservative and may cause extra
+specialization.
+
+Specialization also preserves useful type-producing composition. The existing
+DWARF reader calls `readUnsigned(reader, offsetType(format), endian)`:
+`offsetType(format)` must produce a known type before the read can be compiled.
+That need brings the format split into the containing body. Ordinary runtime
+results can instead remain nested calls. A runtime-selected type still cannot
+escape its branch. Native grounds remain the boundary of this analysis; this
+does not make arbitrary runtime arguments available to comptime Zig code.
+The propagated result need is currently `type`; runtime-selected `comptime_int`
+and `comptime_float` results remain rejected.
+
+Non-exhaustive enums, including unnamed values, may travel through generic code.
+Requesting enumeration still rejects them. Tagged unions and native error inputs
+retain their existing eager representation refinement in this increment.
 
 This applies to predicate functions too. A predicate used by `where` has the
 same ordinary calls, context accumulation and enum specialization as any other
@@ -51,10 +81,12 @@ can differ between enum cases. Any future ordered decision plan must preserve th
 resolver's result in each case, including ambiguity and missing-coverage errors;
 linearizing candidates must not introduce implicit transitive `<:` edges.
 
-`src/jpp.zig` already implements this path through `bridgeRet`, `bridgeCall` and
-the normal `resolve`. `enum_guard_order` demonstrates authored predicate order;
-`log_labels` exercises a caller policy through nested predicate calls. Designing
-an inspectable method-ordering plan is a separate task from the enum bridge.
+`src/jpp.zig` implements this path through demand discovery, `bridgeRet`,
+`bridgeCall` and the normal `resolve`. `enum_guard_order` demonstrates authored predicate order;
+`log_labels` exercises a caller policy through nested predicate calls.
+`enum_guard_runtime_ambiguous` rejects an overlapping case even when the fixture's
+runtime producer returns a different case. Designing an inspectable method-ordering
+plan is a separate task from the enum bridge.
 
 ## Ordered predicates and staging
 
@@ -211,10 +243,11 @@ elements. Runtime branching depth and collection traversal depth are independent
 Known selectors can remove branches while payload computations remain runtime.
 
 The existing bridge is the exact-tag instance of this idea: it refines the pack
-and invokes the ordinary resolver. It currently splits every direct enum/union
-coordinate, even when subsequent optimization can merge equivalent work. Sharing
-arms safely requires considering their specialized bodies and nested calls;
-selecting the same outer method alone does not prove the arms equivalent.
+and invokes the ordinary resolver. Enum refinement follows applicability and
+type-result demand; tagged unions and native errors still refine eagerly.
+Sharing arms beyond this bounded change requires considering their specialized
+bodies and nested calls; selecting the same outer method alone does not prove
+the arms equivalent. General correlated guards remain unbuilt.
 
 ## Native types, jpp wrapper
 
@@ -602,18 +635,20 @@ facade, and declaration-only requirements remain explicit.
 
 ## What the implementation proves
 
-The machinery refines one direct call coordinate at a time, then resolves the
-same word on each refined pack. A plain enum is a static enum field in that arm;
+The machinery refines one needed direct call coordinate at a time, then resolves
+the same word on each refined pack. A plain enum is a static enum field in that arm;
 a union is a Variant(owner, tag) value carrying its payload. A generated variant
 cannot be forged just by copying metadata. Its runtime representation is a
 shallow payload copy; this does not invent ownership or extend referenced data's
 lifetime. Existing predicates can group variants and context can refine them.
 
-Known tags select only their arm. Runtime tags require all arms, with ordinary
-ambiguity checks. Only the selected body executes; producer effects are not
+Known tags select only their arm. A requested runtime split requires all arms,
+with ordinary ambiguity checks. Only the selected body executes; producer effects are not
 repeated across possible branches. Named fields, splats, static values and
 private declaration homes survive the same binder/context path. Multiple enum
-coordinates generate nested tables. Plain records are not recursively split.
+coordinates generate nested tables only when their cases are needed together;
+generic forwarding does not force their product. Plain records are not recursively
+split.
 
 Correction, 2026-09-17: the original bridge discarded static result information
 after selecting a known union arm. Extracting a payload into an ordinary helper
@@ -638,8 +673,8 @@ including escaping, arbitrary-precision raw numbers, empty and nested containers
 and runtime arrays of 0, 1, 8 and 128 elements. It also checks the two independent
 policies and bounded-output failure. Separate cases reject missing arms, unrelated
 owners, crossing specificity, incompatible results, runtime type escape and
-non-exhaustive enums. The native resolver tests additionally cover exact enum
-values, multiple enum coordinates, delegation and signature set operations.
+requested enumeration of non-exhaustive enums. The native resolver tests additionally
+cover exact enum values, multiple enum coordinates, delegation and signature set operations.
 
 The adapter is currently more code than Zig's original serializer method. What
 has become smaller is the set of shared behavior bodies and the cost of adding

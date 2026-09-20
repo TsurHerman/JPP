@@ -1,0 +1,54 @@
+using Base
+using log
+using fixture
+
+# Twelve independent log levels must not create 4^12 specializations here.
+# Each attentionScore call needs only its own four cases.
+attentionCount(a::Level, b::Level, c::Level, d::Level,
+               e::Level, f::Level, g::Level, h::Level,
+               i::Level, j::Level, k::Level, l::Level) = {
+    check("independent levels stay runtime in the coordinator", runtimeFields((a, b, c, d, e, f, g, h, i, j, k, l)), true)
+    first = attentionScore(a) + attentionScore(b) + attentionScore(c) + attentionScore(d)
+    second = attentionScore(e) + attentionScore(f) + attentionScore(g) + attentionScore(h)
+    third = attentionScore(i) + attentionScore(j) + attentionScore(k) + attentionScore(l)
+    first + second + third
+}
+
+captions(; left::Level, right::Level) = (label(left), label(right))
+forwardLevels(levels::Level...) = captions(; right = levels.1, left = levels.0)
+
+# Only this intersection needs both cases. Other branches need no second split.
+pairNeedsReview(Level.err, Level.warn) = true
+pairNeedsReview(::Level, ::Level) = false
+
+secondStaysRuntime(Level.err, Level.warn) = false
+secondStaysRuntime(::Level, second::Level) = runtimeFields((second,))
+
+# A false known guard also removes the need to split the other coordinate.
+isError(level::Level) = level == Level.err
+isWarning(level::Level) = level == Level.warn
+unneededGuard(sourceLevel::Level, second::Level) where isWarning(second), isError(sourceLevel) = false
+unneededGuard(::Level, second::Level) = runtimeFields((second,))
+
+main() = {
+    inbox = newInbox()
+    count = attentionCount(
+        receiveLevel(inbox, 0), receiveLevel(inbox, 1), receiveLevel(inbox, 2), receiveLevel(inbox, 3),
+        receiveLevel(inbox, 0), receiveLevel(inbox, 1), receiveLevel(inbox, 2), receiveLevel(inbox, 3),
+        receiveLevel(inbox, 0), receiveLevel(inbox, 1), receiveLevel(inbox, 2), receiveLevel(inbox, 3)
+    )
+    check("six of twelve records need attention", count, 6)
+    check("each record is received once", readCount(inbox), 12)
+
+    pair = forwardLevels(receiveLevel(inbox, 1), receiveLevel(inbox, 2))
+    check("rest forwarding retains the warning", pair.0, "ATTENTION")
+    check("named forwarding retains the info", pair.1, "NORMAL")
+
+    check("two-case intersection selects its method", pairNeedsReview(receiveLevel(inbox, 0), receiveLevel(inbox, 1)), true)
+    check("second-case mismatch uses the default", pairNeedsReview(receiveLevel(inbox, 0), receiveLevel(inbox, 2)), false)
+    check("first-case mismatch uses the default", pairNeedsReview(receiveLevel(inbox, 2), receiveLevel(inbox, 1)), false)
+    check("known mismatch avoids a second switch", secondStaysRuntime(Level.info, receiveLevel(inbox, 1)), true)
+    check("runtime first branch can discard the second switch", secondStaysRuntime(receiveLevel(inbox, 2), receiveLevel(inbox, 1)), true)
+    check("false known guard discards a pending switch", unneededGuard(Level.info, receiveLevel(inbox, 1)), true)
+    releaseInbox(inbox)
+}

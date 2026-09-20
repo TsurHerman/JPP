@@ -13,6 +13,10 @@ examples state the application problem and expected outcomes before explaining
 the machinery. Small rejection cases deliberately fail; their test.md names the
 missing rule or invalid operation.
 
+[Independent log records](enum_demand/test.md) shows where enum tables belong:
+a generic coordinator keeps twelve levels runtime and invokes independent
+classifiers. It does not enumerate their Cartesian product.
+
 The [readability review](READABILITY.md) records the review of all 147 original
 cases and the deliberate complexity retained in mathematical examples.
 
@@ -124,7 +128,7 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 9 | The `<:` order word (§9) | `order_injection`, `order_refines`, `order_variables`, `order_negative`, `type_bindings`, `lattice` (diamond), `lattice_bridge` (caller closes a gap); machinery tests (7 ironing cases) | transitive closure: `lattice_gap` pins that there is none, and that the gap is an ambiguity |
 | 16 | Operators are ordinary words: infix is surface only (§4) | `pred_join` (`\|\|`, `&&` and precedence); `value_equality` (`==`); `base_import`, `base_shadow`, `base_missing`, `base_mixed`; `checkout` (Base arithmetic); machinery tests (`+` shadowed) | more widths and promotion |
 | 10 | Binder: packs, named args (§4) | named_arguments, named_specificity, named_context, named_instances; varargs, varargs_dispatch, varargs_forward; binderprobe | defaults |
-| 11 | Injected enum/variant tables (§4) | native resolver tests; variant_dispatch; variant_static; enum_members; dwarf_offsets; enum_pattern_*; json_dispatch; variant rejection cases, enum_open, enum_missing_member, enum_member_non_enum | arbitrary static pattern expressions; general result joins |
+| 11 | Demand-driven enum tables and injected variant tables (§4) | native resolver tests; enum_demand; variant_dispatch; variant_static; enum_members; dwarf_offsets; enum_pattern_*; json_dispatch; variant rejection cases, enum_open, enum_missing_member, enum_member_non_enum | arbitrary static pattern expressions; general result joins; optimal decisions for interacting inputs |
 | 12 | Parametric type-words (§4) | vecprobe (spike) | surface braces |
 | 13 | Folders are modules: facade, wildcard, dotted (§1) | folder_modules, folder_scope, cycle_folder, private_helpers | binary artifact boundaries |
 | 14 | Tier invariance (§9) | — | needs tier infrastructure |
@@ -136,7 +140,7 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 21 | Ground inference preserves runtime data and intentional static fields (§7) | `ground_records`; `checkout` (native record pipeline and void statement emission) | richer record surface |
 | 22 | Immutable local bindings alias ANF values (§6) | `local_bindings`, `checkout`; `binding_*` frontend rejection cases | typed local annotations; application of callable values |
 | 23 | Module constants and native member paths preserve lexical identity | `static_bindings`, `dwarf_offsets`; `static_binding_*` rejection cases | calls in static initializers; callable values |
-| 24 | Value qualifiers use known branch facts, ordinary predicates and classifier comparisons | `log_labels`, `enum_guard_order`, `value_guard_variant`, `value_guard_static`, `value_guard_named_type`; guard rejection cases | runtime numeric intervals; correlated inputs; whole-rest guards |
+| 24 | Value qualifiers use known branch facts, ordinary predicates and classifier comparisons | `log_labels`, `enum_guard_order`, `enum_guard_runtime_ambiguous`, `value_guard_variant`, `value_guard_static`, `value_guard_named_type`; guard rejection cases | runtime numeric intervals; correlated inputs; whole-rest guards |
 | 25 | Native error sets/unions inject exhaustive tables and rejoin compatible results | `error_dispatch`; `error_*` rejection cases; native join tests | open anyerror dispatch; unrelated success-type joins |
 | 26 | Equality and finite membership remain ordinary library words | `value_equality`, `log_labels`, `error_dispatch` | mixed numeric promotion; general record/collection equality; predicate factories |
 
@@ -167,14 +171,32 @@ warning label makes compilation fail. Its explanation shows the one-line fix.
 endianness methods. It uses native enums through Base.Zig, covers all four runtime
 combinations and native error results, and verifies single producer evaluation,
 cursor advancement, static type selection and a nested caller audit override.
+Its composed `readUnsigned(reader, offsetType(format), endian)` body still works:
+the need for a comptime offset type brings the format decision into that body.
+
+`enum_demand` keeps twelve independently processed enum fields runtime until
+their individual classifier calls need a case. Its guard witness requires
+comptime execution, and producer counters enforce evaluation once. Named/rest
+forwarding, interacting cases and pruning after known false facts exercise the
+coordinate mapping. `type_selection` decodes native 32/64-bit offsets while
+keeping unrelated log policies runtime through the type-producing call.
+Its `open_transport` program forwards an unnamed value of
+a non-exhaustive native enum without requesting enumeration; `enum_open` still
+rejects case-sensitive dispatch on such a type. Tagged unions and native error
+inputs retain eager refinement; genuinely interacting enums can still require
+combinations.
 
 `log_labels` checks every log level, a boolean qualifier, an explicit string
 comparison, exact-case specialization, a typed default, a nested caller policy,
 known-case-only coverage and input producers evaluated once. `enum_guard_order`
-checks direct predicate precedence, conjunction and named argument alignment.
-`enum_guard_missing` and `enum_guard_ambiguous` preserve full runtime coverage and
-ambiguity checks; the remaining guard negatives enforce boolean results, lexical
-declarations, known inputs and the single-fixed-input scope.
+checks direct predicate precedence, conjunction and named argument alignment
+across all four runtime levels as well as known cases.
+`enum_guard_missing` preserves full runtime coverage. `enum_guard_ambiguous`
+rejects overlapping qualifiers for a known case; `enum_guard_runtime_ambiguous`
+rejects an ambiguous error-level branch even when the runtime fixture returns
+info. Needed splits therefore retain all-arm ambiguity checks. The remaining
+guard negatives enforce boolean results, lexical declarations, known inputs and
+the single-fixed-input scope.
 
 `value_guard_multi_input`, `value_guard_rest` and `value_guard_runtime` are
 general guard limits, not enum behavior. The first compares account-number
@@ -264,6 +286,11 @@ the surface learns to express its promise.
 
 ## Injected tables and serialization
 
+- `enum_demand`: preserve runtime forwarding and independent case decisions,
+  known-fact pruning, named/rest routing, producer effects once, precise type-result
+  demand for direct arguments and generic open-enum transport.
+- `enum_guard_runtime_ambiguous`: every arm of a needed runtime split must have
+  an unambiguous winner under ordinary caller-first context and specificity.
 - `variant_dispatch`: ordinary calls split tagged unions before selection;
   owner/tag identity, shared predicates and authored order, named/rest forwarding,
   static selected-arm coverage and type results, runtime union identity rejoining,
@@ -271,7 +298,7 @@ the surface learns to express its promise.
 - `variant_missing`, `variant_result`, `variant_runtime_type`, `variant_crossing`,
   `variant_owner`, `enum_open`: missing runtime coverage, incompatible results,
   escaping runtime-selected types, pointwise ambiguity, unrelated union identity,
-  and non-exhaustive enum rejection.
+  and rejection of requested enumeration over a non-exhaustive enum.
 - [json_dispatch](json_dispatch/test.md): a modular serializer consuming the real
   std.json.Value. Four scalar variants share one method; arrays and objects share
   the container body and runtime cursor traversal. Two independent policy modules

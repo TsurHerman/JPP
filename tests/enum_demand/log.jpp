@@ -1,0 +1,22 @@
+using Base
+using Base.Zig
+
+export Level, label, attentionScore
+
+Level = Zig.std.log.Level
+
+needsAttention(level::Level) = isOneOf(checkedLevel(level), Level.err, Level.warn)
+
+# Test witness: applicability must be computed before runtime.
+checkedLevel(level::Level)::Level = zig{
+    blk: {
+        if (!@inComptime()) @compileError("enum predicate escaped comptime");
+        break :blk level;
+    }
+}
+
+label(level::Level) where needsAttention(level) = "ATTENTION"
+label(::Level) = "NORMAL"
+
+attentionScore(level::Level) where needsAttention(level) = 1
+attentionScore(::Level) = 0

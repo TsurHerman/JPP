@@ -26,10 +26,17 @@ caption(; level::Level, destination::string) where needsAttention(level) = desti
 caption(; destination::string, level::Level) where isError(level) = "ERROR"
 caption(; level::Level, destination::string) = destination
 
+receiveLevel(index::int64)::Level = zig{ @enumFromInt(@as(u2, @intCast(index))) }
+
 main() = {
     check("authored refinement selects the error label", label(Level.err), "ERROR")
     check("broader predicate still covers warnings", label(Level.warn), "ATTENTION")
     check("unmatched predicates leave the default", label(Level.info), "NORMAL")
+
+    check("runtime error takes the authored refinement", label(receiveLevel(0)), "ERROR")
+    check("runtime warning takes the broader predicate", label(receiveLevel(1)), "ATTENTION")
+    check("runtime info takes the default", label(receiveLevel(2)), "NORMAL")
+    check("runtime debug also takes the default", label(receiveLevel(3)), "NORMAL")
 
     check("conjunction refines the attention guard", review(Level.err), "review now")
     check("warning needs only the broader review", review(Level.warn), "review soon")

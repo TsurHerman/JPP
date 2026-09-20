@@ -59,9 +59,17 @@ a feature; preserve the ratified semantics unless the task changes them.
   for otherwise tied coordinates. Uniform T needs a witness when empty;
   short predicate rest annotations check each element independently.
   `design/` is a design notebook, not runnable regression fixtures.
-- Ordinary direct enum/tagged-union/error-set/error-union inputs inject a table before selection in
-  the machinery. Resolve each arm with the normal context and specificity rules;
-  evaluate producers once. Enum values become static fields; union inputs become
+- Split direct runtime enum inputs only when applicability or a body's
+  type-valued result needs their case. Generic forwarding retains runtime enums;
+  independent enum inputs must not automatically form a Cartesian table. Preserve
+  composed type selection, such as the DWARF reader's intermediate offset type.
+  Resolve each needed arm with the normal caller-first context and specificity
+  rules; evaluate producers once. A selected enum becomes a static field within
+  that branch. Non-exhaustive enums may travel through generic code, but requested
+  enumeration still rejects them. Interacting inputs can still need combinations;
+  opaque calls and pack results can conservatively retain extra dependencies.
+  This is not a claim of optimal table construction. Tagged-union/error-set/error-union
+  inputs retain eager refinement in this increment; union inputs become
   Variant(owner, tag) values with .payload. Keep owner/tag identity, static known
   arm coverage, runtime exhaustiveness, and return joins into the owning union.
   Variant groups are ordinary predicates. Do not introduce JSON-specific compiler

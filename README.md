@@ -60,7 +60,7 @@ Status of the major features:
 | direct mutual `<:` pairs; no implicit equivalence closure; cyclic strict order diagnosed | RUNS (type_bindings; negative: order_cycle); legacy gated edges VALIDATED in machinery |
 | delegation `M.f` (select in M, propagate caller) | VALIDATED (machinery) — no surface |
 | specificity policy as shadowable word; stratum-0 self-reference break | VALIDATED (probe + machinery) |
-| automatic enum/tagged-union tables in ordinary calls | RUNS (variant_dispatch, json_dispatch, dwarf_offsets and rejection cases), including source enum case patterns |
+| demand-driven enum tables and automatic tagged-union tables in ordinary calls | RUNS (enum_demand, variant_dispatch, json_dispatch, dwarf_offsets and rejection cases), including source enum case patterns |
 | enum interface as a tight Zig wrapper authored in jpp | native types/cases accessible through Base.Zig; generic staged branch/library protocol remains OPEN |
 | general selectors `{}` and integer range arms | VALIDATED (probes); surface syntax remains unbuilt |
 | tuples/records, static projections, two-section named calls, name-aligned dispatch and bound-instance convergence | RUNS (pack_values, pack_static, named_arguments, named_specificity, named_instances, named_context) |
@@ -558,21 +558,31 @@ Variadic and tuples (RUNS):
   something paren application can't.
 - **Injected dispatch tables (RUNS; revised 2026-09-20).** The source is a
   collection of ordinary method definitions; their composition in the caller's
-  context determines a table. An ordinary call with a direct enum, tagged-union,
-  finite error-set or error-union argument injects its switch BEFORE method
-  selection. Each arm uses the same
-  resolver, pointwise specificity, context position, private homes and accumulated
+  context determines where a table is needed. A direct runtime enum is split
+  when its case can affect applicability: an exact case pattern or a value
+  qualifier needs that fact. A method body can also require the case to keep a
+  type-valued intermediate result comptime-known, as in the DWARF reader's offset type.
+  Generic methods otherwise retain runtime enums; their nested calls can make
+  independent case decisions. Twelve independently processed enum inputs do not
+  automatically create a table of every twelve-input combination
+  ([enum_demand](tests/enum_demand/test.md)). Tagged-union, finite error-set and
+  error-union inputs retain eager refinement in this increment. Each needed arm
+  uses the same resolver, pointwise specificity, context position, private homes and accumulated
   caller context. An enum-wide fallback cannot hide more specific value methods.
   The selected enum case remains comptime-known within its specialized branch
   and through ordinary calls that forward it. Predicate functions use this same
   mechanism. Method precedence is shared; table construction resolves each case
   under the ordinary rules rather than introducing a separate enum priority.
   This supersedes the former rule that data slots never bridge.
-  A comptime-known input selects its arm directly. A runtime input generates all
-  possible arms, selecting only one at execution; argument producers execute once
-  before the table, in source order. Multiple dynamic coordinates nest left to
-  right, including named inputs and fields expanded from splats. Packs themselves
-  are not recursively scanned: a nested enum is split when passed as an input.
+  A comptime-known input selects its arm directly. A needed runtime split checks
+  every possible case, selecting only one at execution; argument producers execute
+  once before the table, in source order. Earlier facts can rule out methods and
+  remove the need to split another input. Interacting enum inputs can still require
+  combinations; dependencies through opaque calls and pack results can also be
+  conservative. This does not promise optimal table construction. Named inputs and
+  fields expanded from splats follow the same coordinate mapping. Packs themselves
+  are not recursively scanned: a nested enum becomes eligible for splitting when
+  passed as a direct input.
   This is a semantic rule, independent of optimizer decisions; identical arms
   may subsequently fold. It does not add a global method table.
 - **Branch facts drive dispatch (RATIFIED principle, 2026-09-15).** A branch
@@ -684,13 +694,16 @@ Variadic and tuples (RUNS):
   return variants that rejoin their common owning union (so `identity(x) = x`
   works). Compatible success/error results now rejoin native error unions and
   combine their finite error sets. General numeric promotion and unrelated
-  successful result joins remain unbuilt; a runtime-selected type cannot escape. Non-exhaustive
-  enums are rejected for runtime splitting. Bool/integer-range splitting is not
+  successful result joins remain unbuilt; a runtime-selected type cannot escape.
+  A type selected and consumed within a specialized body remains comptime-known.
+  Non-exhaustive enums can pass through generic code; they are rejected when
+  runtime splitting is requested. Bool/integer-range splitting is not
   activated by this change; range arms remain a separate probe. `resolve` itself
   resolves a refined leaf pack; `call`, return inference and delegation inject
   tables. General surface braces and patterns beyond defined type/enum/error values
   remain future work.
-  Evidence: native enum/delegation/ledger tests, `variant_dispatch`, six rejection
+  Evidence: native enum/delegation/ledger tests, `enum_demand`,
+  `enum_guard_runtime_ambiguous`, `variant_dispatch`, coverage/result rejection
   cases, and the modular [JSON case study](tests/json_dispatch/test.md).
   The [design walkthrough](design/dispatch_tables.md) shows shared scalar and
   container definitions, recursive traversal and independent policy modules.

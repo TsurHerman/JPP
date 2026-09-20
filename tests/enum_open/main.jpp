@@ -1,9 +1,10 @@
-modeType()::type = zig{
+Mode = zig{
     enum(u8) { first, _ }
 }
 
-make(S::type)::S = zig{ .first }
+make()::Mode = zig{ .first }
 
-identity(value) = value
+classify(Mode.first) = 1
+classify(::Mode) = 0
 
-main() = identity(make(modeType()))
+main() = classify(make())

@@ -1,0 +1,16 @@
+using Base
+using Base.Zig
+
+Level = Zig.std.log.Level
+
+needsAttention(level::Level) = isOneOf(level, Level.err, Level.warn)
+needsInvestigation(level::Level) = isOneOf(level, Level.err, Level.debug)
+
+label(level::Level) where needsAttention(level) = "ATTENTION"
+label(level::Level) where needsInvestigation(level) = "INVESTIGATE"
+label(::Level) = "NORMAL"
+
+# Runtime Level permits every case, even though this fixture returns info.
+receiveLevel()::Level = zig{ .info }
+
+main() = label(receiveLevel())

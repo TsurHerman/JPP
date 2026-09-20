@@ -733,16 +733,28 @@ fn valueGuardsLeq(comptime ctx: anytype, comptime a: []const ValueGuard, comptim
     return true;
 }
 
+fn valueGuardOk(comptime ctx: anytype, comptime guard: ValueGuard, comptime field: std.builtin.Type.StructField) bool {
+    const Input = infoPack(&.{fieldInfo(field)});
+    const result = GuardEvaluation(ctx, guard.body, Input).value;
+    if (result.T != bool) @compileError("jpp: value qualifier must return bool.");
+    if (result.value == null)
+        @compileError("jpp: value qualifier depends on runtime data; use a predicate on the selected type or tag.");
+    return staticValue(result);
+}
+
 fn valueGuardsOk(comptime ctx: anytype, comptime m: Method, comptime B: type) bool {
+    // A known false conjunct rejects the candidate before an unresolved enum
+    // guard needs its case. This agrees with bridgeField's branch pruning.
     for (m.value_guards) |guard| {
         const slot = guardSlot(m, guard.input).?;
         const field = @typeInfo(B).@"struct".fields[slot];
-        const Input = infoPack(&.{fieldInfo(field)});
-        const result = GuardEvaluation(ctx, guard.body, Input).value;
-        if (result.T != bool) @compileError("jpp: value qualifier must return bool.");
-        if (result.value == null)
-            @compileError("jpp: value qualifier depends on runtime data; use a predicate on the selected type or tag.");
-        if (!staticValue(result)) return false;
+        if (@typeInfo(field.type) == .@"enum" and !field.is_comptime) continue;
+        if (!valueGuardOk(ctx, guard, field)) return false;
+    }
+    for (m.value_guards) |guard| {
+        const field = @typeInfo(B).@"struct".fields[guardSlot(m, guard.input).?];
+        if (@typeInfo(field.type) != .@"enum" or field.is_comptime) continue;
+        if (!valueGuardOk(ctx, guard, field)) return false;
     }
     return true;
 }
@@ -1254,7 +1266,7 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
         if (same_home_clash)
             @compileError("jpp: call of '" ++ word ++ "' is AMBIGUOUS — " ++
                 "two maximally specific methods in one module (define the intersection method)." ++
-                candidatesText(ctx, word));
+                variantDescription(Raw) ++ candidatesText(ctx, word));
         if (first_max == null) @compileError("jpp: call of '" ++ word ++ "' has no maximal method (cyclic strict order).");
         return first_max;
     }
@@ -1323,15 +1335,128 @@ pub fn isVariant(comptime T: type, comptime U: type, comptime tag: std.meta.Tag(
     return isVariantOf(T, U) and T.Tag == tag;
 }
 
-fn bridgeField(comptime Raw: type) ?usize {
+// Match a possible enum branch without enumerating its values. Known cases
+// still constrain the candidate; only unresolved enum patterns are widened.
+fn possibleEnumBinding(comptime m: Method, comptime Raw: type) ?type {
+    var sig: [m.signature.len]Slot = undefined;
+    @memcpy(&sig, m.signature);
+    for (@typeInfo(Raw).@"struct".fields) |f| {
+        const i = slotFor(m.signature, f.name) orelse return null;
+        const q = m.signature[i].qual;
+        if (q == .enum_value and !f.is_comptime and @typeInfo(f.type) == .@"enum") {
+            sig[i].qual = .{ .exact = @TypeOf(q.enum_value.Value) };
+        } else if (!qualOk(q, f)) return null;
+    }
+    return construct(&sig, Raw);
+}
+
+/// Split enum coordinates needed for applicability or a type-valued result.
+/// Generic methods retain runtime enums; calls in their bodies decide locally
+/// whether a case is needed. Sum inputs still require their payload refinement.
+fn bridgeField(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ?usize {
+    return bridgeFieldIn(ctx, ctx, word, Raw);
+}
+
+fn bridgeFieldIn(comptime ctx: anytype, comptime execution_ctx: anytype, comptime word: []const u8, comptime Raw: type) ?usize {
+    var has_enum = false;
     for (@typeInfo(Raw).@"struct".fields, 0..) |f, i| {
         switch (@typeInfo(f.type)) {
-            .@"enum" => if (!f.is_comptime) return i,
+            .@"enum" => |e| if (!f.is_comptime) {
+                if (e.fields.len == 0 and e.is_exhaustive) return i;
+                has_enum = true;
+            },
             .@"union" => |u| if (u.tag_type != null) return i,
             .error_union => return i,
             .error_set => if (!f.is_comptime or f.type != @TypeOf(ErrorValue(f.defaultValue().?).Value)) return i,
             else => {},
         }
+    }
+    if (!has_enum) return null;
+    var needed: ?usize = null;
+    for (ctx) |mod| {
+        if (!@hasDecl(mod, word)) continue;
+        const MM = @field(mod, word);
+        if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
+        candidates: for (MM.methods) |m| {
+            const B = possibleEnumBinding(m, Raw) orelse continue;
+            const candidate_ctx = extendAll(ctx, StaticOf(m.declaration_home orelse mod));
+            if (!eqsOk(candidate_ctx, m, B) or !gatesOk(candidate_ctx, m, B)) continue;
+            // Facts established by an earlier split can rule this method out,
+            // removing its demand for any remaining enum cases.
+            for (m.value_guards) |guard| {
+                const field = @typeInfo(B).@"struct".fields[guardSlot(m, guard.input).?];
+                if (@typeInfo(field.type) == .@"enum" and !field.is_comptime) continue;
+                if (!valueGuardOk(candidate_ctx, guard, field)) continue :candidates;
+            }
+            for (@typeInfo(Raw).@"struct".fields, 0..) |f, i| {
+                if (f.is_comptime or @typeInfo(f.type) != .@"enum") continue;
+                const slot = slotFor(m.signature, f.name).?;
+                if (m.signature[slot].qual != .enum_value and valueGuardsAt(m, slot).len == 0) continue;
+                if (needed == null or i < needed.?) needed = i;
+            }
+        }
+    }
+    if (needed) |i| return i;
+
+    // Type-valued intermediate results cannot escape a runtime branch. Lift
+    // only their enum dependencies to this call, keeping the continuation in
+    // the specialized body (e.g. read(reader, offsetType(format), endian)).
+    const r = resolve(ctx, word, Raw) orelse return null;
+    const xctx = extendAll(execution_ctx, StaticOf(r.m.declaration_home orelse r.home));
+    if (r.m.body == .ground) {
+        if (methodRet(xctx, r.m, r.B) == type) {
+            for (@typeInfo(Raw).@"struct".fields, 0..) |f, i|
+                if (@typeInfo(f.type) == .@"enum" and !f.is_comptime) return i;
+        }
+        return null;
+    }
+    return bodyEnumDemand(xctx, r.m, r.B, Raw);
+}
+
+fn enumOrigins(comptime ref: ValRef, comptime m: Method, comptime Raw: type, comptime locals: anytype) [@typeInfo(Raw).@"struct".fields.len]bool {
+    const fields = @typeInfo(Raw).@"struct".fields;
+    var result: [fields.len]bool = @splat(false);
+    switch (ref) {
+        .param => |p| for (fields, 0..) |f, j| {
+            if (@typeInfo(f.type) == .@"enum" and !f.is_comptime and slotFor(m.signature, f.name).? == p)
+                result[j] = true;
+        },
+        .local => |l| result = locals[l],
+        else => {},
+    }
+    return result;
+}
+
+fn bodyEnumDemand(comptime ctx: anytype, comptime m: Method, comptime B: type, comptime Raw: type) ?usize {
+    const flat = m.body.ops;
+    const fields = @typeInfo(Raw).@"struct".fields;
+    var infos: [flat.ops.len]ValueInfo = undefined;
+    var origins: [flat.ops.len][fields.len]bool = undefined;
+    for (flat.ops, 0..) |op, i| {
+        origins[i] = @splat(false);
+        for (op.args) |ref| {
+            for (enumOrigins(ref, m, Raw, origins[0..i]), 0..) |from, j| {
+                origins[i][j] = origins[i][j] or from;
+            }
+        }
+        if (op.kind == .call) {
+            const Args = argPack(op, B, infos[0..i]);
+            const c = canon(ctx, op.callee);
+            if (RetOf(c, op.callee, Args) == type) {
+                if (bridgeField(c, op.callee, Args)) |split| {
+                    if (!@typeInfo(Args).@"struct".fields[split].is_comptime) {
+                        const entries = expandedEntries(op, B, infos[0..i]);
+                        const demanded = enumOrigins(op.args[entries[split].source], m, Raw, origins[0..i]);
+                        for (demanded, 0..) |from, j| if (from) return j;
+                    }
+                }
+            }
+        }
+        infos[i] = switch (op.kind) {
+            .call => callInfo(ctx, op.callee, argPack(op, B, infos[0..i])),
+            .pack => .{ .T = argPack(op, B, infos[0..i]) },
+            .project => projectedInfo(refInfo(op.args[0], B, infos[0..i]), op.field),
+        };
     }
     return null;
 }
@@ -1455,7 +1580,10 @@ fn joinedVariantResult(comptime A: type, comptime B: type) ?type {
 
 fn addBridgeResult(comptime result: type, comptime R: type, comptime word: []const u8) type {
     if (R == noreturn) return result;
-    if (R == type or @typeInfo(R) == .comptime_int or @typeInfo(R) == .comptime_float)
+    // Describe type-valued branches during demand analysis. Execution still
+    // rejects them unless an enclosing specialization keeps the result static.
+    if (R == type and (result == noreturn or result == type)) return type;
+    if (@typeInfo(R) == .comptime_int or @typeInfo(R) == .comptime_float)
         @compileError("jpp: runtime variant selection cannot return a comptime-only value.");
     return joinedVariantResult(result, R) orelse
         @compileError("jpp: injected switch arms require one result type in '" ++ word ++ "' (" ++ @typeName(result) ++ " versus " ++ @typeName(R) ++ ").");
@@ -1517,6 +1645,7 @@ fn bridgeCall(comptime rctx: anytype, comptime xctx: anytype, comptime word: []c
     const R = bridgeRet(rctx, xctx, word, @TypeOf(raw), i, delegated);
     if (comptime f.is_comptime)
         return selectedCall(rctx, xctx, word, knownBranchPack(raw, i), delegated);
+    if (comptime R == type) @compileError("jpp: runtime variant selection cannot return a comptime-only value.");
     const info = comptime @typeInfo(f.type);
     if (comptime info == .error_union) {
         if (@field(raw, f.name)) |payload| {
@@ -1659,9 +1788,9 @@ fn guardCallInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw:
     // A native ground may run only with real, known values. Zig's comptime
     // execution also prevents it from observing or mutating runtime state.
     if (allFieldsKnown(Raw)) return staticInfo(call(ctx, word, @as(Raw, undefined)));
-    if (bridgeField(Raw) != null)
-        @compileError("jpp: value qualifier depends on a runtime value; only selected type/tag facts are available.");
     const c = canon(ctx, word);
+    if (bridgeField(c, word, Raw) != null)
+        @compileError("jpp: value qualifier depends on a runtime value; only selected type/tag facts are available.");
     const r = resolve(c, word, Raw) orelse
         @compileError("jpp: no method '" ++ word ++ "' matches in value qualifier." ++ variantDescription(Raw) ++ candidatesText(ctx, word));
     if (r.m.body == .ground)
@@ -1853,7 +1982,8 @@ pub fn memberValue(comptime owner: anytype, comptime name: []const u8) @TypeOf(M
 fn callInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ValueInfo {
     const T = RetOf(ctx, word, Raw);
     if (T == type) return staticInfo(call(ctx, word, @as(Raw, undefined)));
-    if (bridgeField(Raw)) |i| {
+    const c = canon(ctx, word);
+    if (bridgeField(c, word, Raw)) |i| {
         const f = @typeInfo(Raw).@"struct".fields[i];
         // A known arm has the same result information as its refined call.
         // Follow metadata only: exec still runs the call's runtime effects.
@@ -1862,7 +1992,6 @@ fn callInfo(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type
         }
         return .{ .T = T };
     }
-    const c = canon(ctx, word);
     const r = resolve(c, word, Raw) orelse return .{ .T = T };
     if (r.m.body == .ops) {
         const flat = r.m.body.ops;
@@ -1919,8 +2048,8 @@ fn orderIdentity(comptime Raw: type) bool {
 /// Return type of a call; inferred returns are context-derived.
 pub fn RetOf(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) type {
     if (comptime std.mem.eql(u8, word, "<:") and orderIdentity(Raw)) return bool;
-    if (comptime bridgeField(Raw)) |i| return bridgeRet(ctx, ctx, word, Raw, i, false);
     const c = comptime canon(ctx, word);
+    if (comptime bridgeField(c, word, Raw)) |i| return bridgeRet(c, c, word, Raw, i, false);
     const r = comptime resolve(c, word, Raw) orelse {
         if (std.mem.eql(u8, word, "<:")) return bool;
         @compileError("jpp: no method '" ++ word ++ "' matches in context." ++ variantDescription(Raw) ++ candidatesText(ctx, word));
@@ -1992,8 +2121,8 @@ fn exec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) flatRet(ctx,
 /// method, the effective context is caller ++ home STATIC (dedup,
 /// caller ahead) — context reaches downward and accumulates.
 pub fn call(comptime ctx: anytype, comptime word: []const u8, raw: anytype) RetOf(ctx, word, @TypeOf(raw)) {
-    if (comptime bridgeField(@TypeOf(raw))) |i| return bridgeCall(ctx, ctx, word, raw, i, false);
     const c = comptime canon(ctx, word);
+    if (comptime bridgeField(c, word, @TypeOf(raw))) |i| return bridgeCall(c, c, word, raw, i, false);
     if (comptime std.mem.eql(u8, word, "<:") and orderIdentity(@TypeOf(raw))) return true;
     const resolved = comptime resolve(c, word, @TypeOf(raw));
     const r = resolved orelse {
@@ -2014,7 +2143,7 @@ pub fn call(comptime ctx: anytype, comptime word: []const u8, raw: anytype) RetO
 /// delegation: M.f(x) — resolve the word in M's context (selection),
 /// execute with the caller's accumulated context (propagation).
 pub fn delegate(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, raw: anytype) DelegateRet(rctx, xctx, word, @TypeOf(raw)) {
-    if (comptime bridgeField(@TypeOf(raw))) |i| return bridgeCall(rctx, xctx, word, raw, i, true);
+    if (comptime bridgeFieldIn(rctx, xctx, word, @TypeOf(raw))) |i| return bridgeCall(rctx, xctx, word, raw, i, true);
     const r = comptime resolve(rctx, word, @TypeOf(raw)) orelse
         @compileError("jpp: no method '" ++ word ++ "' in delegated context");
     const bound = bindValues(r.m.signature, r.B, raw);
@@ -2026,7 +2155,7 @@ pub fn delegate(comptime rctx: anytype, comptime xctx: anytype, comptime word: [
 }
 
 fn DelegateRet(comptime rctx: anytype, comptime xctx: anytype, comptime word: []const u8, comptime Raw: type) type {
-    if (comptime bridgeField(Raw)) |i| return bridgeRet(rctx, xctx, word, Raw, i, true);
+    if (comptime bridgeFieldIn(rctx, xctx, word, Raw)) |i| return bridgeRet(rctx, xctx, word, Raw, i, true);
     const r = comptime resolve(rctx, word, Raw) orelse
         @compileError("jpp: no method '" ++ word ++ "' in delegated context");
     return methodRet(extendAll(xctx, StaticOf(r.m.declaration_home orelse r.home)), r.m, r.B);
@@ -2273,6 +2402,24 @@ test "enum table uses the resolver before broad fallback, including deep overrid
     try std.testing.expectEqual(2, delegate(.{bridge_enum_base}, .{ bridge_enum_override, bridge_enum_base }, "choose", .{mode}));
     try std.testing.expectEqual(9, delegate(.{bridge_enum_base}, .{ bridge_enum_override, bridge_enum_base }, "relay", .{mode}));
     try std.testing.expectEqual(2, comptime call(.{bridge_enum_base}, "choose", .{bridge_mode.raw}));
+    const Facade = struct {
+        pub const UNIT = bridge_enum_base;
+    };
+    try std.testing.expectEqual(2, call(.{Facade}, "choose", .{mode}));
+}
+
+test "enum demand handles rest patterns and known mismatches" {
+    const M = struct {
+        pub const allRaw = MultiMethod("allRaw", &.{
+            .{ .name = "allRaw", .signature = &.{.{ .name = "modes", .rest = true, .qual = .{ .exact = bridge_mode } }}, .body = .{ .ground = GroundConst(0) } },
+            .{ .name = "allRaw", .signature = &.{.{ .name = "modes", .rest = true, .qual = .{ .enum_value = EnumValue(bridge_mode.raw) } }}, .body = .{ .ground = GroundConst(1) } },
+        });
+    };
+    var mode = bridge_mode.raw;
+    try std.testing.expectEqual(1, call(.{M}, "allRaw", .{ mode, mode }));
+    mode = .text;
+    try std.testing.expectEqual(0, call(.{M}, "allRaw", .{ bridge_mode.raw, mode }));
+    try std.testing.expectEqual(0, call(.{M}, "allRaw", .{ mode, bridge_mode.raw }));
 }
 
 test "nested enum table preserves named coordinates, static fields, and rest binding" {
@@ -3182,4 +3329,60 @@ test "error-set signature predicates describe the refined error types" {
     try std.testing.expectEqual(error{EndOfStream}, qualMeet(errors, end).?.exact);
     try std.testing.expectEqual(error{EndOfStream}, qualMeet(end, errors).?.exact);
     try std.testing.expect(qualMeet(errors, whole) == null);
+}
+
+test "delegated bodies discover type demand in the caller execution context" {
+    const Format = enum { narrow, wide };
+    const Width = struct {
+        pub fn Ret(comptime B: type) type {
+            _ = B;
+            return i64;
+        }
+        pub fn run(bound: anytype) i64 {
+            return @sizeOf(bound.T);
+        }
+    };
+    const Reader = struct {
+        pub const decodeWidth = MultiMethod("decodeWidth", &.{.{
+            .name = "decodeWidth",
+            .signature = &.{.{ .name = "format", .qual = .{ .exact = Format } }},
+            .body = .{ .ops = .{
+                .ops = &.{
+                    .{ .callee = "wireType", .args = &.{.{ .param = 0 }} },
+                    .{ .callee = "byteWidth", .args = &.{.{ .local = 0 }} },
+                },
+                .result = .{ .local = 1 },
+            } },
+        }});
+        // The selection context alone requires no knowledge of format's case.
+        pub const wireType = MultiMethod("wireType", &.{.{
+            .name = "wireType",
+            .signature = &.{.{ .name = "format", .qual = .{ .exact = Format } }},
+            .body = .{ .ops = .{ .ops = &.{}, .result = .{ .type_value = u8 } } },
+        }});
+        pub const byteWidth = MultiMethod("byteWidth", &.{.{
+            .name = "byteWidth",
+            .signature = &.{.{ .name = "T", .qual = .{ .exact = type } }},
+            .body = .{ .ground = Width },
+        }});
+    };
+    const Caller = struct {
+        pub const wireType = MultiMethod("wireType", &.{
+            .{
+                .name = "wireType",
+                .signature = &.{.{ .name = "format", .qual = .{ .enum_value = EnumValue(Format.narrow) } }},
+                .body = .{ .ops = .{ .ops = &.{}, .result = .{ .type_value = u16 } } },
+            },
+            .{
+                .name = "wireType",
+                .signature = &.{.{ .name = "format", .qual = .{ .enum_value = EnumValue(Format.wide) } }},
+                .body = .{ .ops = .{ .ops = &.{}, .result = .{ .type_value = u32 } } },
+            },
+        });
+    };
+    var format = Format.narrow;
+    try std.testing.expectEqual(@as(i64, 1), call(.{Reader}, "decodeWidth", .{format}));
+    try std.testing.expectEqual(@as(i64, 2), delegate(.{Reader}, .{ Caller, Reader }, "decodeWidth", .{format}));
+    format = .wide;
+    try std.testing.expectEqual(@as(i64, 4), delegate(.{Reader}, .{ Caller, Reader }, "decodeWidth", .{format}));
 }

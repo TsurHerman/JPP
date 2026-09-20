@@ -1,0 +1,41 @@
+using Base
+using Base.Zig
+using log
+using fixture
+
+Format = Zig.std.dwarf.Format
+
+# Logging policy travels with the read, but only format chooses the wire type.
+wireType(::Level, ::Level, ::Level, Format.32) = uint32
+wireType(::Level, ::Level, ::Level, Format.64) = uint64
+
+readFormat(wide::bool)::Format = zig{ if (wide) .@"64" else .@"32" }
+
+decodeWord(bytes::string, T::type)::uint64 = zig{
+    std.mem.readInt(T, bytes[0..@sizeOf(T)], .little)
+}
+
+decodeOffset(trace::Level, audit::Level, alert::Level, format::Format, bytes::string) = {
+    check("type selection leaves unrelated policies runtime", runtimeFields((trace, audit, alert)), true)
+    decodeWord(bytes, wireType(trace, audit, alert, format))
+}
+
+expected32()::uint64 = zig{ 0x04030201 }
+expected64()::uint64 = zig{ 0x0807060504030201 }
+
+main() = {
+    inbox = newInbox()
+    bytes = "\x01\x02\x03\x04\x05\x06\x07\x08"
+    narrow = decodeOffset(
+        receiveLevel(inbox, 0), receiveLevel(inbox, 1), receiveLevel(inbox, 2),
+        readFormat(false), bytes
+    )
+    wide = decodeOffset(
+        receiveLevel(inbox, 3), receiveLevel(inbox, 2), receiveLevel(inbox, 1),
+        readFormat(true), bytes
+    )
+    check("32-bit format selects a four-byte decode", narrow, expected32())
+    check("64-bit format selects an eight-byte decode", wide, expected64())
+    check("type specialization never repeats policy producers", readCount(inbox), 6)
+    releaseInbox(inbox)
+}
