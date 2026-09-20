@@ -146,6 +146,9 @@ value cycles, builtin replacement, calling constants and unstaged initializers.
 `enum_pattern_member`, `enum_pattern_missing`, `enum_pattern_owner` and
 `enum_pattern_order` enforce declared cases even in unused signatures, runtime
 coverage, native owner identity and the type-only order word.
+[enum_pattern_missing](enum_pattern_missing/test.md) illustrates runtime coverage
+with a log viewer: labels exist for error, info and debug, but the forgotten
+warning label makes compilation fail. Its explanation shows the one-line fix.
 
 `dwarf_offsets` replaces a real binary-reader switch with composed width and
 endianness methods. It uses native enums through Base.Zig, covers all four runtime

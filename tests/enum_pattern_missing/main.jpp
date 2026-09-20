@@ -1,5 +1,22 @@
 using Base.Zig
-Format = Zig.std.dwarf.Format
-only(Format.32) = 1
-runtimeFormat() = zig{ @as(std.dwarf.Format, .@"32") }
-main() = only(runtimeFormat())
+
+Level = Zig.std.log.Level
+
+# A log viewer needs a label for each incoming message's level.
+label(Level.err)   = "ERROR"
+label(Level.info)  = "INFO"
+label(Level.debug) = "DEBUG"
+
+# Deliberately missing: label(Level.warn) = "WARNING"
+# This case must fail compilation because warnings have no label.
+
+main() = {
+    level = incomingLevel()
+    label(level)
+}
+
+# Test fixture: stand in for a log record arriving at runtime.
+# An ordinary ground return is runtime data, even for this fixed sample.
+incomingLevel()::Level = zig{
+    .info
+}
