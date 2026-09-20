@@ -1,0 +1,8 @@
+# anyerror does not enumerate a finite set of cases for the injected table.
+Failure = zig{ anyerror }
+
+explain(::Failure) = "Something failed"
+
+incomingFailure()::Failure = zig{ error.ReadFailed }
+
+main() = explain(incomingFailure())

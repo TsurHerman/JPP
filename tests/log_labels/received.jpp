@@ -1,0 +1,23 @@
+using log.model
+
+export receiveLevel, newInbox, releaseInbox, readCount
+
+# A tiny fixture models receiving one log record. Its severity is runtime data.
+newInbox() = zig{
+    blk: {
+        const count = std.heap.page_allocator.create(i64) catch @panic("fixture allocation failed");
+        count.* = 0;
+        break :blk count;
+    }
+}
+
+releaseInbox(inbox)::nothing = zig{ std.heap.page_allocator.destroy(inbox) }
+
+readCount(inbox)::int64 = zig{ inbox.* }
+
+receiveLevel(inbox, severity::int64)::Level = zig{
+    blk: {
+        inbox.* += 1;
+        break :blk @enumFromInt(@as(u2, @intCast(severity)));
+    }
+}

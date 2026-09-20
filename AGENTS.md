@@ -59,13 +59,32 @@ a feature; preserve the ratified semantics unless the task changes them.
   for otherwise tied coordinates. Uniform T needs a witness when empty;
   short predicate rest annotations check each element independently.
   `design/` is a design notebook, not runnable regression fixtures.
-- Ordinary direct enum/tagged-union inputs inject a table before selection in
+- Ordinary direct enum/tagged-union/error-set/error-union inputs inject a table before selection in
   the machinery. Resolve each arm with the normal context and specificity rules;
   evaluate producers once. Enum values become static fields; union inputs become
   Variant(owner, tag) values with .payload. Keep owner/tag identity, static known
   arm coverage, runtime exhaustiveness, and return joins into the owning union.
   Variant groups are ordinary predicates. Do not introduce JSON-specific compiler
   rules, implicit catch-alls, or automatically split fields hidden inside records.
+- Value qualifiers in `where` are ordinary boolean expressions over one fixed
+  input per condition. Evaluate them at comptime from known values or type/tag
+  facts; never fabricate runtime payloads. Require bool, keep
+  guards' lexical dependencies and declaration homes through context collapse,
+  and cache applicability by context/expression/input facts. Guards refine their
+  base signature coordinate; exact cases remain above typed guarded defaults.
+  Compare conjunctions and direct authored predicate order pointwise. Unknown
+  implication stays incomparable. Runtime scalar guards and correlated/whole-rest
+  conditions remain unbuilt. Native predicates must receive known inputs.
+  Validate member paths rooted in known module values even in unused guards and
+  ordinary bodies, without executing calls or inspecting unknown parameters.
+- Native error values keep their shared name identity across error sets. Validate
+  qualified members against their declared finite set. Exact errors refine native
+  set annotations, and narrower sets refine supersets. `E!T` input branches expose
+  success T or a known native error. Compatible branch results rejoin native error
+  unions/sets, including tagged-union payload joins; producers still execute once.
+  Runtime anyerror is open and rejected for table injection. Dispatch never adds
+  implicit error propagation/early return. Tagged unions represent payload sums;
+  first-class Sum constructors and callable predicate factories remain unbuilt.
 - The enum interface is to be a tight Zig wrapper authored in the jpp library:
   preserve native type identity, cases, tag values and layout. Shared enum/union
   dispatch does not require a new common value representation. The wrapper API

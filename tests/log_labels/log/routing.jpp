@@ -1,0 +1,9 @@
+using Base
+using log.model
+
+export needsAttention, destination
+
+needsAttention(level::Level) = isOneOf(level, Level.err, Level.warn)
+
+destination(level::Level) where needsAttention(level) = "operator"
+destination(::Level) = "archive"

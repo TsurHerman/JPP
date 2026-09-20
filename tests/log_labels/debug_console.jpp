@@ -1,0 +1,16 @@
+using Base
+using policy.debug_alerts
+using log.model
+using log.labels
+using received
+
+main() = {
+    inbox = newInbox()
+
+    check("caller policy includes debug in attention", label(receiveLevel(inbox, 3)), "ATTENTION")
+    check("caller policy reaches the nested classifier", panel(receiveLevel(inbox, 3)), "ALERTS")
+    check("caller policy retains the info default", label(receiveLevel(inbox, 2)), "NORMAL")
+    check("caller policy still receives each record once", readCount(inbox), 3)
+
+    releaseInbox(inbox)
+}

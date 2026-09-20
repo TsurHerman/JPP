@@ -1,0 +1,14 @@
+using Base
+using Base.Zig
+
+Level = Zig.std.log.Level
+
+needsAttention(level::Level) = isOneOf(level, Level.err, Level.warn)
+
+label(level::Level) where needsAttention(level) = "ATTENTION"
+
+# Missing: label(::Level) = "NORMAL"
+# A runtime log record can also contain info or debug.
+receiveLevel()::Level = zig{ .err }
+
+main() = label(receiveLevel())

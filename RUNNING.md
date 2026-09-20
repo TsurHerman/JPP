@@ -31,7 +31,7 @@ shadow them), then `zig run <out_dir>/run.zig`.
 `zig test src/jpp.zig`; `zig test spike/<probe>.zig`.
 
 Imports are explicit. `using Base` selects the public facade at Base/Base.jpp;
-it includes arithmetic, Any, Tuple utilities and check. Leaf imports such as
+it includes arithmetic, boolean words, equality, isOneOf, Any, Tuple utilities and check. Leaf imports such as
 `using Base.Arithmetic` and `using Base.Test` select narrower interfaces.
 `using folder.*` collects siblings excluding folder/folder.jpp; `using folder`
 uses that facade when present. Mutual imports share one dispatch unit while
@@ -67,6 +67,20 @@ The dwarf facade chooses the offset width; Binary.Input chooses byte order.
 Two native IO leaves do the actual read. The case covers all four combinations,
 truncated input, producer order and a caller's audit override in a second context.
 
+For a small introduction to predicate-qualified dispatch, start with
+[log labels](tests/log_labels/test.md):
+
+```sh
+zig run src/jppc.zig -- tests/log_labels tests/.gen/log_labels
+zig run tests/.gen/log_labels/run.zig
+```
+
+Boolean predicates and classifier comparisons choose labels for incoming log
+records. A typed default completes the runtime table, and a caller policy can
+change the group. [File-header errors](tests/error_dispatch/test.md) applies the
+same mechanism to a successful byte or a native error. [Packet routing](tests/value_guard_variant/test.md)
+uses a selected tagged-union type without inspecting its runtime payload in a guard.
+
 **The case contract (unix, self-judging, ONE artifact):** jppc emits a
 single `run.zig` per tree. Each program (root module defining `main`)
 runs as a fresh root context; `check(name, got, want)` (from
@@ -93,7 +107,7 @@ pack syntax, and module paths; they do not reach Zig compilation.
 | `src/jppc.zig` | the transpiler: lexer -> parser -> ANF -> data-literal printer -> module graph -> driver; parsing/normalization stay file-local, dispatch stays in jpp.zig |
 | `src/ast.zig` | the ratified three-layer AST model (Expr/Method/FlatBody); jppc does not consume it yet — acknowledged debt |
 | `tests/` | the language cases: each folder a tree; programs are root modules that define `main` (see `tests/README.md`) |
-| `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Any, Test, Tuple and Zig; source modules can shadow matching bundled paths. Explicit `using Base.Zig` exposes native namespaces/types/constants; native calls still use `zig{}` |
+| `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Boolean, Equality, Any, Test, Tuple and Zig; source modules can shadow matching bundled paths. Explicit `using Base.Zig` exposes native namespaces/types/constants; native calls still use `zig{}` |
 | `design/` | rewritten design notebook: modules, packs, contracts, type families, numerics, binary artifacts and implementation sequence |
 | `editors/vscode/` | JPP TextMate grammar, VS Code/Cursor extension, and local HTML renderer; optional Node tooling |
 | `tests/README.md` | the promise catalog and suite conventions (machinery tests live inline in `src/jpp.zig`) |

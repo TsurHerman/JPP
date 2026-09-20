@@ -1,0 +1,5 @@
+using Base.Zig
+
+export Level
+
+Level = Zig.std.log.Level

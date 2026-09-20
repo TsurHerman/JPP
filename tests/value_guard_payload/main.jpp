@@ -1,0 +1,25 @@
+using Base
+export <:
+
+Packet = zig{
+    union(enum) {
+        text: []const u8,
+        ping: void,
+    }
+}
+
+TextPacket(T::type) = hasTextTag(T, Packet)
+
+hasTextTag(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .text) }
+
+<:(TextPacket, Any) = true
+
+# The packet's tag is known in its branch. Its incoming text is still runtime data.
+shouldCompress(text::string)::bool = zig{ text.len > 80 }
+
+encoding(packet<:TextPacket) where shouldCompress(packet.payload) = "compressed"
+encoding(<:Any) = "plain"
+
+receive(P::type)::P = zig{ .{ .text = "hello" } }
+
+main() = encoding(receive(Packet))

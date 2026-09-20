@@ -1,0 +1,34 @@
+using Base.Any
+using Base.Boolean
+
+export ==, isOneOf
+
+# Equality remains library code and can be refined in the caller's context.
+==(left::string, right::string)::bool = zig{
+    std.mem.eql(u8, left, right)
+}
+
+Scalar(T::type)::bool = zig{
+    switch (@typeInfo(T)) {
+        .int, .float, .bool, .type => true,
+        else => false,
+    }
+}
+
+==(left::T, right::T)::bool where T <: Scalar = zig{ left == right }
+
+Enum(T::type)::bool = zig{ @typeInfo(T) == .@"enum" }
+ErrorSet(T::type)::bool = zig{ @typeInfo(T) == .error_set }
+
+==(left<:Enum, right<:Enum)::bool = zig{
+    if (@TypeOf(left) == @TypeOf(right)) left == right else false
+}
+
+# Native errors share their identity across sets.
+==(left<:ErrorSet, right<:ErrorSet)::bool = zig{ left == right }
+
+# A predicate over an ordinary, statically shaped argument pack.
+# This is membership testing, not a constructor for a callable value.
+isOneOf(<:Any) = false
+isOneOf(value, candidate, remaining...) =
+    (value == candidate) || isOneOf(value, remaining...)

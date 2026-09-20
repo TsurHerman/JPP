@@ -1,6 +1,7 @@
 # Generality implementation sequence
 
-Revised 2026-09-20 after implementing the modular DWARF reader. This supersedes
+Revised 2026-09-20 after implementing value qualifiers and native error dispatch.
+The modular DWARF reader remains the first binary consumer. This supersedes
 the earlier feature-by-feature sequence, which postponed dependency visibility
 and static fields until after consumers were already built.
 
@@ -31,6 +32,22 @@ composition. This completes the bounded source slice, not a general reflection
 or branch library. Next specify ordinary static application's stage/context and
 derive the remaining generic primitives from this consumer. Arbitrary initializer
 calls, callable values and staged branch continuations remain unbuilt.
+
+The next bounded slice now runs: [log labels](../tests/log_labels/test.md) uses
+ordinary boolean predicates and classifier comparisons in `where`; typed defaults
+complete the enum table. A [file-header reader](../tests/error_dispatch/test.md)
+uses native finite error sets and error unions through the same dispatch path,
+including a validator that adds an error and a caller that replaces one message.
+[Packet routing](../tests/value_guard_variant/test.md) uses the known type/tag of
+a native sum value while preserving its runtime payload.
+
+These guards refine one fixed argument at a time and execute only from known
+facts. Their dependencies remain lexical, their applicability remains contextual,
+and overlapping predicates need normal precedence. `isOneOf(value, cases...)`
+is a variadic membership query. First-class predicate factories, correlated
+multi-input guards, runtime numeric intervals and arbitrary static initializers
+remain separate work. Native error-set/union result joins now run; unrelated
+successful result types do not silently acquire a new sum representation.
 
 A port earns its place when ordinary jpp definitions make shared behavior or
 contextual customization useful and can be checked against the native reference.

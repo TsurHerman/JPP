@@ -1,0 +1,46 @@
+using Base
+
+# The wire format is native Zig. Only text packets need the text decoder.
+Packet = zig{
+    union(enum) {
+        text: []const u8,
+        count: i64,
+        ping: void,
+    }
+}
+
+isTextPacket(T::type) = hasTextTag(T, Packet)
+
+hasTextTag(T::type, Owner::type)::bool = zig{ jpp.isVariant(T, Owner, .text) }
+
+# This ordinary helper uses the selected type, without reading its payload.
+needsTextDecoder(packet::T) where T = isTextPacket(T)
+
+route(packet<:Any) where needsTextDecoder(packet) = "text decoder"
+route(<:Any) = "control handler"
+
+# Runtime contents are read only after selection, in the selected method body.
+textBytes(packet<:Any) where needsTextDecoder(packet) = byteCount(packet.payload)
+textBytes(<:Any) = 0
+
+byteCount(text::string)::int64 = zig{ @intCast(text.len) }
+
+receive(P::type, kind::int64)::P = zig{
+    switch (kind) {
+        0 => .{ .text = "hello" },
+        1 => .{ .count = 42 },
+        else => .{ .ping = {} },
+    }
+}
+
+main() = {
+    text = receive(Packet, 0)
+    count = receive(Packet, 1)
+    ping = receive(Packet, 2)
+    check("text packets select the text decoder", route(text), "text decoder")
+    check("count packets use the default handler", route(count), "control handler")
+    check("ping packets use the default handler", route(ping), "control handler")
+    check("the selected text method reads its runtime payload", textBytes(text), 5)
+    check("the count default does not inspect a text payload", textBytes(count), 0)
+    check("the ping default does not inspect a text payload", textBytes(ping), 0)
+}

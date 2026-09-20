@@ -1,0 +1,8 @@
+using Base
+using Base.Zig
+
+ReadError = Zig.std.Io.Reader.Error
+
+# An error name must belong to the declared finite set, even in an unused guard.
+retry(problem::ReadError) where problem == ReadError.ReadFaild = true
+main() = check("the program never calls retry", true, true)

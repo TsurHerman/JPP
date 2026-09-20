@@ -1,0 +1,4 @@
+using reader
+export explainRead
+
+explainRead(ReadError.ReadFailed) = "Ask the user to reconnect the device"

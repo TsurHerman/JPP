@@ -1,0 +1,53 @@
+using reader
+
+export deviceFailure, incomingFailure, knownByte, knownEnd, knownOpenEnd
+export record, hasType, isStatic, callCount, resetCount, countedRead
+
+# Stand in for a device whose errors cannot be known until execution.
+incomingFailure(deviceBroken::bool)::ReadError = zig{
+    if (deviceBroken) error.ReadFailed else error.EndOfStream
+}
+
+deviceFailure()::ReadResult = zig{ error.ReadFailed }
+
+# Intentional static fields expose a known branch, unlike ordinary runtime returns.
+knownByte(R::type) = zig{ .{ .value = @as(R, @as(u8, 65)) } }
+
+knownEnd(R::type) = zig{ .{ .value = @as(R, error.EndOfStream) } }
+
+knownOpenEnd() = zig{ .{ .value = @as(anyerror, error.EndOfStream) } }
+
+record(value) = (value,)
+
+hasType(pack, T::type)::bool = zig{ @TypeOf(pack.@"0") == T }
+
+isStatic(pack)::bool = zig{ @typeInfo(@TypeOf(pack)).@"struct".fields[0].is_comptime }
+
+counterType()::type = zig{
+    struct {
+        pub var reads: i64 = 0;
+    }
+}
+
+callCount() = count(counterType())
+
+count(C::type)::int64 = zig{ C.reads }
+
+resetCount() = reset(counterType())
+
+reset(C::type)::nothing = zig{
+    {
+        C.reads = 0;
+    }
+}
+
+countedRead(bytes::string) = {
+    tick(counterType())
+    readByte(bytes)
+}
+
+tick(C::type)::nothing = zig{
+    {
+        C.reads += 1;
+    }
+}

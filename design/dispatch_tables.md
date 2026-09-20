@@ -1,15 +1,76 @@
 # Methods describe cases; specialization builds control flow
 
-Status: automatic enum/tagged-union calls RUN in the active machinery. The
+Status: automatic enum/tagged-union/error-set/error-union calls RUN in the active machinery. The
 serialization and DWARF cases below are executable jpp, not proposed syntax.
-Defined enum values/member paths now work in signatures (2026-09-20). General
+Defined enum/error values and member paths now work in signatures (2026-09-20).
+Boolean value qualifiers and explicit classifier comparisons run over known
+branch facts, with ordinary typed defaults. General
 static application and dedicated enum declarations remain unbuilt.
 
 RATIFIED principle: a branch establishes a fact that ordinary dispatch can use
 inside that branch; knowing the fact at comptime removes the runtime test.
-The value itself may remain runtime data. General fact representation, syntax
-and runtime-predicate rules below remain OPEN. This does not claim that the
-implemented enum rule already supports arbitrary runtime predicates.
+The value itself may remain runtime data. General fact representation and
+runtime-predicate rules below remain OPEN. The implemented qualifiers do not
+support deciding a branch from unknown runtime numbers or payload contents.
+
+## Start with the log viewer
+
+RUNS, 2026-09-20: [log_labels](../tests/log_labels/test.md) displays log records
+and routes messages that need attention to an operator:
+
+```jpp
+using Base
+using Base.Zig
+
+Level = Zig.std.log.Level
+
+needsAttention(level::Level) = isOneOf(level, Level.err, Level.warn)
+
+label(level::Level) where needsAttention(level) = "ATTENTION"
+label(::Level) = "NORMAL"
+```
+
+`needsAttention` returns bool. A classifier returning text instead uses an
+explicit comparison such as `where destination(level) == "operator"`.
+The complete executable case separates the native type, policy, labels and
+input fixture into modules, and runs a second caller context that includes debug
+messages in the attention group. Every possible runtime enum case resolves before
+the program runs. Removing the default leaves uncovered cases; overlapping
+guards without precedence remain ambiguous in the winning module.
+
+`isOneOf` is ordinary variadic library code using `==`. It tests membership
+directly. It does not construct a closure or give module initializers a new stage;
+the earlier `needsAttention = oneOf(...)` factory sketch is still unbuilt.
+
+Each value qualifier currently refers to one fixed argument. Its ANF expression
+is evaluated from the selected branch's known values and type/tag facts. Native
+predicate calls require known arguments, and runtime data never becomes known by
+being placed in a guard. Comma-separated guards compose pointwise; direct authored
+predicate order and identical expressions supply refinement witnesses. Runtime
+predicates, relational multi-input guards and whole-rest guards remain OPEN.
+
+## Errors and payload sums use the same dispatch
+
+RUNS: [error_dispatch](../tests/error_dispatch/test.md) reads a byte or produces a
+native read failure. Ordinary methods handle success, end of input, and device
+failure. Error-set annotations form native groups; exact error cases and value
+predicates refine them. Missing possible outcomes fail compilation. A caller can
+replace one error policy through the normal accumulated context.
+
+Qualified error members must exist in their finite declared set. The same error
+name has one native identity across sets. Error-union inputs establish either a
+successful payload or a known error; handling or forwarding that error is an
+ordinary method result, never an implicit return from the caller. Compatible
+success/error results rejoin native error unions, merging error sets as necessary.
+Runtime `anyerror` remains open and is rejected for automatic table injection.
+Nested error-union inputs expose alternatives recursively, so an identity method
+on those leaves can merge error layers. Compatible native nested results returned
+by selected methods preserve their layers during result conversion.
+
+[value_guard_variant](../tests/value_guard_variant/test.md) routes packet variants
+through predicates on their selected type/tag. Payloads remain runtime data.
+Tagged unions supply native payload-carrying sums; separate `Sum(...)` construction
+syntax and general success-type unions remain unbuilt.
 
 ## The underlying structure
 
@@ -301,10 +362,11 @@ execution in Zig. Moving that policy into jpp needs supported reflection, static
 application and staged body construction. Ordinary `zig{}` grounds must not gain
 an implicit caller context to work around these missing facilities.
 
-General value guards remain OPEN. Their evaluation/effects, overlap, coverage,
-refinement representation and specificity need explicit rules. Start with a
-bounded pattern algebra; arbitrary predicate programs cannot generally have
-their inclusion or exhaustiveness decided by a compiler. The existing type-only
+Value guards over known facts now run as described above. Runtime value guards
+remain OPEN. Their evaluation/effects, overlap, coverage, refinement representation
+and specificity need explicit rules. Start with a bounded pattern algebra;
+arbitrary predicate programs cannot generally have their inclusion or
+exhaustiveness decided by a compiler. The existing type-only
 `<:` word remains type-only, pairwise and authored. It must not silently become
 a numeric comparison or a theorem prover for runtime regions.
 
@@ -475,8 +537,9 @@ composition and recursive traversal. No ground re-enters jpp with a hidden conte
 This is a research case, not a replacement JSON library. Its writer is fixed to
 at most 8192 bytes and inherits std's safety-mode depth limit. It records the first
 write error; cursor advancement and further IO stop after failure, while already
-entered jpp frames unwind normally. General `try`, error-set joins, allocator
-policy, mutable borrowing and guaranteed stack bounds remain separate work.
+entered jpp frames unwind normally. Native error-set/result joins now run in
+the separate reader case. General `try`, allocator policy, mutable borrowing and
+guaranteed stack bounds remain separate work.
 Parsing malformed input is outside the corpus and fixture allocation failures
 panic. The 128-item case proves runtime-sized iteration, not arbitrary recursion
 scaling or a fixed stack bound.
@@ -493,6 +556,8 @@ branch construction needed to express the complete mechanism without Zig grounds
 
 1. Completed: native namespaces, module constants and enum member-path patterns,
    exercised by the modular DWARF reader and an inner caller override.
+   Known-fact value guards and native error-set/error-union tables now also run,
+   with coverage in log labeling, file-header validation and packet routing.
 2. Define the stage/context rules for ordinary static application before allowing
    calls in module initializers or signature patterns. Existing member paths are
    lexical; extending them must not accidentally change declaration identity.
@@ -501,7 +566,8 @@ branch construction needed to express the complete mechanism without Zig grounds
    explicit continuations, producer evaluation and native error result identity.
 4. Numeric cases and symbolic interval refinement remain separate research.
    The comparison analysis records NaN constraints but is not the next required
-   feature. General guards and result joins still need explicit decisions.
+   feature. Runtime guards and unrelated successful result joins still need
+   explicit decisions.
 
 JSON expansion and large-array experiments are paused. Its foreign representation
 and recursive walk do not settle the language's memory or iteration model. The

@@ -1,0 +1,7 @@
+using Base.Test
+
+# An explicitly named call is an ordinary boolean expression.
+==(; left::type, right::type)::bool = zig{ left == right }
+
+conversion(Source::type, Destination::type) where ==(; left = Source, right = Destination) = "bit copy"
+main() = check("equal source and destination layouts", conversion(uint32, uint32), "bit copy")

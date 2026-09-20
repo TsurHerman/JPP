@@ -1,0 +1,9 @@
+using Base.Zig
+
+ReadError = Zig.std.Io.Reader.Error
+export <:
+
+# The authored order accepts types, not individual failure values.
+<:(ReadError.EndOfStream, ReadError.ReadFailed) = true
+
+main() = 0

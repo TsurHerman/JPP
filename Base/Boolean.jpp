@@ -1,0 +1,5 @@
+# Ordinary boolean words. Like other calls, their inputs are evaluated eagerly.
+export &&, ||
+
+&&(left::bool, right::bool)::bool = zig{ left and right }
+||(left::bool, right::bool)::bool = zig{ left or right }

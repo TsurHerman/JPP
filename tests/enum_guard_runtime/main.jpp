@@ -1,0 +1,7 @@
+isBelowFreezing(temperature::float64)::bool = zig{ temperature < 0.0 }
+
+warning(temperature::float64) where isBelowFreezing(temperature) = "ICE"
+warning(::float64) = "CLEAR"
+
+# Runtime numeric guards need a future control-flow extension.
+main() = warning(12.5)

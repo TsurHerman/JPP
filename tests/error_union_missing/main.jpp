@@ -1,0 +1,12 @@
+using Base.Zig
+
+ReadError = Zig.std.Io.Reader.Error
+ReadResult = zig{ std.Io.Reader.Error!u8 }
+
+# Both failures are explained, but a successful byte has no method.
+explain(ReadError.EndOfStream) = "There are no more bytes"
+explain(ReadError.ReadFailed) = "The device failed"
+
+readByte()::ReadResult = zig{ @as(u8, 'A') }
+
+main() = explain(readByte())

@@ -44,10 +44,12 @@ Status of the major features:
 | ground `zig{}` bodies, inferred returns across the boundary, runtime records with static fields | RUNS (ground_records, checkout) |
 | predicate gates `where T <: Integer` (sugar for `Integer(T)`); predicates are ordinary words qualed on `::type` | RUNS (where_gate) |
 | predicates DEFINED from predicates (joins/meets), so `where` needs no boolean combinators | RUNS (pred_join) |
-| infix operators are ordinary overridable words: `\|\| && + - * /`, precedence loosest-first | RUNS (pred_join pins precedence) |
+| infix operators are ordinary overridable words: `\|\| && == + - * /`, precedence loosest-first | RUNS (pred_join pins boolean precedence; value_equality covers equality) |
 | explicit Base namespace/facade, recursive folder imports, wildcard siblings, and public import-cycle units | RUNS (base_folder, folder_modules, cycle_imports, cycle_folder; facade and privacy negatives) |
 | immutable local bindings name ANF values without repeating calls | RUNS (local_bindings, checkout; binding_* frontend rejection cases) |
 | immutable module constants, native namespace access, and lexical enum case patterns | RUNS (static_bindings, dwarf_offsets; static_binding_* and enum_pattern_* rejection cases) |
+| value predicates and classifier comparisons in `where`, evaluated from known branch facts | RUNS (log_labels, enum_guard_order, value_guard_variant; guard rejection cases) |
+| native error sets and error unions use the same injected dispatch mechanism | RUNS (error_dispatch; error coverage, open-set and result rejection cases) |
 | predicate quals in SLOT position: `x<:Integer` ≡ `x::T where Integer(T)`, same rung | RUNS (where_gate, order_refines) |
 | ambiguity-at-the-call error, export gating | RUNS (negative cases: compile must fail) |
 | declarations distinguish defined values, annotated inputs, fresh binders, and anonymous inputs | RUNS (declaration_names, unused_ground; negative: undeclared_order, unused_input, unused_untyped_ground, unused_anonymous) |
@@ -109,7 +111,8 @@ Status of the major features:
   A root file defining `main` is a program; each program starts a fresh context.
 - **Base is an explicit namespace (RUNS).** Write `using Base` to import the
   public interface selected by `Base/Base.jpp`. It uses `Base.*` and re-exports
-  arithmetic, Any and its authored order, Tuple utilities, and check. Narrow
+  arithmetic, boolean words, equality, isOneOf, Any and its authored order,
+  Tuple utilities, and check. Narrow
   imports such as `using Base.Arithmetic` or `using Base.Test` are also available.
   No import is inserted automatically. A file must declare its own dependencies;
   a program's imports do not repair a library's undeclared calls.
@@ -553,10 +556,11 @@ Variadic and tuples (RUNS):
   just a word whose pack is all-comptime and whose return is a type.
   One-way door, welded deliberately: brace application can never mean
   something paren application can't.
-- **Injected dispatch tables (RUNS; revised 2026-09-15).** The source is a
+- **Injected dispatch tables (RUNS; revised 2026-09-20).** The source is a
   collection of ordinary method definitions; their composition in the caller's
-  context determines a table. An ordinary call with a direct enum or tagged-union
-  argument injects its switch BEFORE method selection. Each arm uses the same
+  context determines a table. An ordinary call with a direct enum, tagged-union,
+  finite error-set or error-union argument injects its switch BEFORE method
+  selection. Each arm uses the same
   resolver, pointwise specificity, context position, private homes and accumulated
   caller context. An enum-wide fallback cannot hide more specific value methods.
   This supersedes the former rule that data slots never bridge.
@@ -575,7 +579,7 @@ Variadic and tuples (RUNS):
   tagged-union form RUNS today. Known results from a static union arm also survive
   ordinary helper calls and forwarding without suppressing runtime effects
   (RUNS: `variant_static`, corrected 2026-09-17). General fact representation,
-  interval patterns, runtime guard coverage and overlap remain OPEN; the small range probe expands
+  interval patterns and runtime numeric guards remain OPEN; the small range probe expands
   individual values and does not implement symbolic interval refinement. See the
   [scalar dispatch research](design/dispatch_tables.md#the-underlying-structure).
 - **Enums and tagged payloads.** A plain enum retains its enum type; the selected
@@ -616,16 +620,66 @@ Variadic and tuples (RUNS):
   member access replaces the enum-only lookup. Table injection still lives in
   `src/jpp.zig`; moving its policy into jpp remains future work. See the
   [wrapper boundary](design/dispatch_tables.md#native-types-jpp-wrapper).
+- **Value qualifiers (RUNS, 2026-09-20).** A guard such as
+  `label(level::Level) where needsAttention(level) = "ATTENTION"` calls an
+  ordinary predicate on the known case established by dispatch. A classifier
+  can instead be compared explicitly:
+  `panel(level::Level) where destination(level) == "operator" = "ALERTS"`.
+  These are boolean expressions, evaluated at comptime in caller-first context
+  with the method's declaration home available. Guard calls are lexical
+  dependencies even in unused methods and survive context collapse.
+  Member paths rooted in known module values must also exist, even in unused
+  guards or ordinary bodies. This check does not execute calls or read parameters.
+  Each condition refines one fixed input; comma-separated conditions can refine
+  separate inputs or conjoin constraints on one. Guards run after structural
+  binding and existing type gates. Unknown runtime scalar or payload values cannot
+  decide a guard; their known type facts can. Tagged-union type/tag classifiers may
+  use ordinary jpp helpers without reading the runtime `.payload`; native
+  predicates require known inputs.
+  No runtime producer or side effect is executed to determine applicability.
+  Within the same base input domain, guarded methods outrank the unguarded
+  default. Exact enum/error cases outrank a guard on their wider native type.
+  Conjunction and direct authored order between predicate words refine guarded
+  methods pointwise. Distinct expressions without a known relationship remain
+  incomparable; no logical implication is guessed from arbitrary function bodies.
+  The base specificity ladder remains in force: a guard on a bare binder does
+  not automatically outrank a more constrained type annotation.
+  `Base.Equality` supplies ordinary `==` methods for strings, same-type scalars,
+  native enums and native errors. `isOneOf(value, cases...)` is an ordinary
+  variadic membership predicate; callable predicate factories remain unbuilt.
+  Existing `where T == S` between type binders retains its authored mutual-order
+  meaning. Value comparisons and body expressions use the ordinary `==` word.
+  Integer/float threshold predicates also work when the input is explicitly
+  known, as in [sensor configuration](tests/value_guard_static/test.md).
+  Correlated multi-input guards, whole-rest guards, callable values and runtime
+  integer/float thresholds remain OPEN. See [log_labels](tests/log_labels/test.md).
+- **Native errors (RUNS, 2026-09-20).** An error-set alias such as
+  `ReadError = Zig.std.Io.Reader.Error` preserves the native set. A qualified
+  member must already belong to it; a missing member never becomes a binder.
+  Errors with the same name retain their shared Zig identity across sets.
+  A narrower native error-set annotation refines a superset annotation; an exact
+  error case refines both. A direct `E!T` argument injects success/error branches:
+  the success method receives `T`, and error methods receive known native errors.
+  Further enum/union refinement of the success payload composes normally.
+  Nested error-union inputs expose their alternatives recursively; forwarding
+  those leaves through `identity(value) = value` can merge error layers. Native
+  nested results returned by selected methods retain their compatible layers.
+  Handling, forwarding or returning an error is explicit; dispatch does not
+  introduce an early return from its caller. Runtime `anyerror` cannot supply
+  a closed table and is rejected; a known error value can be narrowed and used.
+  Native tagged unions remain the representation for payload-carrying sum types;
+  this increment does not add a separate `Sum(...)` constructor.
 - **Table obligations and scope.** Every possible runtime arm must resolve;
   missing coverage and competing maxima fail during compilation. A known static
   tag requires only its selected arm. Runtime arms must share a return type, or
   return variants that rejoin their common owning union (so `identity(x) = x`
-  works). Other result joins, including general numeric promotion/error-set
-  merging, remain unbuilt; a runtime-selected type cannot escape. Non-exhaustive
+  works). Compatible success/error results now rejoin native error unions and
+  combine their finite error sets. General numeric promotion and unrelated
+  successful result joins remain unbuilt; a runtime-selected type cannot escape. Non-exhaustive
   enums are rejected for runtime splitting. Bool/integer-range splitting is not
   activated by this change; range arms remain a separate probe. `resolve` itself
   resolves a refined leaf pack; `call`, return inference and delegation inject
-  tables. General surface braces and patterns beyond defined type/enum values
+  tables. General surface braces and patterns beyond defined type/enum/error values
   remain future work.
   Evidence: native enum/delegation/ledger tests, `variant_dispatch`, six rejection
   cases, and the modular [JSON case study](tests/json_dispatch/test.md).
@@ -1226,6 +1280,12 @@ print/algebra demo):
   widening, errors, single evaluation and an inner caller audit policy are tested.
   Known cases can produce type values; runtime calls return one native error
   union. The two IO leaves remain grounds, with no hidden callback into jpp.
+- [Log labels](tests/log_labels/test.md) uses boolean and classifier guards to
+  route real Zig log levels to an operator or history panel, with typed defaults,
+  exact-case refinements and a caller's debug policy.
+- [File-header errors](tests/error_dispatch/test.md) dispatches on a byte or a
+  native read failure, preserves shared error identity, adds a validation error,
+  rejoins the native error union and changes one message in a caller context.
 - Validated behaviors, from TEXT: exact/bare dispatch, generic methods
   flowing through ground arithmetic per element type, blocks/sequencing,
   literals as typed data, return inference through jpp bodies AND across

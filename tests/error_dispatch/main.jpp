@@ -1,0 +1,88 @@
+using Base
+using reader
+using fixture
+
+# Errors have shared native identities, unlike owner-specific enum cases.
+WriteError = zig{ error{ EndOfStream, DiskFull } }
+ShortRead = zig{ error{ EndOfStream } }
+ByteA = zig{ @as(u8, 65) }
+
+knownSuccess(byte::uint8) = byte
+
+knownFailure(ReadError.EndOfStream) = "No byte available"
+
+# An error-set subset can supply a group, and an exact case is more specific.
+recovery(::ReadError) = "Retry the device"
+recovery(::ShortRead) = "Stop reading"
+
+needsReconnect(ReadError.ReadFailed) = true
+needsReconnect(::ReadError) = false
+
+prompt(problem::ReadError) where needsReconnect(problem) = "Reconnect the device"
+prompt(::ReadError) = "Reading is finished"
+
+named(; result) = explainRead(result)
+
+forward(results...; options...) = named(results...; options...)
+
+main() = {
+    check("a successful read selects the byte method", explainRead(readByte("A")), "Read one byte")
+    check("empty input selects EndOfStream", explainRead(readByte("")), "The input ended before a byte arrived")
+    check(
+        "a device failure selects ReadFailed",
+        explainRead(deviceFailure()),
+        "The device could not read the byte"
+    )
+    check("a runtime error set covers EndOfStream", explainFailure(incomingFailure(false)), "No more bytes")
+    check(
+        "a runtime error set covers ReadFailed with its default",
+        explainFailure(incomingFailure(true)),
+        "Read failed"
+    )
+    check(
+        "an error name keeps its identity across sets",
+        knownFailure(WriteError.EndOfStream),
+        "No byte available"
+    )
+    check("a smaller error set refines the broader default", recovery(incomingFailure(false)), "Stop reading")
+    check("the other error keeps the broader default", recovery(incomingFailure(true)), "Retry the device")
+    check("a predicate qualifies a runtime error case", prompt(incomingFailure(true)), "Reconnect the device")
+    check(
+        "the predicate default covers the remaining error",
+        prompt(incomingFailure(false)),
+        "Reading is finished"
+    )
+
+    check("a known success needs no error methods", knownSuccess(knownByte(ReadResult).value), ByteA)
+    check(
+        "a known failure needs no success method",
+        knownFailure(knownEnd(ReadResult).value),
+        "No byte available"
+    )
+    check(
+        "a known anyerror value has one selected case",
+        knownFailure(knownOpenEnd().value),
+        "No byte available"
+    )
+    check(
+        "known success payload remains static",
+        isStatic(record(knownSuccess(knownByte(ReadResult).value))),
+        true
+    )
+    check(
+        "named rest forwarding keeps the selected error",
+        forward(; result = readByte("")),
+        "The input ended before a byte arrived"
+    )
+
+    successful = roundTrip(readByte("A"))
+    failed = roundTrip(readByte(""))
+    check("identity rejoins the native error union", hasType((successful,), ReadResult), true)
+    check("identity keeps the successful byte", explainRead(successful), "Read one byte")
+    check("identity keeps the failing error", explainRead(failed), "The input ended before a byte arrived")
+
+    resetCount()
+    explainRead(countedRead("A"))
+    explainRead(countedRead(""))
+    check("each read executes once despite all potential branches", callCount(), 2)
+}

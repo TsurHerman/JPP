@@ -1,0 +1,9 @@
+using Base
+using log.model
+
+# This predicate is intentionally defined for just one known case.
+isError(Level.err) = true
+
+errorCaption(level::Level) where isError(level) = "ERROR"
+
+main() = check("known error needs only its own branch", errorCaption(Level.err), "ERROR")

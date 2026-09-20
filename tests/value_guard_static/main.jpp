@@ -1,0 +1,23 @@
+using Base
+
+# These are deployment settings, known when the program is built.
+slowRate = 5
+fastRate = 100
+roomTemperature = 18.0
+hotCabinet = 42.5
+
+needsInterrupts(samplesPerSecond::int64)::bool = zig{ samplesPerSecond >= 100 }
+needsCooling(temperature::float64)::bool = zig{ temperature >= 40.0 }
+
+samplingMode(rate::int64) where needsInterrupts(rate) = "interrupts"
+samplingMode(::int64) = "polling"
+
+coolingMode(temperature::float64) where needsCooling(temperature) = "fan"
+coolingMode(::float64) = "passive"
+
+main() = {
+    check("slow sampling can poll", samplingMode(slowRate), "polling")
+    check("fast sampling needs interrupts", samplingMode(fastRate), "interrupts")
+    check("a room-temperature enclosure is passive", coolingMode(roomTemperature), "passive")
+    check("a hot cabinet needs a fan", coolingMode(hotCabinet), "fan")
+}

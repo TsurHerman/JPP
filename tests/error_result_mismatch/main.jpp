@@ -1,0 +1,11 @@
+using Base.Zig
+
+ReadError = Zig.std.Io.Reader.Error
+
+# A runtime branch cannot choose an unrelated representation for the result.
+explain(ReadError.EndOfStream) = "There are no more bytes"
+explain(ReadError.ReadFailed) = 500
+
+incomingFailure()::ReadError = zig{ error.EndOfStream }
+
+main() = explain(incomingFailure())

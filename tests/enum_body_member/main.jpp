@@ -1,0 +1,6 @@
+using Base
+
+Level = zig{ enum { warn, info } }
+
+defaultLevel() = Level.wran
+main() = check("the program never calls defaultLevel", true, true)

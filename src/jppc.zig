@@ -10,15 +10,18 @@
 //   export a, b, +
 //   name(params) [:: retty] = expr
 //   expr: literals, idents, calls, { blocks with immutable name = expr binds }, zig{ raw ground },
-//         infix || && + - * / (that precedence, loosest first) — every
+//         infix || && == + - * / (that precedence, loosest first) — every
 //         operator is an ordinary overridable word, not a builtin
 //   params: x (bare) | x::typename (exact) | x::T where T (type var)
 //         | x<:Pred (predicate qual; sugar for x::T + gate, T fresh —
 //           `::` takes a TYPE, `<:` takes a PREDICATE, never swapped)
 //   where T | where T == S | where T <: Pred | where Pred(T)
 //     (identity, <: equivalence, predicate gate; see README §4)
+//   where predicate(input) | where classifier(input) == value
+//     (boolean expressions over one fixed input; comma joins qualifiers)
 //   defined values constrain any signature; fresh names bind inputs.
-//   ignored inputs may be annotated or anonymous: x::type, _, ::type, <:Predicate.
+//   ignored inputs require an annotation: x::type, ::type, <:Predicate.
+//     An unused bare input, including _, is an error.
 //   literals default int64 / float64 (julia-ish)
 
 const std = @import("std");
@@ -196,6 +199,7 @@ const Where = struct {
     vars: []const []const u8,
     eqs: []const [2][]const u8,
     gates: []const [2][]const u8, // .{ tvar, predicate word }
+    guards: []const *Node, // boolean expressions over a refined input value
 };
 
 const Def = struct {
@@ -278,7 +282,7 @@ const Parser = struct {
                     _ = p.next();
                     while (true) {
                         const t = p.next();
-                        if (t.kind != .ident and t.kind != .op and t.kind != .subtype) return error.Parse;
+                        if (t.kind != .ident and t.kind != .op and t.kind != .subtype and t.kind != .eqeq) return error.Parse;
                         try exports.append(p.a, t.text);
                         if (p.peek().kind == .comma) {
                             _ = p.next();
@@ -287,7 +291,7 @@ const Parser = struct {
                         break;
                     }
                 },
-                .ident, .op, .subtype => {
+                .ident, .op, .subtype, .eqeq => {
                     if (p.peek().kind == .ident and p.toks[p.i + 1].kind == .eq) {
                         const binding_name = p.next().text;
                         if (std.mem.eql(u8, binding_name, "_") or std.mem.eql(u8, binding_name, "true") or std.mem.eql(u8, binding_name, "false"))
@@ -369,7 +373,7 @@ const Parser = struct {
         var where_clause: ?Where = null;
         if (p.peek().kind == .kw_where) {
             _ = p.next();
-            where_clause = try p.parseWhere();
+            where_clause = try p.parseWhere(params.items);
         }
         _ = try p.expect(.eq);
         p.skipNlOnlyNewlinesBeforeBody();
@@ -381,32 +385,48 @@ const Parser = struct {
         return .{ .name = name, .params = params.items, .ret = ret, .where_clause = where_clause, .body = body, .ground = null };
     }
 
-    fn parseWhere(p: *Parser) !Where {
-        // where T | where T == S | where T <: Pred | where Pred(T)
-        // comma-separated atoms. `T <: Pred` is SUGAR for `Pred(T)`.
+    fn parseWhere(p: *Parser, params: []const Param) !Where {
+        // Type binders retain their existing meaning. Expressions over named
+        // value inputs are guards, normalized just like ordinary method bodies.
         var vars = try std.ArrayList([]const u8).initCapacity(p.a, 4);
         var eqs = try std.ArrayList([2][]const u8).initCapacity(p.a, 4);
         var gates = try std.ArrayList([2][]const u8).initCapacity(p.a, 4);
+        var guards = try std.ArrayList(*Node).initCapacity(p.a, 4);
         while (true) {
-            const a = (try p.expect(.ident)).text;
-            if (p.peek().kind == .lparen) {
-                // Pred(T) — the primitive gate; the binder is the argument
+            p.skipNlOnlyNewlinesBeforeBody();
+            if (p.peek().kind == .ident and p.toks[p.i + 1].kind == .subtype) {
+                const name = p.next().text;
                 _ = p.next();
-                const v = (try p.expect(.ident)).text;
-                _ = try p.expect(.rparen);
-                try addWhereVar(&vars, p.a, v);
-                try gates.append(p.a, .{ v, a });
+                const pred = (try p.expect(.ident)).text;
+                try addWhereVar(&vars, p.a, name);
+                try gates.append(p.a, .{ name, pred });
             } else {
-                try addWhereVar(&vars, p.a, a);
-                if (p.peek().kind == .eqeq) {
-                    _ = p.next();
-                    const b = (try p.expect(.ident)).text;
-                    try addWhereVar(&vars, p.a, b);
-                    try eqs.append(p.a, .{ a, b });
-                } else if (p.peek().kind == .subtype) {
-                    _ = p.next();
-                    const pred = (try p.expect(.ident)).text;
-                    try gates.append(p.a, .{ a, pred });
+                const expr = try p.parseExpr(0);
+                if (expr.* == .ident and !isValueInput(params, expr.ident)) {
+                    try addWhereVar(&vars, p.a, expr.ident);
+                } else if (expr.* == .call and expr.call.args.len == 1 and
+                    expr.call.args[0].label.len == 0 and expr.call.args[0].splat == .none and
+                    expr.call.args[0].value.* == .ident and
+                    !isValueInput(params, expr.call.args[0].value.ident))
+                {
+                    const name = expr.call.args[0].value.ident;
+                    try addWhereVar(&vars, p.a, name);
+                    try gates.append(p.a, .{ name, expr.call.callee });
+                } else if (expr.* == .call and std.mem.eql(u8, expr.call.callee, "==") and
+                    expr.call.args.len == 2 and expr.call.args[0].value.* == .ident and
+                    expr.call.args[1].value.* == .ident and
+                    expr.call.args[0].label.len == 0 and expr.call.args[0].splat == .none and
+                    expr.call.args[1].label.len == 0 and expr.call.args[1].splat == .none and
+                    !isValueInput(params, expr.call.args[0].value.ident) and
+                    !isValueInput(params, expr.call.args[1].value.ident))
+                {
+                    const lhs = expr.call.args[0].value.ident;
+                    const rhs = expr.call.args[1].value.ident;
+                    try addWhereVar(&vars, p.a, lhs);
+                    try addWhereVar(&vars, p.a, rhs);
+                    try eqs.append(p.a, .{ lhs, rhs });
+                } else {
+                    try guards.append(p.a, expr);
                 }
             }
             if (p.peek().kind == .comma) {
@@ -415,7 +435,8 @@ const Parser = struct {
             }
             break;
         }
-        return .{ .vars = vars.items, .eqs = eqs.items, .gates = gates.items };
+        p.skipNlOnlyNewlinesBeforeBody();
+        return .{ .vars = vars.items, .eqs = eqs.items, .gates = gates.items, .guards = guards.items };
     }
 
     fn skipNlOnlyNewlinesBeforeBody(p: *Parser) void {
@@ -425,6 +446,7 @@ const Parser = struct {
     fn opPrec(text: []const u8) ?u8 {
         if (std.mem.eql(u8, text, "||")) return 4;
         if (std.mem.eql(u8, text, "&&")) return 6;
+        if (std.mem.eql(u8, text, "==")) return 8;
         if (text.len != 1) return null;
         return switch (text[0]) {
             '+', '-' => 10,
@@ -435,7 +457,7 @@ const Parser = struct {
 
     fn parseExpr(p: *Parser, min_prec: u8) anyerror!*Node {
         var lhs = try p.parsePostfix();
-        while (p.peek().kind == .op) {
+        while (p.peek().kind == .op or p.peek().kind == .eqeq) {
             const prec = opPrec(p.peek().text) orelse return error.Parse;
             if (prec < min_prec) break;
             const op = p.next().text;
@@ -528,7 +550,7 @@ const Parser = struct {
                 _ = p.next();
                 return p.node(.{ .lit_s = t.text });
             },
-            .ident, .subtype => {
+            .ident, .subtype, .eqeq => {
                 if (std.mem.eql(u8, t.text, "true") or std.mem.eql(u8, t.text, "false")) {
                     _ = p.next();
                     return p.node(.{ .lit_b = std.mem.eql(u8, t.text, "true") });
@@ -582,6 +604,14 @@ fn addWhereVar(vars: *std.ArrayList([]const u8), a: std.mem.Allocator, name: []c
     try vars.append(a, name);
 }
 
+fn isValueInput(params: []const Param, name: []const u8) bool {
+    for (params) |param| {
+        if (!std.mem.eql(u8, param.name, name)) continue;
+        return param.ty == null or !std.mem.eql(u8, param.ty.?, "type");
+    }
+    return false;
+}
+
 fn isTVar(d: Def, name: []const u8) bool {
     const w = d.where_clause orelse return false;
     for (w.vars) |v| {
@@ -595,6 +625,7 @@ fn isTVar(d: Def, name: []const u8) bool {
 const VR = union(enum) { bound_type: []const u8, param_type: usize, name: []const u8, param: usize, local: usize, lit_i: i64, lit_f: f64, lit_s: []const u8, lit_b: bool };
 const OpIR = struct { kind: enum { call, pack, project } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, splats: []const Splat = &.{}, field: []const u8 = "" };
 const FlatIR = struct { ops: []OpIR, result: VR };
+const GuardIR = struct { input: []const u8, predicate: ?[]const u8, flat: FlatIR };
 const Local = struct { name: []const u8, value: VR };
 
 fn bindingError(kind: anyerror, name: []const u8) anyerror {
@@ -642,6 +673,46 @@ fn flatten(a: std.mem.Allocator, def: Def) !FlatIR {
     var locals = try std.ArrayList(Local).initCapacity(a, 16);
     const result = try flattenNode(a, def.body.?, def, &ops, &locals);
     return .{ .ops = ops.items, .result = result };
+}
+
+fn guardRef(r: VR, def: Def, input: usize) !VR {
+    return switch (r) {
+        .param => |i| if (i == input) .{ .param = 0 } else bindingError(error.ValueGuardNeedsOneInput, def.name),
+        .bound_type => |name| if (def.params[input].ty != null and std.mem.eql(u8, def.params[input].ty.?, name))
+            .{ .param_type = 0 }
+        else
+            bindingError(error.ValueGuardNeedsOneInput, name),
+        else => r,
+    };
+}
+
+fn flattenGuards(a: std.mem.Allocator, def: Def) ![]GuardIR {
+    const where = def.where_clause orelse return &.{};
+    const guards = try a.alloc(GuardIR, where.guards.len);
+    for (where.guards, 0..) |expr, gi| {
+        var input: ?usize = null;
+        for (def.params, 0..) |param, i| {
+            if (!nodeUses(expr, param.name)) continue;
+            if (input != null) return bindingError(error.ValueGuardNeedsOneInput, def.name);
+            if (param.rest) return bindingError(error.ValueGuardNeedsFixedInput, param.name);
+            input = i;
+        }
+        const index = input orelse return bindingError(error.ValueGuardNeedsOneInput, def.name);
+        var guard_def = def;
+        guard_def.body = expr;
+        guard_def.ground = null;
+        var flat = try flatten(a, guard_def);
+        for (flat.ops) |*op| for (op.args) |*arg| {
+            arg.* = try guardRef(arg.*, def, index);
+        };
+        flat.result = try guardRef(flat.result, def, index);
+        const predicate: ?[]const u8 = if (expr.* == .call and expr.call.args.len == 1 and
+            expr.call.args[0].label.len == 0 and expr.call.args[0].splat == .none and
+            expr.call.args[0].value.* == .ident and
+            std.mem.eql(u8, expr.call.args[0].value.ident, def.params[index].name)) expr.call.callee else null;
+        guards[gi] = .{ .input = def.params[index].name, .predicate = predicate, .flat = flat };
+    }
+    return guards;
 }
 
 fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpIR), locals: *std.ArrayList(Local)) anyerror!VR {
@@ -773,7 +844,30 @@ fn emitStaticExpr(o: *Out, n: *Node) anyerror!void {
     }
 }
 
+fn emitFlat(o: *Out, a: std.mem.Allocator, m: Mod, flat: FlatIR) !void {
+    o.add(".{{ .ops = &.{{\n", .{});
+    for (flat.ops) |op| {
+        o.add("        .{{ .kind = .{s}, .callee = \"{s}\", .field = \"{s}\", .labels = &.{{", .{
+            @tagName(op.kind), if (op.kind == .call) try localWord(a, m, op.callee) else "", op.field,
+        });
+        for (op.labels) |label| o.add("\"{s}\",", .{label});
+        o.add(" }}, .splats = &.{{", .{});
+        for (op.splats) |splat| o.add(".{s},", .{@tagName(splat)});
+        o.add(" }}, .args = &.{{ ", .{});
+        for (op.args, 0..) |r, i| {
+            if (i > 0) o.add(", ", .{});
+            emitVR(o, r);
+        }
+        o.add(" }} }},\n", .{});
+    }
+    o.add("      }}, .result = ", .{});
+    emitVR(o, flat.result);
+    o.add(" }}", .{});
+}
+
 fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name: ?[]const u8, is_facade: bool) !void {
+    const guards = try a.alloc([]GuardIR, m.defs.len);
+    for (m.defs, 0..) |d, i| guards[i] = try flattenGuards(a, d);
     o.add("// GENERATED by jppc from {s} — do not edit.\n", .{m.name});
     o.add("const std = @import(\"std\");\n", .{});
     o.add("const jpp = @import(\"jpp.zig\");\n", .{});
@@ -817,6 +911,9 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
         };
         for (d.params) |prm| if (prm.pred) |pred| o.add("\"{s}\",", .{pred});
         if (d.where_clause) |w| for (w.gates) |g| o.add("\"{s}\",", .{g[1]});
+        for (guards[i]) |guard| for (guard.flat.ops) |op| {
+            if (op.kind == .call) o.add("\"{s}\",", .{op.callee});
+        };
         o.add(" }} }},\n", .{});
     }
     o.add("}};\ncomptime {{ for (REQUIREMENTS) |r| jpp.validateCalls(STATIC, r.owner, r.words); }}\n", .{});
@@ -931,6 +1028,17 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
                 }
                 o.add(" }},", .{});
             }
+            if (guards[ei].len > 0) {
+                o.add(" .value_guards = &.{{", .{});
+                for (guards[ei]) |guard| {
+                    o.add(" .{{ .input = \"{s}\",", .{guard.input});
+                    if (guard.predicate) |predicate| o.add(" .predicate = \"{s}\",", .{try localWord(a, m, predicate)});
+                    o.add(" .body = ", .{});
+                    try emitFlat(o, a, m, guard.flat);
+                    o.add(" }},", .{});
+                }
+                o.add(" }},", .{});
+            }
             if (e.ret) |r| {
                 if (e.ground == null) {
                     if (boundTypeName(e, r)) o.add(" .ret_variable = \"{s}\",", .{r}) else o.add(" .ret = jpp.requireType(STATIC, \"{s}\"),", .{r});
@@ -1008,6 +1116,7 @@ fn paramUsed(d: Def, name: []const u8) bool {
     if (d.where_clause) |w| {
         for (w.eqs) |e| if (std.mem.eql(u8, e[0], name) or std.mem.eql(u8, e[1], name)) return true;
         for (w.gates) |g| if (std.mem.eql(u8, g[0], name)) return true;
+        for (w.guards) |guard| if (nodeUses(guard, name)) return true;
     }
     return if (d.ground) |g| groundUses(g, name) else nodeUses(d.body.?, name);
 }

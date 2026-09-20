@@ -1,0 +1,10 @@
+using Base.Zig
+
+Level = Zig.std.log.Level
+
+destination(Level.err) = "operator"
+
+label(level::Level) where destination(level) = "ATTENTION"
+
+# A classifier returns text; use destination(level) == "operator" as the guard.
+main() = label(Level.err)

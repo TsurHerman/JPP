@@ -1,0 +1,37 @@
+using Base
+
+UploadState = zig{ enum { waiting, complete } }
+DownloadState = zig{ enum { waiting, complete } }
+ReadError = zig{ error{ ReadFailed, EndOfStream } }
+WriteError = zig{ error{ WriteFailed, EndOfStream } }
+
+main() = {
+    check("equal text uses contents", "operator" == "operator", true)
+    check("different text is unequal", "operator" == "archive", false)
+    check("escaped text uses decoded contents", "line\n" == "line\x0a", true)
+    check("same integer values compare equal", 42 == 42, true)
+    check("different float values compare unequal", 1.5 == 2.5, false)
+    check("type equality preserves identity", int64 == float64, false)
+
+    check("matching enum cases compare equal", UploadState.waiting == UploadState.waiting, true)
+    check("same spelling keeps enum owner identity", UploadState.waiting == DownloadState.waiting, false)
+    check("native error identity is shared across sets", ReadError.EndOfStream == WriteError.EndOfStream, true)
+    check("different native errors remain different", ReadError.ReadFailed == WriteError.WriteFailed, false)
+
+    check("empty membership list accepts nothing", isOneOf(UploadState.waiting), false)
+    check(
+        "membership accepts a listed case",
+        isOneOf(UploadState.waiting, UploadState.complete, UploadState.waiting),
+        true
+    )
+    check(
+        "membership rejects unrelated enum owners",
+        isOneOf(UploadState.waiting, DownloadState.waiting),
+        false
+    )
+    check(
+        "membership supports native errors",
+        isOneOf(ReadError.ReadFailed, WriteError.WriteFailed, ReadError.ReadFailed),
+        true
+    )
+}

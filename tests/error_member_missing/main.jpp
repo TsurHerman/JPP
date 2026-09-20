@@ -1,0 +1,8 @@
+using Base.Zig
+
+ReadError = Zig.std.Io.Reader.Error
+
+# A typo is invalid even if this method is never called.
+explain(ReadError.EndOfStrem) = "There are no more bytes"
+
+main() = 0

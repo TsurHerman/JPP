@@ -1,0 +1,50 @@
+using Base
+using reader
+using fixture
+
+HeaderError = zig{ std.Io.Reader.Error || error{ InvalidMagic } }
+HeaderResult = zig{ (std.Io.Reader.Error || error{ InvalidMagic })!u8 }
+MagicResult = zig{ error{ InvalidMagic }!u8 }
+
+# A header begins with 'A'. Preserve IO failures and add one validation failure.
+validateMagic(byte::uint8)::MagicResult = zig{
+    if (byte == 'A') byte else error.InvalidMagic
+}
+validateMagic(problem::ReadError) = problem
+
+explainHeader(::uint8) = "Header accepted"
+explainHeader(HeaderError.InvalidMagic) = "Wrong file format"
+explainHeader(HeaderError.EndOfStream) = "The header is missing"
+explainHeader(HeaderError.ReadFailed) = "The device could not read the header"
+
+nextStep(::uint8) = "Open the document"
+nextStep(problem::HeaderError) where isOneOf(
+    problem, HeaderError.EndOfStream, HeaderError.InvalidMagic
+) = "Choose another file"
+nextStep(::HeaderError) = "Reconnect the device"
+
+main() = {
+    good = validateMagic(readByte("A"))
+    wrong = validateMagic(readByte("B"))
+    missing = validateMagic(readByte(""))
+    check("validation joins its failures with the original read failures", hasType((good,), HeaderResult), true)
+    check("the expected magic byte succeeds", explainHeader(good), "Header accepted")
+    check("another byte reports a validation error", explainHeader(wrong), "Wrong file format")
+    check(
+        "the original read failure passes through explicitly",
+        explainHeader(missing),
+        "The header is missing"
+    )
+    check("a valid header proceeds normally", nextStep(good), "Open the document")
+    check("the wrong format belongs to the user-fixable error group", nextStep(wrong), "Choose another file")
+    check(
+        "a missing header belongs to the same variadic predicate group",
+        nextStep(missing),
+        "Choose another file"
+    )
+    check(
+        "a device failure keeps the broader default",
+        nextStep(validateMagic(deviceFailure())),
+        "Reconnect the device"
+    )
+}

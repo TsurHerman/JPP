@@ -1,0 +1,8 @@
+using Base.Zig
+
+Level = Zig.std.log.Level
+
+# Even this unused method must declare or import the predicate it calls.
+label(level::Level) where needsAttention(level) = "ATTENTION"
+
+main() = 0

@@ -1,0 +1,20 @@
+using Base
+
+Level = zig{ enum { warn, info } }
+
+settingsType()::type = zig{
+    struct {
+        pub var warning_alerts: bool = true;
+    }
+}
+
+needsAttention(level::Level) = alertsEnabled(level, settingsType())
+
+alertsEnabled(level::Level, Settings::type)::bool = zig{
+    level == .warn and Settings.warning_alerts
+}
+
+label(level::Level) where needsAttention(level) = "ATTENTION"
+label(::Level) = "NORMAL"
+
+main() = label(Level.warn)

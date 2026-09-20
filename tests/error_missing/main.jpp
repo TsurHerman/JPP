@@ -1,0 +1,10 @@
+using Base.Zig
+
+ReadError = Zig.std.Io.Reader.Error
+
+# The reader can return either failure, but the UI only explains one.
+explain(ReadError.EndOfStream) = "There are no more bytes"
+
+incomingFailure()::ReadError = zig{ error.EndOfStream }
+
+main() = explain(incomingFailure())

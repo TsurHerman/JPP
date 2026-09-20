@@ -1,0 +1,6 @@
+using log.model
+
+export needsAttention
+
+# A development console also calls attention to debug messages.
+needsAttention(Level.debug) = true

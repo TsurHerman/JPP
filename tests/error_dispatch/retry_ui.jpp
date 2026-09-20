@@ -1,0 +1,18 @@
+using Base
+using policy.retry
+using reader
+using fixture
+
+main() = {
+    check(
+        "the caller changes one device-error explanation",
+        explainRead(deviceFailure()),
+        "Ask the user to reconnect the device"
+    )
+    check("the caller keeps the ordinary success explanation", explainRead(readByte("A")), "Read one byte")
+    check(
+        "the caller keeps the ordinary end-of-input explanation",
+        explainRead(readByte("")),
+        "The input ended before a byte arrived"
+    )
+}

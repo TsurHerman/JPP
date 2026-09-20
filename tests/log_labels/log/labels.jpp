@@ -1,0 +1,18 @@
+using Base
+using log.model
+using log.routing
+
+export label, panel, icon
+
+# A boolean predicate qualifies the first method.
+label(level::Level) where needsAttention(level) = "ATTENTION"
+label(::Level) = "NORMAL"
+
+# A classifier's result can qualify a method through ordinary equality.
+panel(level::Level) where destination(level) == "operator" = "ALERTS"
+panel(::Level) = "HISTORY"
+
+# One exact case can specialize a grouped method.
+icon(Level.err) = "!"
+icon(level::Level) where needsAttention(level) = "?"
+icon(::Level) = "."

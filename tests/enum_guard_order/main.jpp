@@ -1,0 +1,43 @@
+using Base
+using Base.Zig
+
+export <:
+
+Level = Zig.std.log.Level
+
+needsAttention(level::Level) = isOneOf(level, Level.err, Level.warn)
+
+isError(level::Level) = level == Level.err
+
+# This direct authored relationship orders the two predicates.
+<:(isError, needsAttention) = true
+
+label(level::Level) where needsAttention(level) = "ATTENTION"
+label(level::Level) where isError(level) = "ERROR"
+label(::Level) = "NORMAL"
+
+# A conjunction explicitly includes the broader guard.
+review(level::Level) where needsAttention(level) = "review soon"
+review(level::Level) where needsAttention(level), isError(level) = "review now"
+review(::Level) = "no review"
+
+# Named arguments compare by name even when the declarations are reordered.
+caption(; level::Level, destination::string) where needsAttention(level) = destination
+caption(; destination::string, level::Level) where isError(level) = "ERROR"
+caption(; level::Level, destination::string) = destination
+
+main() = {
+    check("authored refinement selects the error label", label(Level.err), "ERROR")
+    check("broader predicate still covers warnings", label(Level.warn), "ATTENTION")
+    check("unmatched predicates leave the default", label(Level.info), "NORMAL")
+
+    check("conjunction refines the attention guard", review(Level.err), "review now")
+    check("warning needs only the broader review", review(Level.warn), "review soon")
+
+    check("named guards follow their argument", caption(; level = Level.err, destination = "console"), "ERROR")
+    check(
+        "named guard retains other runtime arguments",
+        caption(; destination = "console", level = Level.warn),
+        "console"
+    )
+}

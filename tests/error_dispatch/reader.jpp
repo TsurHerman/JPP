@@ -1,0 +1,25 @@
+using Base.Zig
+
+export ReadError, ReadResult, readByte, explainRead, explainFailure, roundTrip
+
+ReadError = Zig.std.Io.Reader.Error
+ReadResult = zig{ std.Io.Reader.Error!u8 }
+
+# The native boundary reads one byte. jpp handles the result in ordinary methods.
+readByte(bytes::string)::ReadResult = zig{
+    blk: {
+        var reader: std.Io.Reader = .fixed(bytes);
+        break :blk reader.takeByte();
+    }
+}
+
+explainRead(::uint8) = "Read one byte"
+explainRead(ReadError.EndOfStream) = "The input ended before a byte arrived"
+explainRead(ReadError.ReadFailed) = "The device could not read the byte"
+
+# A broader set annotation is the default for errors in that set.
+explainFailure(::ReadError) = "Read failed"
+explainFailure(ReadError.EndOfStream) = "No more bytes"
+
+# Returning either the successful byte or its failure rejoins the native result.
+roundTrip(value) = value

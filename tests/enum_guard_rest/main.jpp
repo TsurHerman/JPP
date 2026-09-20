@@ -1,0 +1,5 @@
+allUrgent(levels)::bool = zig{ @typeInfo(@TypeOf(levels)).@"struct".fields.len > 0 }
+
+label(levels...) where allUrgent(levels) = "ATTENTION"
+
+main() = 0

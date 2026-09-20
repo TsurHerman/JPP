@@ -1,0 +1,24 @@
+using Base
+using log.model
+using log.labels
+using received
+
+main() = {
+    inbox = newInbox()
+
+    check("errors need attention", label(receiveLevel(inbox, 0)), "ATTENTION")
+    check("warnings need attention", label(receiveLevel(inbox, 1)), "ATTENTION")
+    check("info uses the default", label(receiveLevel(inbox, 2)), "NORMAL")
+    check("debug uses the default", label(receiveLevel(inbox, 3)), "NORMAL")
+    check("each log record is received once", readCount(inbox), 4)
+
+    check("operator messages appear in alerts", panel(receiveLevel(inbox, 1)), "ALERTS")
+    check("archived messages appear in history", panel(receiveLevel(inbox, 2)), "HISTORY")
+
+    check("exact error case beats the attention group", icon(receiveLevel(inbox, 0)), "!")
+    check("warning uses the attention group", icon(receiveLevel(inbox, 1)), "?")
+    check("info uses the broad icon default", icon(receiveLevel(inbox, 2)), ".")
+    check("guards do not repeat input producers", readCount(inbox), 9)
+
+    releaseInbox(inbox)
+}

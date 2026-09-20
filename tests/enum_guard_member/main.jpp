@@ -1,0 +1,7 @@
+using Base
+
+Level = zig{ enum { warn, info } }
+
+# The misspelled case must fail even when no call reaches this method.
+label(level::Level) where level == Level.wran = "ATTENTION"
+main() = check("the program never calls label", true, true)

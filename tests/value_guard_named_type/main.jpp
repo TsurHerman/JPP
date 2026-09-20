@@ -1,0 +1,16 @@
+using Base
+
+# The binary writer has native little-endian encodings for 32- and 64-bit words.
+supportsWord(; valueType::type)::bool = zig{
+    valueType == u32 or valueType == u64
+}
+
+encoding(T::type) where supportsWord(; valueType = T) = "little-endian word"
+encoding(::type) = "unsupported"
+
+main() = {
+    check("32-bit unsigned words have an encoding", encoding(uint32), "little-endian word")
+    check("64-bit unsigned words have an encoding", encoding(uint64), "little-endian word")
+    check("signed integers keep the unsupported default", encoding(int32), "unsupported")
+    check("floating-point values keep the unsupported default", encoding(float64), "unsupported")
+}
