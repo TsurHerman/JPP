@@ -128,6 +128,30 @@ pub fn build(b: *std.Build) void {
         });
         probes_step.dependOn(&b.addRunArtifact(t).step);
     }
+
+    // The scope experiment must use the active machinery, not spike/jpp.zig.
+    const scope_probe = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("spike/scopeprobe.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    scope_probe.root_module.addImport("jpp", jpp_mod);
+    const run_scope_probe = b.addRunArtifact(scope_probe);
+    const scope_step = b.step("scope-probe", "Probe dispatched resource scopes with Zig defer");
+    scope_step.dependOn(&run_scope_probe.step);
+    probes_step.dependOn(&run_scope_probe.step);
+    const cleanup_error = b.addSystemCommand(&.{
+        b.graph.zig_exe, "test", "-fno-emit-bin",                        "--cache-dir",       ".zig-cache",
+        "--dep",         "jpp",  "-Mroot=spike/scope_cleanup_error.zig", "-Mjpp=src/jpp.zig",
+    });
+    cleanup_error.setCwd(b.path("."));
+    cleanup_error.has_side_effects = true;
+    cleanup_error.expectExitCode(1);
+    cleanup_error.expectStdErrMatch("scope probe: cleanup must return void; handle cleanup errors explicitly");
+    scope_step.dependOn(&cleanup_error.step);
+    probes_step.dependOn(&cleanup_error.step);
 }
 
 /// A negative case's marker contains the required diagnostic substring;

@@ -10,7 +10,7 @@ surface culture, Julia's answer is jpp's answer. Deviations are explicit
 and registered (see bottom).
 
 **To run anything** (demo, tests, probes): see `RUNNING.md` — one
-dependency (zig 0.16), five `zig build` steps. The language-promise
+dependency (zig 0.16), commands for demos, tests and probes. The language-promise
 test catalog lives in `tests/README.md`.
 
 Syntax coloring for VS Code/Cursor and local HTML rendering is available in
@@ -70,6 +70,7 @@ Status of the major features:
 | repeated type binder = identity; `where T == S` = mutual direct relation; all predicate conjuncts participate in dominance | RUNS (type_bindings, where_gate, gate_conjunction; negative: pointwise_gap) |
 | tiering & hot-swap, symbol-name-as-cache-key, sessions | RATIFIED (soprobe touches the dlsym venue) |
 | memory model, threading, stdlib strategy, tensors, macros, ledger tooling | OPEN (§11) |
+| dispatched resource cleanup backed by Zig `defer` | VALIDATED (`spike/scopeprobe.zig`); callable actions, source scopes and ownership contracts remain OPEN |
 | export-only word declarations, imported re-exports, and lexical call/gate checks | RUNS (declaration_tunnel, reexport_chain, override; undeclared and missing-implementation negatives); typed contracts remain OPEN |
 
 ---
@@ -1372,6 +1373,13 @@ print/algebra demo):
   explicit machine-state value through effectful ops (`%mem.M`, the
   functional store) — also the frame in which `var` (mutation) must be
   answered.
+  A [resource-scope probe](design/resource_scopes.md) now validates a small
+  synchronous `ensure(body, cleanup)` primitive using Zig `defer`, with ordinary
+  caller-context dispatch for acquisition, body and release. It includes pooling,
+  nested/error exits and cleanup overrides. This is deterministic cleanup, not
+  lifetime checking: escaping views remain possible. Callable source bodies and
+  an ownership contract are still OPEN; native grounds retain their existing
+  context-free boundary.
 - Tensors design (`tensors.jpp` is a decision stub). Direction (from
   MimIR's %tensor + julia's broadcast): shapes/ranks as comptime values
   in the tensor type; ops build lazy comptime-shaped expression objects;

@@ -19,6 +19,8 @@ Read in this order:
 6. [Injected dispatch tables](dispatch_tables.md): method regions, partial
    evaluation, the next scalar comparison proof, and the earlier running JSON case.
 7. [Binary units](binary_units.md): what an inspectable compiled unit must retain.
+8. [Resource scopes](resource_scopes.md): validated dispatched cleanup with Zig
+   defer; callable source bodies and borrowing remain open.
 
 **Status vocabulary:** RUNS means implemented and checked through the active
 pipeline; VALIDATED means machinery/probe evidence; RATIFIED means decided but

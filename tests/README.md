@@ -289,6 +289,12 @@ collapse, delegation, and export gating (cross-file fixture:
 `src/mixed_vis_fixture.zig`). A machinery test migrates to a case when
 the surface learns to express its promise.
 
+The [resource-scope experiment](../design/resource_scopes.md) is a native probe
+under `spike/`, run with `zig build scope-probe` or `zig build probes`. It checks
+dispatched cleanup with Zig defer, errors, nesting and caller overrides, plus a
+compile rejection for fallible cleanup. It does not add source scope syntax or
+claim lifetime safety; an escaping-view test records that limit.
+
 ## Injected tables and serialization
 
 - `enum_demand`: preserve runtime forwarding and independent case decisions,

@@ -22,13 +22,16 @@ Everything through `zig build`:
 | `zig build demo` | transpile, compile, run the default case (ok-lines + verdict) |
 | `zig build test` | inline machinery tests in src/jpp.zig + all language cases |
 | `zig build lang-tests` | the language cases, each self-reporting `[case] PASS|FAIL` |
-| `zig build probes` | the validated spike probes (interp, enum, binder, vec) |
+| `zig build probes` | the validated spike probes (interp, enum, binder, vec, scope) |
+| `zig build scope-probe` | dispatched resource scopes with Zig defer (also in probes) |
 
 Raw equivalents (no build system): `zig run src/jppc.zig -- [src_root]
 [out_dir]` (discovers `.jpp` recursively; a program is a root module
 that defines `main`; `Base/` modules join every tree, the tree's own
 shadow them), then `zig run <out_dir>/run.zig`.
 `zig test src/jpp.zig`; `zig test spike/<probe>.zig`.
+The scope probe imports the active machinery as a named module; use
+`zig build scope-probe` for its module wiring and negative compilation check.
 
 Imports are explicit. `using Base` selects the public facade at Base/Base.jpp;
 it includes arithmetic, boolean words, equality, isOneOf, Any, Tuple utilities and check. Leaf imports such as
@@ -123,6 +126,7 @@ pack syntax, and module paths; they do not reach Zig compilation.
 | `enumprobe.zig` | value dispatch + runtime enum bridge (`inline else`), nesting, int ranges (5) |
 | `binderprobe.zig` | two-section packs, no cross-fill, permuted named args -> one instance (4) |
 | `vecprobe.zig` | parametric type-words: pattern binding, unification, re-application provenance (5) |
+| `scopeprobe.zig` + `scope.zig` | synchronous cleanup with Zig defer and the active jpp dispatcher: caller overrides, pooling, errors, nested scopes, and the escaping-view limit; cleanup-error rejection in `scope_cleanup_error.zig` |
 | `soprobe.zig` | dlopen/dlsym symbol probing — the symbol-name-as-cache-key venue |
 | `tailcalls.zig` + `tailprobe*.zig` | guaranteed tail calls through the encoding; documents the comptime mutual-recursion landmine (§11) — slow to compile by design of the experiment |
 | `jpp.zig` | historical method-struct encoding still used by `tailcalls.zig`; not the active runtime |
