@@ -118,8 +118,8 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | # | Promise (README ref) | Covered today | Boundary tests to write |
 |---|---|---|---|
 | 1 | Specificity ladder: exact type value > exact input type > pred > bare; dominance, never sum (§4, §9) | `type_values` (type value versus input type); `dispatch` (exact/predicate); `where_gate` (long and short predicate spellings, authored Any fallback); `any` (predicate above bare); `pointwise_gap`, `gate_conjunction`; machinery tests (bar lattice, full ladder) | — |
-| 2 | Ambiguity: same-module crossing = comptime error at the call; intersection cures (§9) | `ambiguity`, `where_gate_clash`, `pointwise_gap`, `order_cycle` (negative cases); machinery tests | — |
-| 3 | Ordered context: position breaks ties; flip flips (§1, §9) | `override`, `context_flip`; machinery tests | — |
+| 2 | Ambiguity: same-module crossing = comptime error at the call; intersection cures (§9) | `ambiguity`, `cycle_local_ambiguity`, `where_gate_clash`, `pointwise_gap`, `order_cycle` (negative cases); machinery tests | — |
+| 3 | Ordered context: position breaks ties; flip flips (§1, §9) | `override`, `context_flip`, `cycle_ambiguity`, `cycle_facade_ambiguity`; machinery tests | — |
 | 4 | Context accumulation: caller ahead, callee STATIC behind (§1) | `depth_override`, `caller_context`, `equality_scope` | direct extendAll-ordering test |
 | 5 | Depth overrides: surgical, unlimited (§1, §10.5) | `depth_override`, `collapse_imports`; `checkout` (4+ levels, discount and freight overrides at different depths) | recursive call graphs |
 | 6 | Delegation `M.f` (§1) | machinery tests | surface `M.f` (parser) then a case |
@@ -269,8 +269,13 @@ Rest/splat promises:
   `varargs_two_named`, `splat_labelled`: frontend grammar boundaries.
 
 Module promises now include `base_folder`, explicit facade/wildcard cases,
-`folder_collision`, and `cycle_*` cases. Mutual imports share public dispatch
-identity, private names remain file-local, and package facades control exports.
+`folder_collision`, and `cycle_*` cases. Mutual imports share a public interface
+while keeping local-before-import precedence and authored import order from the
+caller's first entry. `cycle_ambiguity` and `cycle_facade_ambiguity` now succeed:
+crossing methods in different cycle members use context position. Reversing the
+entry reverses their winner; specificity and caller overrides still take priority.
+`cycle_local_ambiguity` rejects competing maxima within one source module.
+Private names remain file-local, and package facades control exports.
 Each case's test.md specifies the exact positive or negative boundary.
 
 The build regenerates trees and reruns negative compilation checks; cached

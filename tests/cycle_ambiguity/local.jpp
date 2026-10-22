@@ -1,0 +1,12 @@
+using b
+using Base.Any
+using Base.Test
+export crossed
+
+crossed(::int64, <:Any) = 3
+
+main() = {
+    check("the caller's local method precedes the cycle", crossed(1, 2), 3)
+    check("the caller's override reaches a", fromA(), 3)
+    check("the caller's override reaches b", fromB(), 3)
+}

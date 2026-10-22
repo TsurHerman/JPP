@@ -1005,6 +1005,15 @@ fn dispatchHome(comptime mod: type) type {
     return if (@hasDecl(mod, "DISPATCH_HOME")) mod.DISPATCH_HOME else mod;
 }
 
+fn componentOf(comptime mod: type) type {
+    return if (@hasDecl(mod, "COMPONENT")) mod.COMPONENT else mod;
+}
+
+fn containsUnit(comptime ctx: anytype, comptime mod: type) bool {
+    inline for (ctx) |m| if (componentOf(m) == componentOf(mod)) return true;
+    return false;
+}
+
 pub fn contains(comptime ctx: anytype, comptime mod: type) bool {
     inline for (ctx) |m| if (m == mod) return true;
     return false;
@@ -1012,13 +1021,13 @@ pub fn contains(comptime ctx: anytype, comptime mod: type) bool {
 
 fn ExtendAllT(comptime ctx: anytype, comptime mods: anytype, comptime i: usize) type {
     if (i == mods.len) return @TypeOf(ctx);
-    if (contains(ctx, dispatchUnit(mods[i]))) return ExtendAllT(ctx, mods, i + 1);
+    if (containsUnit(ctx, dispatchUnit(mods[i]))) return ExtendAllT(ctx, mods, i + 1);
     return ExtendAllT(ctx ++ .{dispatchUnit(mods[i])}, mods, i + 1);
 }
 
 fn extendAllFrom(comptime ctx: anytype, comptime mods: anytype, comptime i: usize) ExtendAllT(ctx, mods, i) {
     if (i == mods.len) return ctx;
-    if (comptime contains(ctx, dispatchUnit(mods[i]))) return extendAllFrom(ctx, mods, i + 1);
+    if (comptime containsUnit(ctx, dispatchUnit(mods[i]))) return extendAllFrom(ctx, mods, i + 1);
     return extendAllFrom(ctx ++ .{dispatchUnit(mods[i])}, mods, i + 1);
 }
 
@@ -1180,8 +1189,8 @@ const Resolved = struct { m: Method, B: type, home: type, unit: ?type = null };
 
 fn methodUnit(comptime method: Method) ?type {
     const home = method.declaration_home orelse return null;
-    if (@hasDecl(home, "DISPATCH_HOME")) return home.DISPATCH_HOME;
-    if (@hasDecl(home, "UNIT")) return dispatchUnit(home.UNIT);
+    if (@hasDecl(home, "DISPATCH_HOME")) return componentOf(home.DISPATCH_HOME);
+    if (@hasDecl(home, "UNIT")) return componentOf(dispatchUnit(home.UNIT));
     return null;
 }
 
@@ -1208,10 +1217,12 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
             if (!@hasDecl(mod, word)) continue;
             const MM = @field(mod, word);
             if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
-            const candidate_home = dispatchHome(mod);
             const earlier_modules = n;
             for (MM.methods) |m| {
                 const unit = methodUnit(m);
+                // A cycle shares visibility, not an ambiguity scope. Keep
+                // each declaration's module, even through a facade or folder.
+                const candidate_home = if (unit != null) m.declaration_home.? else dispatchHome(mod);
                 // A facade view and its full unit can both be present. They
                 // may expose the same authored method, which is one candidate.
                 const duplicate = for (cands[0..earlier_modules]) |prior| {
@@ -1257,9 +1268,7 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
             max_count += 1;
             if (first_max == null) {
                 first_max = cands[i]; // gather order = context order = position
-            } else if (cands[i].home == first_max.?.home or
-                (cands[i].unit != null and cands[i].unit == first_max.?.unit))
-            {
+            } else if (cands[i].home == first_max.?.home) {
                 same_home_clash = true;
             }
         }

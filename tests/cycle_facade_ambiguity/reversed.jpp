@@ -1,0 +1,5 @@
+using group.package.worker
+using group
+using Base.Test
+
+main() = check("entering through the sibling preserves its local precedence", crossed(1, 2), 2)

@@ -45,7 +45,7 @@ Status of the major features:
 | predicate gates `where T <: Integer` (sugar for `Integer(T)`); predicates are ordinary words qualed on `::type` | RUNS (where_gate) |
 | predicates DEFINED from predicates (joins/meets), so `where` needs no boolean combinators | RUNS (pred_join) |
 | infix operators are ordinary overridable words: `\|\| && == + - * /`, precedence loosest-first | RUNS (pred_join pins boolean precedence; value_equality covers equality) |
-| explicit Base namespace/facade, recursive folder imports, wildcard siblings, and public import-cycle units | RUNS (base_folder, folder_modules, cycle_imports, cycle_folder; facade and privacy negatives) |
+| explicit Base namespace/facade, recursive folder imports, wildcard siblings, and ordered public import-cycle interfaces | RUNS (base_folder, folder_modules, cycle_imports, cycle_folder, cycle_ambiguity, cycle_facade_ambiguity; facade, privacy and same-module ambiguity negatives) |
 | immutable local bindings name ANF values without repeating calls | RUNS (local_bindings, checkout; binding_* frontend rejection cases) |
 | immutable module constants, native namespace access, and lexical enum case patterns | RUNS (static_bindings, dwarf_offsets; static_binding_* and enum_pattern_* rejection cases) |
 | value predicates and classifier comparisons in `where`, evaluated from known branch facts | RUNS (log_labels, enum_guard_order, value_guard_variant; guard rejection cases) |
@@ -124,13 +124,21 @@ Status of the major features:
   `/` returns float64 for either same-type pair; int64 div truncates toward zero.
   Mixed promotion and other widths remain unbuilt. All imports retain ordinary
   caller-first context priority; put an intended caller override ahead of Base.
-- **Mutual imports form one unit (RUNS).** Import cycles, including longer
-  cycles through folders, share one public dispatch position. Importing an ordinary
-  member exposes the unit's public words; a facade still restricts its package
-  interface to authored exports, even when it participates in a cycle. Competing maxima in that unit are
-  ambiguous at the call, independently of entry member. Private visibility
-  remains file-local, and original method homes survive composition. This is
-  module-graph connectivity, unrelated to the pairwise `<:` relation.
+- **Mutual imports preserve local precedence (RUNS; corrected 2026-10-22).**
+  Import cycles, including longer cycles through folders, share a public
+  interface. Importing an ordinary member exposes the component's public words;
+  a facade still restricts its package interface to authored exports. Local
+  declarations precede authored imports when specificity leaves equal or
+  incomparable maxima: entering through `a` in an `a`/`b` cycle gives `a`
+  precedence, and entering through `b` gives `b` precedence. Direct imports
+  precede deeper imports; folders keep their deterministic child order. The
+  first entry in the accumulated caller context supplies the component's order;
+  repeated imports do not duplicate its methods. More-specific methods still
+  win regardless of position. Competing maxima in the winning source module
+  remain ambiguous. Private visibility stays file-local, and original method
+  homes survive composition. This supersedes the former rule that a whole
+  cycle was one ambiguity scope, independently of entry. Module connectivity
+  remains unrelated to the pairwise `<:` relation.
 - **Exports gate everything (ratified).** A word callable from outside
   its module — by fusion (`using`) OR by qualification (`M.f`) — must
   be labeled `export`. One closed interface per module; internals
@@ -1266,7 +1274,7 @@ print/algebra demo):
   structs with return inference against runtime parameters), driver
   (defaults: tests/dispatch -> gen/, machinery copied alongside,
   harness generated). Source trees are discovered recursively; folder
-  aggregates, optional facades, sibling wildcards, public cyclic-import units,
+  aggregates, optional facades, sibling wildcards, ordered cyclic-import interfaces,
   dotted imports, and the Base namespace are supported. Generated module filenames and Zig aliases use
   the same byte escaping, preserving `Base`/`base` and `a.b`/`a_b` identities
   on case-insensitive filesystems and avoiding driver/runtime collisions

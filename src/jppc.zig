@@ -1174,7 +1174,7 @@ fn emitGroundPrelude(o: *Out, d: Def, g: [:0]const u8) void {
 
 const Found = struct { name: []const u8, path: []const u8 };
 
-// Import SCCs are public dispatch units. Source files retain lexical homes.
+// Import SCCs share public words, but retain entry-dependent module order.
 const ModuleGraph = struct {
     names: []const []const u8,
     edges: [512][512]bool = @splat(@splat(false)),
@@ -1225,7 +1225,7 @@ const ModuleGraph = struct {
 
     fn unitName(g: *const ModuleGraph, i: usize) ?[]const u8 {
         const leader = g.leader[i];
-        return if (g.size[leader] > 1 or g.edges[i][i]) g.names[leader] else null;
+        return if (g.size[leader] > 1 or g.edges[i][i]) g.names[i] else null;
     }
 };
 
@@ -1574,8 +1574,9 @@ pub fn main(pinit: std.process.Init) !void {
         std.debug.print("jppc: aggregate {s} ({d} children, {d} words)\n", .{ path, nchild, exports[fi].items.len });
     }
 
-    for (names.items, 0..) |unit, leader| {
-        if (graph.leader[leader] != leader or graph.unitName(leader) == null) continue;
+    for (names.items, 0..) |unit, entry| {
+        if (graph.unitName(entry) == null) continue;
+        const leader = graph.leader[entry];
         // Folder members contribute their descendant source files, not their
         // generated UNIT aliases. This prevents circular word initializers.
         var contributes: [512]bool = @splat(false);
@@ -1593,6 +1594,38 @@ pub fn main(pinit: std.process.Init) !void {
                 };
             };
         }
+        // Local declarations precede authored imports, including within a
+        // cycle. Traverse breadth-first so direct imports precede deeper ones;
+        // folders retain their deterministic child order. Each entry gets a
+        // view of the same component, without choosing a global winning file.
+        var order: [512]usize = undefined;
+        var norder: usize = 1;
+        order[0] = entry;
+        var seen: [512]bool = @splat(false);
+        seen[entry] = true;
+        var oi: usize = 0;
+        while (oi < norder) : (oi += 1) {
+            const i = order[oi];
+            var next: [512]usize = undefined;
+            var nnext: usize = 0;
+            if (i < mods.len) {
+                for (parsed[i].usings) |u| {
+                    next[nnext] = graph.lookup(u).?;
+                    nnext += 1;
+                }
+            } else {
+                for (0..names.items.len) |j| if (graph.edges[i][j]) {
+                    next[nnext] = j;
+                    nnext += 1;
+                };
+                sortModuleIndices(names.items, next[0..nnext]);
+            }
+            for (next[0..nnext]) |j| if (contributes[j] and !seen[j]) {
+                seen[j] = true;
+                order[norder] = j;
+                norder += 1;
+            };
+        }
         var words = try std.ArrayList([]const u8).initCapacity(a, 32);
         for (exports[leader].items) |w| _ = try appendWord(a, &words, w);
         for (0..mods.len) |i| if (graph.leader[i] == leader) {
@@ -1606,15 +1639,16 @@ pub fn main(pinit: std.process.Init) !void {
             } else if (contributes[i] and i < mods.len) external[i] = true;
         }
         var out = Out{ .buf = bigbuf };
-        out.add("// GENERATED public dispatch unit '{s}'; lexical homes remain files.\nconst jpp = @import(\"jpp.zig\");\n", .{unit});
+        out.add("// GENERATED cyclic interface entered through '{s}'; local methods lead.\nconst jpp = @import(\"jpp.zig\");\n", .{unit});
         for (names.items, 0..) |name, i| if ((i < mods.len and contributes[i]) or external[i]) {
             const alias = try aliasOf(a, name);
             out.add("const m_{s} = @import(\"m_{s}.zig\");\n", .{ alias, alias });
         };
         out.add("pub const SOURCES = .{{", .{});
-        for (0..mods.len) |i| if (contributes[i]) out.add("m_{s},", .{try aliasOf(a, names.items[i])});
+        for (order[0..norder]) |i| if (i < mods.len) out.add("m_{s},", .{try aliasOf(a, names.items[i])});
         out.add(" }};\n", .{});
         out.add("pub const IS_DISPATCH_UNIT = true;\n", .{});
+        out.add("pub const COMPONENT = @import(\"u_{s}.zig\");\n", .{try aliasOf(a, names.items[leader])});
         out.add("pub const MODULE_NAME = \"unit:{s}\";\npub const STATIC = .{{@This()", .{unit});
         for (names.items, 0..) |name, i| if (external[i]) out.add(",m_{s}", .{try aliasOf(a, name)});
         out.add(" }};\npub const EXPORTED = .{{", .{});
@@ -1622,7 +1656,7 @@ pub fn main(pinit: std.process.Init) !void {
         out.add(" }};\npub const DECLARED = EXPORTED;\n", .{});
         for (words.items) |w| {
             out.add("pub const @\"{s}\" = jpp.UnitWord(\"{s}\", .{{", .{ w, w });
-            for (0..mods.len) |i| if (contributes[i]) out.add("m_{s},", .{try aliasOf(a, names.items[i])});
+            for (order[0..norder]) |i| if (i < mods.len) out.add("m_{s},", .{try aliasOf(a, names.items[i])});
             out.add(" }});\n", .{});
         }
         const path = try std.fmt.allocPrint(a, "{s}/u_{s}.zig", .{ out_dir, try aliasOf(a, unit) });

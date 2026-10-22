@@ -1,5 +1,12 @@
+using c
 using b
 using Base.Any
-export crossed
+export crossed, same, specific, fromA
 
 crossed(::int64, <:Any) = 1
+
+same(::int64) = 11
+
+specific(<:Any) = 10
+
+fromA() = crossed(1, 2)

@@ -1,0 +1,4 @@
+using a
+export ordered
+
+ordered() = 30

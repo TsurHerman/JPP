@@ -1,6 +1,6 @@
 # cycle_imports
 
-A three-file strongly connected import component is one public dispatch unit.
+A three-file strongly connected import component shares a public interface.
 Importing any member exposes its public declarations, and importing multiple
 members does not duplicate methods. Original source files remain lexical homes:
 both private helpers have the same source spelling and retain distinct bodies.

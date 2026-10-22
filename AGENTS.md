@@ -42,8 +42,10 @@ a feature; preserve the ratified semantics unless the task changes them.
   selects Base/Base.jpp's facade, including Any; `using Base.Arithmetic` narrows
   the interface. Source paths can shadow bundled paths. `using Folder` uses
   Folder/Folder.jpp when present; `using Folder.*` gathers siblings excluding that
-  facade. Otherwise folders aggregate automatically. Mutual imports form one
-  public dispatch unit; private visibility remains file-local.
+  facade. Otherwise folders aggregate automatically. Mutual imports share a
+  public interface while preserving local-before-import precedence and authored
+  import order from the caller's first entry. A cycle does not merge source
+  modules into one ambiguity scope; private visibility remains file-local.
 - `export word` without local methods re-exports public imported implementations,
   or declares a required word when none exist. It supplies no dummy candidate.
   Check lexical calls/gates even in unused bodies; caller context cannot repair

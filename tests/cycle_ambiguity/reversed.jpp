@@ -1,0 +1,10 @@
+using b
+using a
+using Base.Test
+
+main() = {
+    check("entering through b reverses the crossing winner", crossed(1, 2), 2)
+    check("entering through b reverses the equal-signature winner", same(0), 22)
+    check("b's own declaration precedes deeper cyclic imports", ordered(), 20)
+    check("caller precedence survives entering a", fromA(), 2)
+}

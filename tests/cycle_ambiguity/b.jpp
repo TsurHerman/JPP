@@ -1,5 +1,13 @@
 using a
 using Base.Any
-export crossed
+export crossed, same, specific, ordered, fromB
 
 crossed(<:Any, ::int64) = 2
+
+same(::int64) = 22
+
+specific(::int64) = 20
+
+ordered() = 20
+
+fromB() = crossed(1, 2)

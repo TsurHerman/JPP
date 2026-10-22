@@ -34,8 +34,9 @@ Imports are explicit. `using Base` selects the public facade at Base/Base.jpp;
 it includes arithmetic, boolean words, equality, isOneOf, Any, Tuple utilities and check. Leaf imports such as
 `using Base.Arithmetic` and `using Base.Test` select narrower interfaces.
 `using folder.*` collects siblings excluding folder/folder.jpp; `using folder`
-uses that facade when present. Mutual imports share one dispatch unit while
-private definitions remain file-local. Generated module/unit names use injective
+uses that facade when present. Mutual imports share a public interface while
+retaining local-before-import precedence from the caller's first entry; private
+definitions remain file-local. Generated module/unit names use injective
 byte escaping so module identities survive case-insensitive filesystems.
 
 For a larger runnable example, read [the checkout case study](tests/checkout/test.md):

@@ -1,3 +1,11 @@
 using a
+using b
+using Base.Test
 
-main() = crossed(1, 2)
+main() = {
+    check("local crossing method precedes its cyclic import", crossed(1, 2), 1)
+    check("equal signatures use the same local precedence", same(0), 11)
+    check("a more specific imported method still wins", specific(0), 20)
+    check("authored import order precedes alphabetical order", ordered(), 30)
+    check("caller precedence survives entering the other member", fromB(), 1)
+}
