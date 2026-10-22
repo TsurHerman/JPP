@@ -1,0 +1,302 @@
+{
+  "textMateRules": [
+    {
+      "name": "JPP vivid: names",
+      "scope": [
+        "source.jpp variable.other.jpp"
+      ],
+      "settings": {
+        "foreground": "#D4DBE5",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: keywords",
+      "scope": [
+        "source.jpp keyword.control.jpp",
+        "source.jpp keyword.control.import.jpp",
+        "source.jpp keyword.control.export.jpp",
+        "source.jpp keyword.control.where.jpp"
+      ],
+      "settings": {
+        "foreground": "#C792EA",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: modules",
+      "scope": [
+        "source.jpp entity.name.namespace.jpp"
+      ],
+      "settings": {
+        "foreground": "#82AAFF",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: exports",
+      "scope": [
+        "source.jpp entity.name.function.export.jpp"
+      ],
+      "settings": {
+        "foreground": "#82D9D0",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: methods",
+      "scope": [
+        "source.jpp entity.name.function.definition.jpp"
+      ],
+      "settings": {
+        "foreground": "#FFD580",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: calls",
+      "scope": [
+        "source.jpp entity.name.function.call.jpp"
+      ],
+      "settings": {
+        "foreground": "#FFDDAD",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: signature inputs",
+      "scope": [
+        "source.jpp variable.parameter.jpp"
+      ],
+      "settings": {
+        "foreground": "#FFAD80",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: module constants",
+      "scope": [
+        "source.jpp variable.other.constant.module.jpp"
+      ],
+      "settings": {
+        "foreground": "#C5A3FF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: local bindings",
+      "scope": [
+        "source.jpp variable.other.constant.local.jpp"
+      ],
+      "settings": {
+        "foreground": "#D6B5FF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: types",
+      "scope": [
+        "source.jpp entity.name.type.jpp",
+        "source.jpp support.type.jpp",
+        "source.jpp keyword.operator.annotation.type.jpp"
+      ],
+      "settings": {
+        "foreground": "#64D9C9",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: predicates",
+      "scope": [
+        "source.jpp entity.name.type.predicate.jpp",
+        "source.jpp keyword.operator.annotation.predicate.jpp"
+      ],
+      "settings": {
+        "foreground": "#EF8FCB",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: guard calls",
+      "scope": [
+        "source.jpp meta.guard.jpp entity.name.function.call.jpp"
+      ],
+      "settings": {
+        "foreground": "#EF8FCB",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: exact cases",
+      "scope": [
+        "source.jpp constant.other.enum.jpp"
+      ],
+      "settings": {
+        "foreground": "#FF9478",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: members",
+      "scope": [
+        "source.jpp variable.other.property.jpp"
+      ],
+      "settings": {
+        "foreground": "#7DCFFF",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: named fields",
+      "scope": [
+        "source.jpp variable.other.property.named.jpp"
+      ],
+      "settings": {
+        "foreground": "#B8D87F",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: numbers",
+      "scope": [
+        "source.jpp constant.numeric.jpp"
+      ],
+      "settings": {
+        "foreground": "#F5B76B",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: booleans",
+      "scope": [
+        "source.jpp constant.language.boolean.jpp"
+      ],
+      "settings": {
+        "foreground": "#F49CBB",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: strings",
+      "scope": [
+        "source.jpp string.quoted.double.jpp"
+      ],
+      "settings": {
+        "foreground": "#ADDB86",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: escapes",
+      "scope": [
+        "source.jpp constant.character.escape.jpp"
+      ],
+      "settings": {
+        "foreground": "#EACC80",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: comments",
+      "scope": [
+        "source.jpp comment.line.number-sign.jpp"
+      ],
+      "settings": {
+        "foreground": "#8A94A6",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "JPP vivid: assignment",
+      "scope": [
+        "source.jpp keyword.operator.assignment.jpp"
+      ],
+      "settings": {
+        "foreground": "#F07178",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: logic",
+      "scope": [
+        "source.jpp keyword.operator.logical.jpp",
+        "source.jpp keyword.operator.comparison.jpp"
+      ],
+      "settings": {
+        "foreground": "#F78C6C",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: arithmetic",
+      "scope": [
+        "source.jpp keyword.operator.arithmetic.jpp"
+      ],
+      "settings": {
+        "foreground": "#E6D6BD",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: rests and splats",
+      "scope": [
+        "source.jpp keyword.operator.spread.jpp"
+      ],
+      "settings": {
+        "foreground": "#DEABFF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: named separator",
+      "scope": [
+        "source.jpp punctuation.separator.named.jpp"
+      ],
+      "settings": {
+        "foreground": "#FF869A",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "JPP vivid: punctuation",
+      "scope": [
+        "source.jpp punctuation.section.parameters.begin.jpp",
+        "source.jpp punctuation.section.parameters.end.jpp",
+        "source.jpp punctuation.section.arguments.begin.jpp",
+        "source.jpp punctuation.section.arguments.end.jpp",
+        "source.jpp punctuation.section.pack.begin.jpp",
+        "source.jpp punctuation.section.pack.end.jpp",
+        "source.jpp punctuation.section.block.begin.jpp",
+        "source.jpp punctuation.section.block.end.jpp",
+        "source.jpp punctuation.separator.comma.jpp",
+        "source.jpp punctuation.accessor.jpp"
+      ],
+      "settings": {
+        "foreground": "#9DAAC0",
+        "fontStyle": ""
+      }
+    },
+    {
+      "name": "JPP vivid: anonymous inputs",
+      "scope": [
+        "source.jpp variable.language.anonymous.jpp"
+      ],
+      "settings": {
+        "foreground": "#8A94A6",
+        "fontStyle": "italic"
+      }
+    },
+    {
+      "name": "JPP vivid: Zig boundary",
+      "scope": [
+        "source.jpp keyword.control.ground.jpp",
+        "source.jpp punctuation.section.embedded.begin.jpp",
+        "source.jpp punctuation.section.embedded.end.jpp"
+      ],
+      "settings": {
+        "foreground": "#7DDFB3",
+        "fontStyle": "bold"
+      }
+    }
+  ]
+}

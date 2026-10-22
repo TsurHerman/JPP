@@ -1,6 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { createHighlighter } from 'shiki';
+import githubDark from 'shiki/themes/github-dark.mjs';
+import githubLight from 'shiki/themes/github-light.mjs';
 
 const [input, output = 'preview.html', ...extra] = process.argv.slice(2);
 if (!input || extra.length || resolve(input) === resolve(output)) {
@@ -10,15 +12,19 @@ if (!input || extra.length || resolve(input) === resolve(output)) {
 
 const grammar = JSON.parse(await readFile(new URL('../syntaxes/jpp.tmLanguage.json', import.meta.url), 'utf8'));
 const source = await readFile(input, 'utf8');
+const themes = await Promise.all([['dark', githubDark], ['light', githubLight]].map(async ([mode, base]) => {
+  const palette = JSON.parse(await readFile(new URL(`../palettes/${mode}.json`, import.meta.url), 'utf8'));
+  return { ...base, name: `jpp-${mode}`, tokenColors: [...base.tokenColors, ...palette.textMateRules] };
+}));
 const highlighter = await createHighlighter({
-  themes: ['github-dark', 'github-light'],
+  themes,
   langs: ['zig', { ...grammar, name: 'jpp' }],
 });
 
 try {
   const code = highlighter.codeToHtml(source, {
     lang: 'jpp',
-    themes: { light: 'github-light', dark: 'github-dark' },
+    themes: { light: 'jpp-light', dark: 'jpp-dark' },
   });
   const title = basename(input).replace(/[&<>"']/g, c => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',

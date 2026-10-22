@@ -9,6 +9,8 @@ import { after, test } from 'node:test';
 import textmate from 'vscode-textmate';
 import oniguruma from 'vscode-oniguruma';
 import zig from 'shiki/langs/zig.mjs';
+import { createHighlighter } from 'shiki';
+import { parse } from 'jsonc-parser';
 
 const require = createRequire(import.meta.url);
 const extension = fileURLToPath(new URL('../', import.meta.url));
@@ -78,19 +80,19 @@ for (const embedded of [false, true]) {
     has(lines[0], 'Base.Arithmetic', 'entity.name.namespace.jpp');
     has(lines[0], '# explicit imports', 'comment.line.number-sign.jpp');
     has(lines[1], 'folder.*', 'entity.name.namespace.jpp');
-    has(lines[1], 'export', 'keyword.control.jpp');
-    has(lines[2], 'sum', 'entity.name.function.jpp');
-    has(lines[2], '::', 'keyword.operator.annotation.jpp');
+    has(lines[1], 'export', 'keyword.control.export.jpp');
+    has(lines[2], 'sum', 'entity.name.function.definition.jpp');
+    has(lines[2], '::', 'keyword.operator.annotation.type.jpp');
     has(lines[2], 'T', 'entity.name.type.jpp');
-    has(lines[2], '<:', 'keyword.operator.annotation.jpp');
-    has(lines[2], 'Any', 'entity.name.type.jpp');
+    has(lines[2], '<:', 'keyword.operator.annotation.predicate.jpp');
+    has(lines[2], 'Any', 'entity.name.type.predicate.jpp');
     has(lines[2], '...', 'keyword.operator.spread.jpp');
-    has(lines[2], 'where', 'keyword.control.jpp');
+    has(lines[2], 'where', 'keyword.control.where.jpp');
     has(lines[3], '2.5', 'constant.numeric.jpp');
     has(lines[3], 'payload', 'variable.other.property.jpp');
     has(lines[3], '0', 'variable.other.property.jpp');
     has(lines[3], '1', 'variable.other.property.jpp');
-    has(lines[4], '<:', 'keyword.operator.jpp');
+    has(lines[4], '<:', 'entity.name.function.definition.jpp');
     has(lines[4], 'true', 'constant.language.boolean.jpp');
     has(lines[5], '# where zig{', 'string.quoted.double.jpp');
     has(lines[5], '\\"', 'constant.character.escape.jpp');
@@ -124,9 +126,50 @@ for (const embedded of [false, true]) {
     has(lines[5], '} still Zig text', 'string');
     has(lines[7], '@TypeOf', 'support.function');
     has(lines[7], '@TypeOf', 'meta.embedded.block.zig');
-    has(lines[9], 'after', 'entity.name.function.jpp');
+    has(lines[9], 'after', 'entity.name.function.definition.jpp');
     has(lines[9], '# back in JPP', 'comment.line.number-sign.jpp');
     assert.ok(lines[9].every(token => !token.scopes.includes('meta.embedded.block.zig')));
+    assert.equal(state.depth, 1);
+  });
+
+  test(`signatures, guards, bindings and named packs with ${mode}`, () => {
+    const source = [
+      'Level = Zig.std.log.Level',
+      'icon(Level.err) = "!"',
+      'label(level::Level) where needsAttention(level) == true = "ALERT"',
+      'collect(',
+      '  first::T, # signature names are positional roles, not inferred binders',
+      '  rest<:Any...; scale::float64',
+      ')::T where T = first',
+      'main() = {',
+      '  result = collect(1; scale = 2.5, options = (; enabled = true))',
+      '  other = { nested = collect(2); nested }',
+      '  check("alias", result.payload, other.0)',
+      '}',
+      'forward(x) =',
+      '  collect(x)',
+      'next() = 1',
+    ].join('\n');
+    const { lines, state } = tokenize(grammar, source);
+    has(lines[0], 'Level', 'variable.other.constant.module.jpp');
+    has(lines[1], 'Level.err', 'constant.other.enum.jpp');
+    has(lines[2], 'level', 'variable.parameter.jpp');
+    has(lines[2], 'needsAttention', 'entity.name.function.call.jpp');
+    has(lines[2], 'needsAttention', 'meta.guard.jpp');
+    has(lines[2], '==', 'keyword.operator.comparison.jpp');
+    has(lines[2], '"ALERT"', 'string.quoted.double.jpp');
+    assert.ok(lines[2].filter(t => t.text.includes('ALERT')).every(t => !t.scopes.includes('meta.guard.jpp')));
+    has(lines[3], 'collect', 'entity.name.function.definition.jpp');
+    has(lines[4], 'first', 'variable.parameter.jpp');
+    has(lines[5], 'scale', 'variable.parameter.jpp');
+    has(lines[5], 'Any', 'entity.name.type.predicate.jpp');
+    has(lines[8], 'result', 'variable.other.constant.local.jpp');
+    has(lines[8], 'collect', 'entity.name.function.call.jpp');
+    for (const name of ['scale', 'options', 'enabled']) has(lines[8], name, 'variable.other.property.named.jpp');
+    has(lines[9], 'nested', 'variable.other.constant.local.jpp');
+    has(lines[10], 'payload', 'variable.other.property.jpp');
+    has(lines[13], 'collect', 'entity.name.function.call.jpp');
+    has(lines[14], 'next', 'entity.name.function.definition.jpp');
     assert.equal(state.depth, 1);
   });
 
@@ -160,4 +203,59 @@ test('standalone rendering escapes source and filenames and preserves its input'
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('vivid palettes render distinct roles on light and dark backgrounds', async () => {
+  for (const mode of ['dark', 'light']) {
+    const palette = JSON.parse(await readFile(join(extension, `palettes/${mode}.json`), 'utf8'));
+    assert.ok(palette.textMateRules.every(rule => rule.scope.every(scope => scope.startsWith('source.jpp '))));
+    const highlighter = await createHighlighter({
+      langs: [{ ...rawGrammar, name: 'jpp' }],
+      themes: [{ name: mode, type: mode, colors: { 'editor.background': mode === 'dark' ? '#0d1117' : '#ffffff' }, tokenColors: palette.textMateRules }],
+    });
+    try {
+      const source = 'choose(input::Level, Level.err; rest<:Any...) = { saved = run(input; label = "ok"); saved.payload }';
+      const { tokens } = highlighter.codeToTokens(source, { lang: 'jpp', theme: mode });
+      const color = text => {
+        const offset = source.indexOf(text);
+        return tokens.flat().find(token => token.offset <= offset && token.offset + token.content.length > offset)?.color;
+      };
+      const names = ['choose', 'input', 'Level', 'Level.err', 'Any', 'saved', 'label', 'payload'];
+      assert.ok(names.every(name => color(name)), JSON.stringify(tokens));
+      assert.equal(new Set(names.map(color)).size, names.length, `Distinct role colors in ${mode}`);
+      const luminance = hex => {
+        const rgb = hex.slice(1).match(/../g).map(c => parseInt(c, 16) / 255)
+          .map(c => c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+        return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+      };
+      const bg = luminance(mode === 'dark' ? '#0d1117' : '#ffffff');
+      for (const rule of palette.textMateRules) {
+        const fg = luminance(rule.settings.foreground);
+        assert.ok((Math.max(bg, fg) + 0.05) / (Math.min(bg, fg) + 0.05) >= 4.5, `${mode}: ${rule.name} contrast`);
+      }
+    } finally { highlighter.dispose(); }
+  }
+});
+
+test('applying colors preserves JSONC settings and unrelated rules without duplicates', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'jpp-colors-'));
+  try {
+    const file = join(directory, 'settings.json');
+    await writeFile(file, '{\n// keep my theme\n"workbench.colorTheme":"Example",\n"editor.tokenColorCustomizations":{"comments":"#888888","textMateRules":[{"name":"mine","scope":"source.js","settings":{"foreground":"#ffffff"}}]},\n}\n');
+    const apply = mode => execFileSync(process.execPath, [join(extension, 'scripts/apply-colors.mjs'), mode, file], { stdio: 'pipe' });
+    apply('dark');
+    apply('light');
+    const written = await readFile(file, 'utf8');
+    const settings = parse(written);
+    assert.ok(written.includes('// keep my theme'));
+    assert.equal(settings['workbench.colorTheme'], 'Example');
+    assert.equal(settings['editor.tokenColorCustomizations'].comments, '#888888');
+    const palette = JSON.parse(await readFile(join(extension, 'palettes/light.json'), 'utf8'));
+    const rules = settings['editor.tokenColorCustomizations'].textMateRules;
+    assert.equal(rules[0].name, 'mine');
+    assert.deepEqual(rules.slice(1), palette.textMateRules);
+    await writeFile(file, '{ invalid settings');
+    assert.throws(() => apply('dark'));
+    assert.equal(await readFile(file, 'utf8'), '{ invalid settings');
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });
