@@ -1,9 +1,9 @@
 # Callable values, do blocks, and reflection
 
 Status: RUNS, ratified and implemented on 2026-10-23. `do_blocks`, `do_types`,
-`do_enum`, and `reflection` provide executable evidence. This document
-distinguishes the agreed semantics from broader callable, ownership, and
-reflection work that remains OPEN.
+`do_enum`, `callable_values`, `callable_identity`, and `reflection` provide
+executable evidence. This document distinguishes the agreed semantics from
+broader callable, ownership, and reflection work that remains OPEN.
 
 ## One value, one environment
 
@@ -77,23 +77,47 @@ does not prove that borrowed native resources remain alive.
 
 ## Named words keep their method families
 
-`bindword(f)` explicitly constructs a context-bound callable for a lexically
-declared word. It captures the effective context and the word's lexical identity.
-Calling it resolves that word normally in the captured context. Unlike an
-anonymous callback, it intentionally retains a method family.
+A declared function or operator used as a body value automatically carries its
+lexical identity and the effective dispatch context at that expression:
 
-Bare word values keep their existing class/predicate identity. The explicit
-binding form prevents passing an ordinary predicate identity from silently
-changing authored order or signature semantics. A lexical local with a matching
-spelling cannot silently redirect a value application to a module word. A
-non-callable value produces an error.
+```jpp
+F(twice, 3)
+sort(<, V)
+```
+
+Calling the value resolves that word normally in its saved context, and calls
+inside the selected implementation inherit that context. The receiver does not
+replace it. In particular, `sort(<, V)` agrees with
+`sort(V) do a, b { a < b }`. An anonymous callback has one body; a named callback
+retains a method family. Neither form selects a named method before its inputs
+are supplied.
+
+`f = twice` saves the context at that expression. Forwarding, returning, capturing,
+or storing `f` preserves it. A module alias `Alias = twice` stores the canonical
+identity; evaluating `Alias` as a body value creates the contextual reference.
+Static initializers otherwise retain their existing bounded staging rules.
+
+Stable word identity and invocation context are distinct facts. Exact word
+patterns compare canonical identity while retaining the actual supplied
+reference, so matching a known function never substitutes the receiver's
+context. Explicit `::type` inputs request the canonical identity view; they do
+not carry a callable context. This preserves predicate/order rules and native
+identity queries. Generic inputs and `<:Function` preserve the callable reference.
+There is no special treatment of predicate spellings such as `Any` or `Function`.
+
+The earlier `bindword(f)` spelling remains a compatible explicit form; it is not
+required. A lexical local with a matching spelling cannot silently redirect a
+value application to a module word. A non-callable value produces an error.
 
 ## Reflection is language data
 
 Reflection describes actual callable values and concrete call facts through
 ordinary imported library words. The initial interface is `Base.Reflection`:
 `reflect(f)`, `analyze(f, pack)`, and `returnType(f, pack)`. The pack is an explicit
-two-section value, preserving static fields and runtime field types.
+two-section value, preserving static fields and runtime field types. Named values
+work directly: `reflect(twice)`, `analyze(twice, (3,))`, and
+`returnType(twice, (3,))`. A named reference's source is its construction site;
+candidate sources identify the actual implementation declarations.
 
 Description includes callable kind, body or word identity, original lexical home,
 source provenance, captured dispatch context, and capture descriptors. Static

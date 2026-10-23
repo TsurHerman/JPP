@@ -1,0 +1,87 @@
+using Base
+using Base.Reflection
+using maker
+
+export twice, transform, adjust, Integer, <
+
+# A name keeps its class identity while its callable reference carries context.
+Alias = transform
+IntegerAlias = Integer
+
+twice(x) = x + x
+transform(x) = adjust(x)
+adjust(x<:Any) = 10
+<(left::int64, right::int64)::bool = zig{ left < right }
+
+Integer(T::type)::bool = zig{ @typeInfo(T) == .int }
+same(P::type, Q::type)::bool = zig{ P == Q }
+identity(x) = x
+applyOne(f, x) = f(x)
+applyTwo(f, left, right) = f(left, right)
+applyFunction(f<:Function, x) = f(x)
+identities(xs::type...) = xs
+located(info)::bool = zig{ info.source.file.len > 0 and info.source.line > 0 and info.source.column > 0 }
+
+classify(::type) = 0
+classify(Any) = 1
+classify(Integer) = 2
+
+# Exact identity patterns must retain the reference, including its context.
+invokeExact(transform, x) = transform(x)
+invokeExact(f<:Function, x) = x
+invokeAlias(Alias, x) = Alias(x)
+sameFamily(transform, transform) = true
+sameFamily(left<:Function, right<:Function) = false
+
+main() = {
+    check("bare function is passed directly", applyOne(twice, 3), 6)
+    check("arithmetic operator is passed directly", applyTwo(+, 2, 3), 5)
+    check("comparison operator is passed directly", applyTwo(<, 2, 3), true)
+    check("ordinary Function accepts a bare function", applyFunction(twice, 3), 6)
+    check("ordinary Function accepts a predicate", applyFunction(Integer, int64), true)
+
+    check("Any still accepts a predicate identity", Any(Integer), true)
+    check("Any exact identity pattern survives", classify(Any), 1)
+    check("other exact identity pattern survives", classify(Integer), 2)
+    check("unrelated native types remain type values", classify(int64), 0)
+    check("native type parameters see canonical identity", same(Integer, IntegerAlias), true)
+    check("different word identities remain distinct", same(Integer, Any), false)
+    check("authored predicate order still holds", <:(Integer, Any), true)
+    check("reverse predicate order is not invented", <:(Any, Integer), false)
+    check("order operator can be passed as a callable", applyTwo(<:, Integer, Any), true)
+    check("passed order keeps intrinsic identity floor", applyTwo(<:, Integer, Integer), true)
+    projected = identities(Integer, Any)
+    check("explicit type rest projects first canonical identity", same(first(projected), Integer), true)
+    check("explicit type rest projects every canonical identity", same(first(tail(projected)), Any), true)
+
+    local = transform
+    other = fromMaker()
+    check("local binding captures its use-site context", local(3), 10)
+    check("returned reference captures the maker context", other(3), 100)
+    check("calls inside selected method use captured context", throughMaker(local, 3), 10)
+    check("generic forwarding retains the captured reference", identity(other)(3), 100)
+    holder = (; action = other)
+    check("pack storage retains the captured reference", holder.action(3), 100)
+    check("different contexts retain one canonical identity", same(local, other), true)
+    check("exact pattern retains the supplied reference context", invokeExact(other, 3), 100)
+    check("exact pattern recognizes a local reference", invokeExact(local, 3), 10)
+    check("another word takes the ordinary fallback", invokeExact(twice, 3), 3)
+    check("repeated exact word patterns compare identity", sameFamily(local, other), true)
+    check("repeated exact patterns reject a different word", sameFamily(local, twice), false)
+
+    check("module alias becomes callable at use", applyOne(Alias, 3), 10)
+    check("module alias has the same canonical identity", same(Alias, other), true)
+    check("alias exact pattern retains supplied context", invokeAlias(other, 3), 100)
+    check("predicate alias is callable", applyOne(IntegerAlias, int64), true)
+
+    localInfo = reflect(local)
+    otherInfo = reflect(other)
+    check("reflection preserves named callable kind", localInfo.kind, "word")
+    check("reflection preserves identity across contexts", localInfo.identity, otherInfo.identity)
+    check("reflection names the original word", localInfo.identity, "transform")
+    check("main reference retains original source location", located(localInfo), true)
+    check("maker reference retains original source location", located(otherInfo), true)
+    check("reflection of bare predicate is callable metadata", reflect(Integer).kind, "word")
+    check("direct reference analysis uses execution resolver", analyze(other, (3,)).status, "selected")
+    check("return typing follows direct callable", returnType(other, (3,)), int64)
+}

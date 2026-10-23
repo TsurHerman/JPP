@@ -1,0 +1,24 @@
+using Base
+
+Width = zig{ enum { small, large } }
+Open = zig{ enum(u8) { first = 0, _ } }
+
+width(Width.small) = int32
+width(Width.large) = int64
+runtimeWidth(T::type, small::bool) = zig{ @as(T, if (small) .small else .large) }
+bytes(f, flag) = size(f(flag))
+size(T::type)::int64 = zig{ @sizeOf(T) }
+
+identity(x) = x
+apply(f, x) = f(x)
+unknown(T::type) = zig{ @as(T, @enumFromInt(9)) }
+tag(x)::int64 = zig{ @intFromEnum(x) }
+
+main() = {
+    small = runtimeWidth(Width, true)
+    large = runtimeWidth(Width, false)
+    check("named callback composes runtime type selection", bytes(width, small), 4)
+    check("named callback selects another type arm", bytes(width, large), 8)
+    check("type selection agrees with anonymous callback", bytes(width, large), bytes(large) do x { width(x) })
+    check("named identity does not enumerate an open enum", tag(apply(identity, unknown(Open))), 9)
+}

@@ -1,0 +1,22 @@
+using Base
+using bridge
+
+twice(x) = x + x
+combine(f, a, b) = f(a, b)
+input() = zig{ [4]f64{ 4.5, 1.5, 3.5, 2.5 } }
+expected() = zig{ [4]f64{ 1.5, 2.5, 3.5, 4.5 } }
+sameVector(a, b)::bool = zig{ std.mem.eql(f64, &a, &b) }
+
+main() = {
+    check("direct private function with Base", F(twice, 3), 6)
+    check("arithmetic operator value", combine(+, 2, 3), 5)
+    check("subtraction operator value", combine(-, 5, 2), 3)
+    check("equality operator value", combine(==, 3, 3), true)
+    check("Base integer less comparator", combine(<, 2, 3), true)
+    check("Base float greater comparator", combine(>, 3.5, 2.5), true)
+    check("comparisons bind below arithmetic", 1 + 2 < 2 * 2, true)
+    check("prefix operator calls", -(5, 2), 3)
+    V = input()
+    check("Base comparator sorts a native float vector", sameVector(sort(<, V), expected()), true)
+    check("Base comparison agrees with do syntax", sameVector(sort(<, V), sort(V) do a, b { a < b }), true)
+}

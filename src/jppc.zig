@@ -139,7 +139,7 @@ fn lex(src: []const u8, toks: []Tok) LexError![]Tok {
                     toks[n] = .{ .kind = .eq, .text = "=", .pos = start };
                 }
             },
-            '+', '-', '*', '/' => toks[n] = .{ .kind = .op, .text = src[i .. i + 1], .pos = start },
+            '+', '-', '*', '/', '>' => toks[n] = .{ .kind = .op, .text = src[i .. i + 1], .pos = start },
             // only the doubled forms: a lone `&`/`|` has no meaning yet
             '&', '|' => {
                 if (i + 1 < src.len and src[i + 1] == c) {
@@ -159,12 +159,11 @@ fn lex(src: []const u8, toks: []Tok) LexError![]Tok {
                     i += 1;
                 } else return error.BadChar;
             },
-            // bare `<` stays BadChar: jpp has no comparison operator yet
             '<' => {
                 if (i + 1 < src.len and src[i + 1] == ':') {
                     toks[n] = .{ .kind = .subtype, .text = "<:", .pos = start };
                     i += 1;
-                } else return error.BadChar;
+                } else toks[n] = .{ .kind = .op, .text = "<", .pos = start };
             },
             else => return error.BadChar,
         }
@@ -183,7 +182,7 @@ const Node = union(enum) {
     lit_f: f64,
     lit_s: []const u8, // raw (escapes preserved verbatim, re-emitted verbatim)
     lit_b: bool,
-    ident: []const u8,
+    ident: struct { name: []const u8, source: SourceIR = .{} },
     call: struct { callee: []const u8, args: []Arg },
     apply: struct { target: *Node, args: []Arg },
     closure: *Def,
@@ -362,7 +361,7 @@ const Parser = struct {
             }
             if (p.peek().kind != .ident and p.peek().kind != .dcolon and p.peek().kind != .subtype) return error.Parse;
             const spelling = if (p.peek().kind == .ident) p.next().text else "_";
-            const value = if (p.peek().kind == .dot) try p.parseMembers(try p.node(.{ .ident = spelling })) else null;
+            const value = if (p.peek().kind == .dot) try p.parseMembers(try p.node(.{ .ident = .{ .name = spelling } })) else null;
             if (value != null and named) return bindingError(error.NamedValuePattern, spelling);
             const anonymous = value != null or std.mem.eql(u8, spelling, "_");
             if (named and anonymous) return bindingError(error.NamedInputNeedsName, spelling);
@@ -427,14 +426,14 @@ const Parser = struct {
                 try gates.append(p.a, .{ name, pred });
             } else {
                 const expr = try p.parseExpr(0);
-                if (expr.* == .ident and !isValueInput(params, expr.ident)) {
-                    try addWhereVar(&vars, p.a, expr.ident);
+                if (expr.* == .ident and !isValueInput(params, expr.ident.name)) {
+                    try addWhereVar(&vars, p.a, expr.ident.name);
                 } else if (expr.* == .call and expr.call.args.len == 1 and
                     expr.call.args[0].label.len == 0 and expr.call.args[0].splat == .none and
                     expr.call.args[0].value.* == .ident and
-                    !isValueInput(params, expr.call.args[0].value.ident))
+                    !isValueInput(params, expr.call.args[0].value.ident.name))
                 {
-                    const name = expr.call.args[0].value.ident;
+                    const name = expr.call.args[0].value.ident.name;
                     try addWhereVar(&vars, p.a, name);
                     try gates.append(p.a, .{ name, expr.call.callee });
                 } else if (expr.* == .call and std.mem.eql(u8, expr.call.callee, "==") and
@@ -442,11 +441,11 @@ const Parser = struct {
                     expr.call.args[1].value.* == .ident and
                     expr.call.args[0].label.len == 0 and expr.call.args[0].splat == .none and
                     expr.call.args[1].label.len == 0 and expr.call.args[1].splat == .none and
-                    !isValueInput(params, expr.call.args[0].value.ident) and
-                    !isValueInput(params, expr.call.args[1].value.ident))
+                    !isValueInput(params, expr.call.args[0].value.ident.name) and
+                    !isValueInput(params, expr.call.args[1].value.ident.name))
                 {
-                    const lhs = expr.call.args[0].value.ident;
-                    const rhs = expr.call.args[1].value.ident;
+                    const lhs = expr.call.args[0].value.ident.name;
+                    const rhs = expr.call.args[1].value.ident.name;
                     try addWhereVar(&vars, p.a, lhs);
                     try addWhereVar(&vars, p.a, rhs);
                     try eqs.append(p.a, .{ lhs, rhs });
@@ -472,6 +471,7 @@ const Parser = struct {
         if (std.mem.eql(u8, text, "||")) return 4;
         if (std.mem.eql(u8, text, "&&")) return 6;
         if (std.mem.eql(u8, text, "==")) return 8;
+        if (std.mem.eql(u8, text, "<") or std.mem.eql(u8, text, ">")) return 8;
         if (text.len != 1) return null;
         return switch (text[0]) {
             '+', '-' => 10,
@@ -665,7 +665,7 @@ const Parser = struct {
                 _ = p.next();
                 return p.node(.{ .lit_s = t.text });
             },
-            .ident, .subtype, .eqeq => {
+            .ident, .op, .subtype, .eqeq => {
                 if (std.mem.eql(u8, t.text, "true") or std.mem.eql(u8, t.text, "false")) {
                     _ = p.next();
                     return p.node(.{ .lit_b = std.mem.eql(u8, t.text, "true") });
@@ -676,7 +676,7 @@ const Parser = struct {
                     const entries = try p.parseEntries();
                     return p.node(.{ .call = .{ .callee = t.text, .args = entries.args } });
                 }
-                return p.node(.{ .ident = t.text });
+                return p.node(.{ .ident = .{ .name = t.text, .source = p.location(t.pos) } });
             },
             .lparen => {
                 _ = p.next();
@@ -738,7 +738,7 @@ fn isTVar(d: Def, name: []const u8) bool {
 // ---------------------------------------------------------------- normalizer (ANF)
 
 const VR = union(enum) { bound_type: []const u8, param_type: usize, name: []const u8, param: usize, local: usize, lit_i: i64, lit_f: f64, lit_s: []const u8, lit_b: bool };
-const OpIR = struct { kind: enum { call, pack, project, closure, apply, bind_word } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, splats: []const Splat = &.{}, field: []const u8 = "", target: ?VR = null, closure: ?*ClosureIR = null, source: SourceIR = .{} };
+const OpIR = struct { kind: enum { call, pack, project, closure, apply, bind_word, word_value } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, splats: []const Splat = &.{}, field: []const u8 = "", target: ?VR = null, closure: ?*ClosureIR = null, source: SourceIR = .{} };
 const FlatIR = struct { ops: []OpIR, result: VR };
 const ClosureIR = struct { def: Def, captures: []const []const u8, flat: FlatIR };
 const GuardIR = struct { input: []const u8, predicate: ?[]const u8, flat: FlatIR };
@@ -890,7 +890,7 @@ fn flattenGuards(a: std.mem.Allocator, def: Def) ![]GuardIR {
         const predicate: ?[]const u8 = if (expr.* == .call and expr.call.args.len == 1 and
             expr.call.args[0].label.len == 0 and expr.call.args[0].splat == .none and
             expr.call.args[0].value.* == .ident and
-            std.mem.eql(u8, expr.call.args[0].value.ident, def.params[index].name)) expr.call.callee else null;
+            std.mem.eql(u8, expr.call.args[0].value.ident.name, def.params[index].name)) expr.call.callee else null;
         guards[gi] = .{ .input = def.params[index].name, .predicate = predicate, .flat = flat };
     }
     return guards;
@@ -902,7 +902,8 @@ fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpI
         .lit_f => |v| return .{ .lit_f = v },
         .lit_s => |v| return .{ .lit_s = v },
         .lit_b => |v| return .{ .lit_b = v },
-        .ident => |name| {
+        .ident => |ident| {
+            const name = ident.name;
             for (locals.items) |local| if (std.mem.eql(u8, local.name, name)) return local.value;
             for (def.params, 0..) |p, i| {
                 if (std.mem.eql(u8, p.name, name)) return .{ .param = i };
@@ -911,7 +912,8 @@ fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpI
                 return .{ .bound_type = name };
             }
             if (hasBinding(def.body.?, name)) return bindingError(error.ForwardBinding, name);
-            return .{ .name = name };
+            try ops.append(a, .{ .kind = .word_value, .callee = name, .target = .{ .name = name }, .args = &.{}, .source = ident.source });
+            return .{ .local = ops.items.len - 1 };
         },
         .call => |c| {
             var target: ?VR = null;
@@ -1030,7 +1032,7 @@ fn localWord(a: std.mem.Allocator, m: Mod, name: []const u8) ![]const u8 {
 // native grounds. Ordinary calls need a separate staging/context contract.
 fn emitStaticExpr(o: *Out, n: *Node) anyerror!void {
     switch (n.*) {
-        .ident => |name| o.add("jpp.requireValue(STATIC, \"{s}\")", .{name}),
+        .ident => |ident| o.add("jpp.requireValue(STATIC, \"{s}\")", .{ident.name}),
         .project => |proj| {
             o.add("jpp.memberValue(", .{});
             try emitStaticExpr(o, proj.value);
@@ -1099,7 +1101,7 @@ fn emitFlat(o: *Out, a: std.mem.Allocator, m: Mod, flat: FlatIR) anyerror!void {
     o.add(".{{ .ops = &.{{\n", .{});
     for (flat.ops) |op| {
         o.add("        .{{ .kind = .{s}, .callee = \"{s}\", .field = \"{s}\", .labels = &.{{", .{
-            @tagName(op.kind), if (op.kind == .call or op.kind == .bind_word) try localWord(a, m, op.callee) else "", op.field,
+            @tagName(op.kind), if (op.kind == .call or op.kind == .bind_word or op.kind == .word_value) try localWord(a, m, op.callee) else "", op.field,
         });
         for (op.labels) |label| o.add("\"{s}\",", .{label});
         o.add(" }}, .splats = &.{{", .{});
@@ -1118,7 +1120,7 @@ fn emitFlat(o: *Out, a: std.mem.Allocator, m: Mod, flat: FlatIR) anyerror!void {
             o.add(", .closure = ", .{});
             try emitClosure(o, a, m, closure.*);
         }
-        if (op.kind == .bind_word) {
+        if (op.kind == .bind_word or op.kind == .word_value) {
             o.add(", .source = ", .{});
             emitSource(o, op.source);
         }
@@ -1342,7 +1344,7 @@ fn groundUses(g: [:0]const u8, name: []const u8) bool {
 
 fn nodeUses(n: *Node, name: []const u8) bool {
     return switch (n.*) {
-        .ident => |s| std.mem.eql(u8, s, name),
+        .ident => |ident| std.mem.eql(u8, ident.name, name),
         .bind => |b| nodeUses(b.value, name),
         .call => |c| std.mem.eql(u8, c.callee, name) or entriesUse(c.args, name),
         .apply => |c| nodeUses(c.target, name) or entriesUse(c.args, name),

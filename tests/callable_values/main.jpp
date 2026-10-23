@@ -1,0 +1,41 @@
+using Base.Any
+using Base.Arithmetic
+using Base.Test
+using Base.Function
+using Base.Tuple
+using Base.Reflection
+using provider
+using bridge
+
+input() = zig{ [4]i64{ 4, 1, 3, 2 } }
+expected() = zig{ [4]i64{ 1, 2, 3, 4 } }
+sameVector(a, b)::bool = zig{ std.mem.eql(@typeInfo(@TypeOf(a)).array.child, &a, &b) }
+invokeFunction(f<:Function, x) = f(x)
+
+main() = {
+    check("named functions pass directly", F(twice, 3), 6)
+    check("named callback agrees with anonymous forwarding", F(twice, 3), F(3) do x { twice(x) })
+    check("receiver has a different internal policy", receiverPolicy(6), 106)
+    check("receiver has a different comparison policy", receiverLess(1, 2), false)
+
+    V = input()
+    named = sort(<, V)
+    anonymous = sort(V) do a, b { a < b }
+    check("operator is a comparator value", sameVector(named, expected()), true)
+    check("named operator agrees with the do block", sameVector(named, anonymous), true)
+
+    alias = twice
+    check("local aliases remain callable", alias(3), 6)
+    check("forwarding retains captured context", F(retain(twice), 3), 6)
+    check("returned names retain captured context", F(saved(), 3), 6)
+    check("private named callbacks retain their home", F(privateCallback(), 3), 6)
+    holder = (; callback = twice)
+    check("record projection retains the callback", F(holder.callback, 3), 6)
+    check("Function is an ordinary predicate", invokeFunction(twice, 3), 6)
+
+    check("bare name reflection describes a word", reflect(twice).kind, "word")
+    plan = inspect(twice, (3,))
+    check("receiver can inspect the saved callback context", plan.status, "selected")
+    check("reflection identifies the actual provider", plan.candidates.0.home, "provider")
+    check("callback type inference remains available", returnType(twice, (3,)), int64)
+}

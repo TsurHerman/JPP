@@ -95,7 +95,7 @@ pub const ValRef = union(enum) {
 };
 
 pub const Op = struct {
-    kind: enum { call, pack, project, closure, apply, bind_word } = .call,
+    kind: enum { call, pack, project, closure, apply, bind_word, word_value } = .call,
     callee: []const u8 = "",
     args: []const ValRef,
     // Empty labels are positional. Written order is retained through ANF.
@@ -348,16 +348,25 @@ fn positionOf(comptime name: []const u8) ?usize {
 fn qualOk(comptime q: Qual, comptime f: std.builtin.Type.StructField) bool {
     const T = f.type;
     return switch (q) {
-        .type_value => |V| T == type and f.is_comptime and f.defaultValue().? == V,
+        .type_value => |V| if (isBoundWord(T)) T.Identity == V else T == type and f.is_comptime and f.defaultValue().? == V,
         .enum_value => |V| T == @TypeOf(V.Value) and f.is_comptime and f.defaultValue().? == V.Value,
         .error_value => |V| @typeInfo(T) == .error_set and f.is_comptime and f.defaultValue().? == V.Value,
-        .exact => |E| if (@typeInfo(E) == .error_set and @typeInfo(T) == .error_set and f.is_comptime)
+        .exact => |E| if (E == type and isBoundWord(T)) true else if (@typeInfo(E) == .error_set and @typeInfo(T) == .error_set and f.is_comptime)
             errorSetHas(E, @errorName(f.defaultValue().?))
         else
             exactTypeLeq(T, E),
         .pred => |P| P(T),
         .bare, .tvar => true,
     };
+}
+
+// A contextual word keeps its environment in ordinary input slots. An explicit
+// ::type slot asks for its canonical identity, just as an authored word pattern
+// compares that identity without replacing the callable in its bound slot.
+fn qualifiedInfo(comptime qualifier: Qual, comptime field: std.builtin.Type.StructField) ValueInfo {
+    if (qualifier == .exact and qualifier.exact == type and isBoundWord(field.type))
+        return staticInfo(field.type.Identity);
+    return fieldInfo(field);
 }
 
 /// Route a supplied coordinate to its fixed slot or its section's rest.
@@ -409,10 +418,11 @@ pub fn construct(comptime sig: []const Slot, comptime Raw: type) ?type {
             for (vars, 0..) |v, vi| {
                 const value = if (slot.qual == .tvar and !slot.elementwise and std.mem.eql(u8, slot.qual.tvar, v))
                     f.type
-                else if (!slot.rest and slot.qual == .exact and slot.qual.exact == type and std.mem.eql(u8, slot.name, v))
-                    f.defaultValue() orelse return null
-                else
-                    continue;
+                else if (!slot.rest and slot.qual == .exact and slot.qual.exact == type and std.mem.eql(u8, slot.name, v)) blk: {
+                    const info = qualifiedInfo(slot.qual, f);
+                    if (info.value == null) return null;
+                    break :blk staticValue(info);
+                } else continue;
                 if (bindings[vi]) |previous| {
                     if (previous != value) return null;
                 } else bindings[vi] = value;
@@ -428,7 +438,7 @@ pub fn construct(comptime sig: []const Slot, comptime Raw: type) ?type {
             var labels: []const []const u8 = &.{};
             for (rf) |f| {
                 if (slotFor(sig, f.name).? != i) continue;
-                infos = infos ++ .{fieldInfo(f)};
+                infos = infos ++ .{qualifiedInfo(slot.qual, f)};
                 labels = labels ++ .{if (slot.section == .named) f.name else ""};
             }
             if (slot.rest) {
@@ -460,7 +470,8 @@ pub fn bindValues(comptime sig: []const Slot, comptime B: type, raw: anytype) B 
             inline for (@typeInfo(@TypeOf(raw)).@"struct".fields) |source| {
                 if (comptime slotFor(sig, source.name).? != i) continue;
                 const name = comptime if (slot.section == .named) source.name else std.fmt.comptimePrint("{d}", .{ordinal});
-                if (comptime !source.is_comptime) @field(rest, name) = @field(raw, source.name);
+                const destination = comptime @typeInfo(f.type).@"struct".fields[std.meta.fieldIndex(f.type, name).?];
+                if (comptime !destination.is_comptime) @field(rest, name) = @field(raw, source.name);
                 ordinal += 1;
             }
             @field(out, f.name) = rest;
@@ -556,6 +567,20 @@ pub fn Word(comptime name: []const u8) type {
     return struct {
         pub const word_name = name;
     };
+}
+
+pub fn isWordIdentity(comptime T: type) bool {
+    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "word_name")) return false;
+    if (@TypeOf(T.word_name) != []const u8) return false;
+    return T == Word(T.word_name);
+}
+
+fn wordValueName(comptime op: Op) ?[]const u8 {
+    const target = op.target orelse @compileError("jpp: missing lexical word value.");
+    if (target != .constant) @compileError("jpp: lexical word value requires a declared constant.");
+    const value = target.constant.Value;
+    if (@TypeOf(value) != type or !isWordIdentity(value)) return null;
+    return value.word_name;
 }
 
 fn WordValue(comptime name: []const u8) type {
@@ -1095,6 +1120,7 @@ fn addDependency(comptime words: *[128][]const u8, comptime n: *usize, comptime 
 fn flatDependencies(comptime flat: Flat, comptime words: *[128][]const u8, comptime n: *usize) void {
     for (flat.ops) |op| switch (op.kind) {
         .call, .bind_word => addDependency(words, n, op.callee),
+        .word_value => if (wordValueName(op)) |word| addDependency(words, n, word),
         .closure => {
             const definition = op.closure orelse @compileError("jpp: missing closure definition.");
             for (definition.gates) |gate| addDependency(words, n, gate.word);
@@ -1106,7 +1132,10 @@ fn flatDependencies(comptime flat: Flat, comptime words: *[128][]const u8, compt
 }
 
 fn flatCreatesCallable(comptime flat: Flat) bool {
-    for (flat.ops) |op| if (op.kind == .closure or op.kind == .bind_word) return true;
+    for (flat.ops) |op| {
+        if (op.kind == .closure or op.kind == .bind_word) return true;
+        if (op.kind == .word_value and wordValueName(op) != null) return true;
+    }
     return false;
 }
 
@@ -1283,7 +1312,7 @@ pub fn inspectCall(comptime ctx: anytype, comptime word: []const u8, comptime Ra
         if (std.mem.eql(u8, word, "<:")) {
             const fields = @typeInfo(Raw).@"struct".fields;
             if (fields.len != 2) @compileError("jpp: '<:' requires two type values.");
-            for (fields) |f| if (f.type != type or !f.is_comptime)
+            for (fields) |f| if (!isOrderField(f))
                 @compileError("jpp: '<:' requires two type values.");
         }
         var cands: [64]Resolved = undefined;
@@ -1551,7 +1580,7 @@ fn unresolvedReflectionInput(comptime Raw: type) bool {
 fn reflectedOrderInputs(comptime Raw: type) bool {
     const fields = @typeInfo(Raw).@"struct".fields;
     if (fields.len != 2) return false;
-    for (fields) |field| if (field.type != type or !field.is_comptime) return false;
+    for (fields) |field| if (!isOrderField(field)) return false;
     return true;
 }
 
@@ -1928,6 +1957,7 @@ fn bodyEnumDemand(comptime ctx: anytype, comptime m: Method, comptime B: type, c
             .closure => closureInfo(ctx, op, B, infos[0..i]),
             .apply => applyInfo(refInfo(op.target.?, B, infos[0..i]), argPack(op, B, infos[0..i])),
             .bind_word => staticInfo(@as(BoundWord(ctx, op.callee, op.source), .{})),
+            .word_value => lexicalValueInfo(ctx, op, B, infos[0..i]),
         };
     }
     return null;
@@ -2201,6 +2231,7 @@ pub fn BoundWord(comptime ctx: anytype, comptime word: []const u8, comptime loca
     return struct {
         pub const is_bound_word = true;
         pub const word_name = word;
+        pub const Identity = Word(word);
         pub const captured_context = ctx;
         pub const source = location;
     };
@@ -2238,6 +2269,11 @@ fn closureContext(comptime ctx: anytype, comptime definition: *const ClosureDef)
 fn closureInfo(comptime ctx: anytype, comptime op: Op, comptime B: type, comptime locals: []const ValueInfo) ValueInfo {
     const definition = op.closure orelse @compileError("jpp: missing closure definition.");
     return .{ .T = Closure(closureContext(ctx, definition), definition, argPack(op, B, locals)) };
+}
+
+fn lexicalValueInfo(comptime ctx: anytype, comptime op: Op, comptime B: type, comptime locals: []const ValueInfo) ValueInfo {
+    if (wordValueName(op)) |word| return staticInfo(@as(BoundWord(ctx, word, op.source), .{}));
+    return refInfo(op.target.?, B, locals);
 }
 
 pub fn closureBinding(comptime F: type, comptime Raw: type) ?type {
@@ -2410,6 +2446,8 @@ fn validateStaticProjections(comptime flat: Flat) void {
 fn validateLexicalFlat(comptime flat: Flat, comptime params: []const ?ValueInfo) void {
     var locals: [flat.ops.len]?ValueInfo = @splat(null);
     for (flat.ops, 0..) |op, i| {
+        if (op.kind == .word_value and wordValueName(op) == null)
+            locals[i] = lexicalInfo(op.target.?, locals[0..i], params);
         if (op.kind == .closure) {
             const definition = op.closure.?;
             _ = MultiMethod(definition.id, &.{closureMethod(definition)});
@@ -2504,6 +2542,7 @@ fn guardFlatInfo(comptime ctx: anytype, comptime flat: Flat, comptime B: type) V
             .closure => closureInfo(ctx, op, B, infos[0..i]),
             .apply => applyInfo(refInfo(op.target.?, B, infos[0..i]), argPack(op, B, infos[0..i])),
             .bind_word => staticInfo(@as(BoundWord(ctx, op.callee, op.source), .{})),
+            .word_value => lexicalValueInfo(ctx, op, B, infos[0..i]),
         };
     }
     return refInfo(guardRef(flat.result), B, &infos);
@@ -2703,6 +2742,7 @@ fn LocalInfos(comptime ctx: anytype, comptime flat: Flat, comptime B: type) type
                     .closure => closureInfo(ctx, op, B, infos[0..i]),
                     .apply => applyInfo(refInfo(op.target.?, B, infos[0..i]), argPack(op, B, infos[0..i])),
                     .bind_word => staticInfo(@as(BoundWord(ctx, op.callee, op.source), .{})),
+                    .word_value => lexicalValueInfo(ctx, op, B, infos[0..i]),
                 };
             }
             break :blk infos;
@@ -2724,12 +2764,22 @@ fn methodRet(comptime xctx: anytype, comptime m: Method, comptime B: type) type 
     };
 }
 
+fn isOrderField(comptime field: std.builtin.Type.StructField) bool {
+    return isBoundWord(field.type) or (field.type == type and field.is_comptime);
+}
+
+fn orderType(comptime field: std.builtin.Type.StructField) type {
+    if (isBoundWord(field.type)) return field.type.Identity;
+    if (field.type != type or !field.is_comptime) @compileError("jpp: '<:' requires two type values.");
+    return field.defaultValue().?;
+}
+
 fn orderIdentity(comptime Raw: type) bool {
     const fields = @typeInfo(Raw).@"struct".fields;
     if (fields.len != 2) @compileError("jpp: '<:' requires two type values.");
-    inline for (fields) |f| if (f.type != type or !f.is_comptime)
+    inline for (fields) |f| if (comptime !isOrderField(f))
         @compileError("jpp: '<:' requires two type values.");
-    return fields[0].defaultValue().? == fields[1].defaultValue().?;
+    return orderType(fields[0]) == orderType(fields[1]);
 }
 
 /// Return type of a call; inferred returns are context-derived.
@@ -2799,7 +2849,7 @@ fn exec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) flatRet(ctx,
                     .call => call(ctx, op.callee, raw),
                     .apply => apply(refValue(op.target.?, bound, locals), raw),
                     .closure => infos[i].T{ .captures = raw },
-                    .bind_word, .project => unreachable,
+                    .bind_word, .word_value, .project => unreachable,
                 };
                 if (comptime infos[i].value == null) @field(locals, std.fmt.comptimePrint("{d}", .{i})) = value;
             }
@@ -2821,7 +2871,7 @@ pub fn call(comptime ctx: anytype, comptime word: []const u8, raw: anytype) RetO
     const r = resolved orelse {
         if (comptime std.mem.eql(u8, word, "<:")) {
             const fields = @typeInfo(@TypeOf(raw)).@"struct".fields;
-            return comptime typeLeq(ctx, fields[0].defaultValue().?, fields[1].defaultValue().?);
+            return comptime typeLeq(ctx, orderType(fields[0]), orderType(fields[1]));
         }
         unreachable;
     };
@@ -4241,4 +4291,37 @@ test "callable signatures preserve repeated exact value coordinates" {
     const F = Closure(.{}, &definition, @TypeOf(.{}));
     try std.testing.expect(apply(F{ .captures = .{} }, .{ i64, i64 }) == i64);
     try std.testing.expect(closureBinding(F, @TypeOf(.{ i64, u64 })) == null);
+}
+
+test "word references retain callable state except in explicit type views" {
+    const Origin = struct {};
+    const F = BoundWord(.{Origin}, "operation", .{ .file = "caller.jpp", .line = 4 });
+    const Raw = struct { @"0": F };
+    const supplied = Raw{ .@"0" = .{} };
+    const exact = [_]Slot{.{ .name = "operation", .qual = .{ .type_value = Word("operation") } }};
+    const ExactBound = construct(&exact, Raw).?;
+    try std.testing.expect(@FieldType(ExactBound, "operation") == F);
+    try std.testing.expect(@TypeOf(bindValues(&exact, ExactBound, supplied).operation) == F);
+
+    const explicit_type = [_]Slot{.{ .name = "identity", .qual = .{ .exact = type } }};
+    const TypeBound = construct(&explicit_type, Raw).?;
+    try std.testing.expect(bindValues(&explicit_type, TypeBound, supplied).identity == Word("operation"));
+    const rest_types = [_]Slot{.{ .name = "identities", .rest = true, .qual = .{ .exact = type } }};
+    const RestBound = construct(&rest_types, Raw).?;
+    try std.testing.expect(bindValues(&rest_types, RestBound, supplied).identities.@"0" == Word("operation"));
+    try std.testing.expect(orderIdentity(struct { @"0": F, @"1": BoundWord(.{}, "operation", .{}) }));
+}
+
+test "lexical word aliases reify at use while ordinary constants stay values" {
+    const Origin = struct {};
+    const alias = Op{ .kind = .word_value, .callee = "Alias", .target = .{ .constant = Constant(Word("original")) }, .source = .{ .line = 5 }, .args = &.{} };
+    const identity = Op{ .kind = .word_value, .callee = "int64", .target = .{ .constant = Constant(i64) }, .args = &.{} };
+    const value = comptime lexicalValueInfo(.{Origin}, alias, @TypeOf(.{}), &.{});
+    try std.testing.expect(isBoundWord(value.T));
+    try std.testing.expectEqualStrings("original", value.T.word_name);
+    try std.testing.expect(value.T.captured_context[0] == Origin);
+    try std.testing.expectEqual(@as(usize, 5), value.T.source.line);
+    try std.testing.expect(staticValue(comptime lexicalValueInfo(.{Origin}, identity, @TypeOf(.{}), &.{})) == i64);
+    try std.testing.expect(comptime flatCreatesCallable(.{ .ops = &.{alias}, .result = .{ .local = 0 } }));
+    try std.testing.expect(comptime !flatCreatesCallable(.{ .ops = &.{identity}, .result = .{ .local = 0 } }));
 }

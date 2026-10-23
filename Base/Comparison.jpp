@@ -1,0 +1,7 @@
+# Ordered scalar comparisons are ordinary dispatching words.
+export <, >
+
+<(a::int64, b::int64)::bool = zig{ a < b }
+>(a::int64, b::int64)::bool = zig{ a > b }
+<(a::float64, b::float64)::bool = zig{ a < b }
+>(a::float64, b::float64)::bool = zig{ a > b }

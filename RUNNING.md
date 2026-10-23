@@ -34,7 +34,7 @@ The scope probe imports the active machinery as a named module; use
 `zig build scope-probe` for its module wiring and negative compilation check.
 
 Imports are explicit. `using Base` selects the public facade at Base/Base.jpp;
-it includes arithmetic, boolean words, equality, isOneOf, Any, Function, Tuple utilities and check. Leaf imports such as
+it includes arithmetic, scalar comparisons, boolean words, equality, isOneOf, Any, Function, Tuple utilities and check. Leaf imports such as
 `using Base.Arithmetic` and `using Base.Test` select narrower interfaces.
 `using folder.*` collects siblings excluding folder/folder.jpp; `using folder`
 uses that facade when present. Mutual imports share a public interface while
@@ -94,7 +94,11 @@ zig run tests/.gen/do_blocks/run.zig
 
 `F(args) do x, y { body }` passes one anonymous callback first. Its input types
 come from the receiver's calls; its captured dispatch context comes from
-construction. `bindword(name)` explicitly captures a declared method family.
+construction. Named functions and operators pass directly: `F(twice, 3)` and
+`sort(<, V)` retain that same passing-site dispatch context. The
+[named callback case](tests/callable_values/test.md) includes a generic sort
+over native array fixtures and a receiver with deliberately different policies.
+`bindword(name)` remains supported but is no longer required.
 The [enum callback case](tests/do_enum/test.md) covers type-selection composition,
 and [reflection](tests/reflection/test.md) exercises `Base.Reflection`'s
 `reflect`, `analyze`, and `returnType` as ordinary language queries. Analysis is
@@ -127,7 +131,7 @@ pack syntax, and module paths; they do not reach Zig compilation.
 | `src/jppc.zig` | the transpiler: lexer -> parser -> ANF -> data-literal printer -> module graph -> driver; parsing/normalization stay file-local, dispatch stays in jpp.zig |
 | `src/ast.zig` | the ratified three-layer AST model (Expr/Method/FlatBody); jppc does not consume it yet — acknowledged debt |
 | `tests/` | the language cases: each folder a tree; programs are root modules that define `main` (see `tests/README.md`) |
-| `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Boolean, Equality, Any, Function, Reflection, Test, Tuple and Zig; source modules can shadow matching bundled paths. Explicit `using Base.Zig` exposes native namespaces/types/constants; native calls still use `zig{}`. Reflection is an explicit leaf import. |
+| `Base/` | the jpp library namespace — explicit facade plus Arithmetic, Comparison, Boolean, Equality, Any, Function, Reflection, Test, Tuple and Zig; source modules can shadow matching bundled paths. Explicit `using Base.Zig` exposes native namespaces/types/constants; native calls still use `zig{}`. Reflection is an explicit leaf import. |
 | `design/` | rewritten design notebook: modules, packs, contracts, type families, numerics, binary artifacts and implementation sequence |
 | `editors/vscode/` | JPP TextMate grammar, VS Code/Cursor extension, and local HTML renderer; optional Node tooling |
 | `tests/README.md` | the promise catalog and suite conventions (machinery tests live inline in `src/jpp.zig`) |

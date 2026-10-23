@@ -120,8 +120,12 @@ a feature; preserve the ratified semantics unless the task changes them.
   anonymous body is fixed; actual invocation packs determine its specialization.
   Preserve shallow immutable captures, static facts, original lexical homes and
   the effective caller-first context at construction. Later receiver contexts do
-  not enter the callback. `bindword(name)` explicitly captures a declared method
-  family; bare word identities remain unchanged. Callback scopes are separate,
+  not enter the callback. Named functions/operators pass directly and capture
+  that same dispatch context at body evaluation, including for internal calls;
+  `bindword(name)` is an optional compatible spelling. Keep canonical word
+  identity separate: exact word patterns preserve the actual callable, while
+  explicit `::type` inputs project its identity. Module aliases acquire context
+  at body use; forwarding/local aliases never rebind it. Callback scopes are separate,
   but signature-name and unused-input rules remain the same as methods.
   Reflection makes captured contexts observable: conservatively retain full
   contexts before reachable callable construction. Nested bodies participate in

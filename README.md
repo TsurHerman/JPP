@@ -44,10 +44,10 @@ Status of the major features:
 | ground `zig{}` bodies, inferred returns across the boundary, runtime records with static fields | RUNS (ground_records, checkout) |
 | predicate gates `where T <: Integer` (sugar for `Integer(T)`); predicates are ordinary words qualed on `::type` | RUNS (where_gate) |
 | predicates DEFINED from predicates (joins/meets), so `where` needs no boolean combinators | RUNS (pred_join) |
-| infix operators are ordinary overridable words: `\|\| && == + - * /`, precedence loosest-first | RUNS (pred_join pins boolean precedence; value_equality covers equality) |
+| infix operators are ordinary overridable words: `\|\| && == < > + - * /`, precedence loosest-first with equality/comparisons at one level | RUNS (pred_join, value_equality, callable_values); operators can also be passed as values |
 | explicit Base namespace/facade, recursive folder imports, wildcard siblings, and ordered public import-cycle interfaces | RUNS (base_folder, folder_modules, cycle_imports, cycle_folder, cycle_ambiguity, cycle_facade_ambiguity; facade, privacy and same-module ambiguity negatives) |
 | immutable local bindings name ANF values without repeating calls | RUNS (local_bindings, checkout; binding_* frontend rejection cases) |
-| `do` blocks as callable structs, creation-context capture, direct generic application, and explicit `bindword` values | RUNS (do_blocks, do_enum, do_types; do_* rejection cases) |
+| `do` blocks as callable structs, direct named/operator callbacks, and passing-site dispatch-context capture | RUNS (do_blocks, do_enum, do_types, callable_values, callable_identity; do_* rejection cases) |
 | language reflection of callables, captures, provenance, and concrete resolution outcomes | RUNS (reflection; Base.Reflection); runtime word branch plans and general AST reflection remain unbuilt |
 | immutable module constants, native namespace access, and lexical enum case patterns | RUNS (static_bindings, dwarf_offsets; static_binding_* and enum_pattern_* rejection cases) |
 | value predicates and classifier comparisons in `where`, evaluated from known branch facts | RUNS (log_labels, enum_guard_order, value_guard_variant; guard rejection cases) |
@@ -744,8 +744,9 @@ Variadic and tuples (RUNS):
 
 **RUNS (2026-10-23): explicit callable reflection.** Import `Base.Reflection` for
 `reflect(f)`, `analyze(f, pack)`, and `returnType(f, pack)`. A callable is a `do`
-closure or an explicit `bindword(name)` value; the latter captures a declared
-word and its effective creation context while preserving bare word identities.
+closure or a named function/operator value, such as `twice` or `<`. A named value
+captures the effective dispatch context where it is evaluated. The earlier
+`bindword(name)` spelling remains supported but is unnecessary.
 The pack is an ordinary two-section value, including its retained static facts.
 
 `reflect` returns typed metadata: callable kind and identity, lexical home for a
@@ -799,7 +800,7 @@ The whole surface reduces to one mechanism:
       call{context, f}(args...) = resolve{context, f, typeof(args)}(args...)
 
   Applying an anonymous callable instead binds and instantiates its already
-  selected body. A `bindword` value uses ordinary word resolution under its
+  selected body. A named callable uses ordinary word resolution under its
   captured context. Both preserve the caller's written argument order and the
   same two-section pack model.
 
@@ -911,8 +912,16 @@ The whole surface reduces to one mechanism:
   Existing signature-name and unused-input rules apply. Source literal data is
   not made static merely by capture, while type values keep their identity.
 
-  `bindword(f)` creates an explicitly context-bound method family; it retains
-  ordinary dispatch when called. Bare word/class values are unchanged. Reflection
+  Named functions and operators pass directly: `F(twice, 3)` and `sort(<, V)`.
+  They retain the effective context at the passing expression, including for
+  calls inside their selected implementations. `sort(<, V)` therefore agrees
+  with `sort(V) do a, b { a < b }`, even when the receiver has other policies.
+  Local aliases, returned references and pack storage preserve that saved context.
+  Module aliases retain canonical word identity and acquire context at body use.
+  Exact word patterns compare identity and retain the supplied callable;
+  an explicit `::type` input requests its canonical identity view. Predicates,
+  authored order, and ordinary `Function` membership need no special-name rules.
+  `bindword(f)` remains a compatible explicit spelling. Reflection
   makes captured contexts observable, so context collapse conservatively retains
   the full effective context on paths that construct these callable values.
   Dependency and lexical checks include dormant nested bodies. Application alone
@@ -1272,7 +1281,7 @@ Boundary contract:
   method entry (`collapse_imports`, `checkout`). Worklist discovery and
   cached context values let the checkout graph compile under the existing
   comptime quota; this does not settle the recursion issue in §11. Paths that
-  construct `do` or `bindword` values retain their complete effective context:
+  construct anonymous or named callable values retain their complete effective context:
   it will be observable through callable reflection. Nested callback dependencies
   are discovered before construction. More aggressive capture-context reduction
   must preserve those observations as well as execution.

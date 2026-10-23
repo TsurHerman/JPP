@@ -1,0 +1,11 @@
+using Base.Any
+using Base.Arithmetic
+export twice, policy, <, saved, privateCallback
+
+policy(x<:Any) = x
+twice(x) = policy(x + x)
+<(a<:Any, b<:Any)::bool = zig{ a < b }
+
+saved() = twice
+privateTwice(x) = policy(x + x)
+privateCallback() = privateTwice

@@ -1,0 +1,29 @@
+using Base.Arithmetic
+using Base.Reflection
+export F, sort, receiverPolicy, receiverLess, inspect, retain, policy, <
+
+policy(x::int64) = x + 100
+<(a::int64, b::int64)::bool = zig{ a > b }
+receiverPolicy(x) = policy(x)
+receiverLess(a, b) = a < b
+
+F(f, x) = f(x)
+retain(f) = f
+inspect(f, args) = analyze(f, args)
+
+# Native fixed arrays are a foreign fixture, not jpp's collection design.
+# The generic sort receives its callable explicitly; the ground has no ambient
+# dispatch context. Each comparison applies that callable's saved context.
+sort(comparator, vector) = zig{
+    blk: {
+        var result = vector;
+        const T = @typeInfo(@TypeOf(vector)).array.child;
+        const Adapter = struct {
+            fn lessThan(f: @TypeOf(comparator), a: T, b: T) bool {
+                return jpp.apply(f, .{ a, b });
+            }
+        };
+        std.mem.sort(T, &result, comparator, Adapter.lessThan);
+        break :blk result;
+    }
+}

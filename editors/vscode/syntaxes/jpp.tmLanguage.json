@@ -175,7 +175,7 @@
       "end": "(?=;|#)|$",
       "patterns": [
         {
-          "match": "(?:[A-Za-z_][A-Za-z_0-9]*|<:|==|&&|\\|\\||[+*/\\-])",
+          "match": "(?:[A-Za-z_][A-Za-z_0-9]*|<:|==|&&|\\|\\||[+*/<>\\-])",
           "name": "entity.name.function.export.jpp"
         },
         {
@@ -185,7 +185,7 @@
     },
     "method": {
       "comment": "Recognize declaration-shaped lines; call expressions have their own nested context. No name lookup or capitalization assumptions.",
-      "begin": "(?:^|(?<=;))[ \\t]*((?:[A-Za-z_][A-Za-z_0-9]*|<:|==|&&|\\|\\||[+*/\\-]))([ \\t]*)(\\()(?=[^()#]*\\)[ \\t]*(?:::|where\\b|=(?!=))|[^()]*$)",
+      "begin": "(?:^|(?<=;))[ \\t]*((?:[A-Za-z_][A-Za-z_0-9]*|<:|==|&&|\\|\\||[+*/<>\\-]))([ \\t]*)(\\()(?=[^()#]*\\)[ \\t]*(?:::|where\\b|=(?!=))|[^()]*$)",
       "beginCaptures": {
         "1": {
           "name": "entity.name.function.definition.jpp"
@@ -400,7 +400,7 @@
           "name": "keyword.operator.annotation.predicate.jpp"
         },
         {
-          "match": "==",
+          "match": "==|[<>]",
           "name": "keyword.operator.comparison.jpp"
         },
         {

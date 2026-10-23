@@ -134,6 +134,15 @@ the callback. Missing and ambiguous selections are ordinary query results;
 reflection remains incomplete and is explicitly reported as such.
 `reflection_pack` rejects a return-type query without an argument pack.
 
+`callable_values` passes named functions and operators directly, including
+`F(twice, 3)` and `sort(<, V)`. Named callbacks and equivalent do blocks agree
+despite receiver-only comparison and internal policy overrides. It covers
+Base scalar comparisons, aliases, forwarding, private callbacks, reflection,
+runtime type-selection composition, and generic open-enum transport.
+`callable_identity` preserves exact word patterns, ordinary Function membership,
+predicate/order identity and explicit `::type` views across distinct captured
+contexts, module aliases, returned references, and pack storage.
+
 ## Promise catalog and coverage
 
 | # | Promise (README ref) | Covered today | Boundary tests to write |
@@ -166,6 +175,7 @@ reflection remains incomplete and is explicitly reported as such.
 | 26 | Equality and finite membership remain ordinary library words | `value_equality`, `log_labels`, `error_dispatch` | mixed numeric promotion; general record/collection equality; predicate factories |
 | 27 | Do blocks retain creation context and infer inputs at each direct invocation (§6) | `do_blocks`, `do_types`, `do_enum`; `do_arity`, `do_annotation`, `do_unused`, `do_undeclared`, `do_duplicate`, `do_no_fallback`, `do_member`, `do_scope_leak`, `do_guard_undeclared`, `do_guard_runtime`; frontend `do_forward`, `do_rebind`, `do_parameter_syntax`, `do_bindword_local`; `do_captured_type_escape` | captured-type annotations, dotted callback value patterns; general callable structs and ownership |
 | 28 | Reflection is structured evidence from the actual resolver (§5) | `reflection`, `reflection_pack`; native resolver/reflection tests; ordinary ambiguity tests retain strict errors | complete runtime word branch plans, general AST quotation, external inspection protocol |
+| 29 | Named functions/operators are callable in their passing-site context, with stable canonical identity (§6) | `callable_values`, `callable_identity`; native identity-view tests | general callable equality; module-scope callable construction |
 
 `variant_static` preserves known results from static union arms through helpers,
 named calls and rest forwarding. A returned known tag needs only its selected

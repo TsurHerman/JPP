@@ -1,0 +1,7 @@
+using extra
+export fromMaker, throughMaker, transform
+
+# Declaring transform permits a caller to supply its implementation. The extra
+# module enters only when this maker runs, after main constructed its reference.
+fromMaker() = transform
+throughMaker(f, x) = f(x)

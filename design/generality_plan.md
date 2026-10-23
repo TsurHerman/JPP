@@ -165,8 +165,9 @@ Runtime-sized collections and keyword defaults remain separate work.
 ## 4. Static computation and callable types
 
 Callable application now RUNS (2026-10-23): `do` blocks create callable structs,
-`bindword(name)` explicitly binds a word to its creation context, and local values
-can be applied directly. `Base.Reflection` exposes callable metadata and concrete
+named functions/operators automatically capture their passing-site dispatch
+context, and local values can be applied directly. `bindword(name)` remains an
+optional explicit spelling. `Base.Reflection` exposes callable metadata and concrete
 selection evidence from the execution resolver. Captures retain static facts and
 runtime data separately; source locations and lexical homes survive lowering.
 See [callables](callables.md) for the ratified rules and remaining boundaries.
