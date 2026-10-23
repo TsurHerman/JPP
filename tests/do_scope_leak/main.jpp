@@ -1,0 +1,9 @@
+keep(f) = f
+main() = {
+    callback = keep() do x {
+        internal = x
+        internal
+    }
+    _ = callback(1)
+    internal
+}

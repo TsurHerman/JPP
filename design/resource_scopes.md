@@ -2,8 +2,9 @@
 
 Status: VALIDATED native probe, 2026-10-22. `zig build scope-probe` runs
 `spike/scopeprobe.zig` against the active `src/jpp.zig`, plus a cleanup-error
-rejection check. It is also part of `zig build probes`. Source callable values,
-scope syntax, ownership and borrowing rules remain OPEN. Nothing here changes
+rejection check. It is also part of `zig build probes`. Source callable values now
+RUN via [do blocks](callables.md), added 2026-10-23. A source scope primitive,
+ownership and borrowing rules remain OPEN. This probe does not change
 the compiler or gives ordinary Zig grounds access to caller context.
 
 ## The useful split
@@ -53,7 +54,7 @@ cleanup-only overrides.
 
 ## What a source interface could look like
 
-This is illustrative, NOT runnable syntax or a ratified API:
+This is illustrative, NOT a runnable scope API:
 
 ```text
 withResource(bufferRequest(1024), checksumJob(seed))
@@ -70,7 +71,9 @@ withResource(request, job) =
     withAcquired(acquire(request), job)
 
 withAcquired(resource, job) =
-    ensure(() -> use(job, resource), () -> release(resource))
+    ensure(action() do { release(resource) }) do { use(job, resource) }
+
+action(f) = f
 
 release(buffer::Buffer) = destroy(buffer)
 # A caller's policy module can instead define:
@@ -78,17 +81,17 @@ release(buffer::Buffer) = recycle(buffer)
 ```
 
 `withAcquired` would need explicit error/success methods or another explicit
-error-handling composition. The lambdas stand for unevaluated bodies with
-captures; their syntax and callable application do not exist yet. A plain eager
+error-handling composition. The `do` blocks now provide unevaluated bodies with
+captures, but `ensure` still needs a source control primitive. A plain eager
 `ensure(use(job, resource), release(resource))` cannot work: both arguments would
 run before `ensure` gains control. Nor does a `defer` inside a short registration
 helper attach cleanup to that helper's caller; it runs when the helper exits.
 
-Two possible implementations remain OPEN: first-class context-bound actions,
-or a staged block/region primitive which emits this same control flow. Either
-must retain lexical call validation, private declaration homes and dependencies
-through context collapse. The native host in this probe constructs actions
-explicitly; it does not prove that source elaboration work is already done.
+First-class context-bound callables now preserve lexical validation, private
+declaration homes and dependencies before context capture. Connecting those
+values to the native `ensure` primitive remains separate work; a staged
+block/region alternative is also OPEN. The native host in this probe constructs
+its own actions explicitly, without giving ordinary grounds ambient context.
 
 The recommendation is to keep the synchronous exit rule fixed and make the
 actions ordinary dispatch points. Overriding the entire scheduling primitive

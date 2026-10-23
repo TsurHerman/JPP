@@ -1,0 +1,6 @@
+keep(f) = f
+main() = {
+    action = keep() do { later }
+    later = 7
+    action()
+}

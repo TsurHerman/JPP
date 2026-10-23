@@ -1,0 +1,44 @@
+using Base
+
+Chosen = int64
+
+keep(f) = f
+applyPair(f, a, b) = f(a, b)
+applyNamed(f) = f(2, 3; right=5, left=4)
+applyRest(f) = f(1, 2, 3)
+applyNamedRest(f) = f(; left=4, right=5)
+
+capturedType(x::T) where T = {
+    _ = x
+    keep() do { T }
+}
+
+main() = {
+    bias = 7
+    typed = keep() do x::int64 { x + bias }
+    check("do concrete type annotation", typed(2), 9)
+    check("do named inputs bind by name", applyNamed() do x, y; left, right { x + y + left + right }, 14)
+    check("do positional rest uses the pack binder", applyRest() do xs... { len(xs) }, 3)
+    check("do named rest keeps field names", applyNamedRest() do ; options... { options.left + options.right }, 9)
+
+    generic = keep() do x::T where T { _ = x; T }
+    check("do type binder infers integer", generic(3) == int64, true)
+    check("same do body specializes for another type", generic(true) == bool, true)
+    savedType = capturedType(3)
+    check("closure captures enclosing where type identity", savedType() == int64, true)
+
+    shadow = keep() do bias { bias }
+    check("do input shadows an outer local", shadow(100), 100)
+    localShadow = keep() do { bias = 20; bias }
+    check("do local has its own binding scope", localShadow(), 20)
+    check("callback local does not replace outer binding", bias, 7)
+
+    exact = keep() do Chosen { Chosen }
+    check("defined signature name keeps exact type-value meaning", exact(int64) == int64, true)
+    repeated = keep() do Chosen, Chosen { Chosen }
+    check("repeated exact value patterns retain ordinary signature meaning", repeated(int64, int64) == int64, true)
+    ignored = keep() do unused<:Any { 9 }
+    check("annotated callback input may be unused", ignored(3), 9)
+
+    check("do captures bindings created by preceding arguments", applyPair({ factor = 5; 2 }, 3) do x, y { x + y + factor }, 10)
+}

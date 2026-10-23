@@ -1,0 +1,5 @@
+using Base.Reflection
+export inspectInReceiver, choose
+
+inspectInReceiver(f, args) = analyze(f, args)
+choose(x::int64) = x

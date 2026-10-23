@@ -1,0 +1,3 @@
+# Callability is an ordinary predicate over native callable representations.
+export Function
+Function(T::type)::bool = zig{ jpp.isFunction(T) }

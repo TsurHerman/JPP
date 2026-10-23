@@ -1,0 +1,7 @@
+# Reflection receives an explicit callable with its captured context.
+# Selection analysis never executes the callback or checks its result type.
+export reflect, analyze, returnType
+
+reflect(f) = zig{ jpp.reflectCallable(@TypeOf(f)) }
+analyze(f, args) = zig{ jpp.analyzeCallable(@TypeOf(f), @TypeOf(args)) }
+returnType(f, args)::type = zig{ jpp.ApplyRet(@TypeOf(f), @TypeOf(args)) }

@@ -356,8 +356,9 @@ signature member paths resolve in the declaring module at comptime, with local
 names preceding imports in source order. Re-export/folder/cycle aggregation
 preserves identity, coalesces identical values and rejects conflicting values or
 value/method collisions. Private constants stay file-local. Arbitrary initializer
-calls, callable values, general static patterns and a staged branch library remain
-unbuilt. The reader's slices, allocation and errors are native fixture details.
+calls, general static patterns and a staged branch library remain unbuilt.
+[Callable values](callables.md) were added in a later increment. The reader's
+slices, allocation and errors are native fixture details.
 
 ## Earlier comparison sketch (deferred)
 

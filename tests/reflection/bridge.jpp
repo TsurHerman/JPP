@@ -1,0 +1,4 @@
+using receiver
+export inspectElsewhere
+
+inspectElsewhere(f, args) = inspectInReceiver(f, args)

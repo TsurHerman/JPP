@@ -1,0 +1,10 @@
+using Base.Test
+using factory
+using bridge
+
+main() = {
+    saved = make(10)
+    check("receiver-only exact method cannot enter callback context", invoke(saved, 1), 16)
+    bound = bindword(policy)
+    check("bound word retains its creation context", invoke(bound, 1), 5)
+}

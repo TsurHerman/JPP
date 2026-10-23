@@ -95,15 +95,32 @@ pub const ValRef = union(enum) {
 };
 
 pub const Op = struct {
-    kind: enum { call, pack, project } = .call,
+    kind: enum { call, pack, project, closure, apply, bind_word } = .call,
     callee: []const u8 = "",
     args: []const ValRef,
     // Empty labels are positional. Written order is retained through ANF.
     labels: []const []const u8 = &.{},
     splats: []const enum { none, positional, named } = &.{},
     field: []const u8 = "", // project: one operand, statically named field
+    closure: ?*const ClosureDef = null,
+    target: ?ValRef = null, // apply: one already evaluated callable value
+    source: Source = .{},
 };
 pub const Flat = struct { ops: []const Op, result: ValRef };
+
+/// One lexical body, never a contribution to a multimethod's candidates.
+/// Body parameters precede captured fields; type-binding metadata follows both.
+pub const ClosureDef = struct {
+    id: []const u8,
+    home: ?type = null,
+    signature: []const Slot,
+    captures: []const []const u8 = &.{},
+    body: Flat,
+    gates: []const Gate = &.{},
+    variables: []const []const u8 = &.{},
+    eqs: []const Eq = &.{},
+    source: Source = .{},
+};
 
 pub const Body = union(enum) {
     ops: Flat, //   jpp-level: vector of Expr in ANF
@@ -131,6 +148,13 @@ pub const ValueGuard = struct {
     predicate: ?[]const u8 = null,
 };
 
+pub const Source = struct {
+    file: []const u8 = "",
+    line: usize = 0,
+    column: usize = 0,
+    offset: usize = 0,
+};
+
 pub const Method = struct {
     declaration_home: ?type = null, // preserved when a folder merges methods
     name: []const u8,
@@ -145,6 +169,7 @@ pub const Method = struct {
     value_guards: []const ValueGuard = &.{}, // boolean facts about one input value
     hash: u64 = 0,
     span: [2]u32 = .{ 0, 0 },
+    source: Source = .{},
 };
 
 fn hasTypeBinding(comptime m: Method, comptime name: []const u8) bool {
@@ -714,6 +739,8 @@ fn flatEqual(comptime a: Flat, comptime b: Flat) bool {
         if (x.kind != y.kind or !std.mem.eql(u8, x.callee, y.callee) or
             !std.mem.eql(u8, x.field, y.field) or x.args.len != y.args.len or
             x.labels.len != y.labels.len or x.splats.len != y.splats.len) return false;
+        if (x.closure != y.closure or (x.target == null) != (y.target == null)) return false;
+        if (x.target) |target| if (!refEqual(target, y.target.?)) return false;
         for (x.args, y.args) |xr, yr| if (!refEqual(xr, yr)) return false;
         for (x.labels, y.labels) |xl, yl| if (!std.mem.eql(u8, xl, yl)) return false;
         for (x.splats, y.splats) |xs, ys| if (xs != ys) return false;
@@ -1058,6 +1085,44 @@ fn containsWord(comptime words: []const []const u8, comptime w: []const u8) bool
     return false;
 }
 
+fn addDependency(comptime words: *[128][]const u8, comptime n: *usize, comptime word: []const u8) void {
+    if (containsWord(words[0..n.*], word)) return;
+    if (n.* == words.len) @compileError("jpp: dependency word limit exceeded.");
+    words[n.*] = word;
+    n.* += 1;
+}
+
+fn flatDependencies(comptime flat: Flat, comptime words: *[128][]const u8, comptime n: *usize) void {
+    for (flat.ops) |op| switch (op.kind) {
+        .call, .bind_word => addDependency(words, n, op.callee),
+        .closure => {
+            const definition = op.closure orelse @compileError("jpp: missing closure definition.");
+            for (definition.gates) |gate| addDependency(words, n, gate.word);
+            flatDependencies(definition.body, words, n);
+        },
+        // An applied value already owns its creation context.
+        .apply, .pack, .project => {},
+    };
+}
+
+fn flatCreatesCallable(comptime flat: Flat) bool {
+    for (flat.ops) |op| if (op.kind == .closure or op.kind == .bind_word) return true;
+    return false;
+}
+
+fn footprintCreatesCallable(comptime ctx: anytype, comptime words: []const []const u8) bool {
+    for (DependencyModules(ctx).value) |mod| for (words) |word| {
+        if (!@hasDecl(mod, word)) continue;
+        const MM = @field(mod, word);
+        if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
+        for (MM.methods) |method| {
+            if (method.body == .ops and flatCreatesCallable(method.body.ops)) return true;
+            for (method.value_guards) |guard| if (flatCreatesCallable(guard.body)) return true;
+        }
+    };
+    return false;
+}
+
 fn DependencyModules(comptime ctx: anytype) type {
     return struct {
         // Only a discovery universe: these imports do NOT enter the caller's
@@ -1116,23 +1181,9 @@ fn footprint(comptime ctx: anytype, comptime word: []const u8) []const []const u
                             n += 1;
                         }
                     }
-                    for (m.value_guards) |guard| {
-                        for (guard.body.ops) |op| {
-                            if (op.kind != .call or containsWord(words[0..n], op.callee)) continue;
-                            if (n == words.len) @compileError("jpp: dependency word limit exceeded.");
-                            words[n] = op.callee;
-                            n += 1;
-                        }
-                    }
+                    for (m.value_guards) |guard| flatDependencies(guard.body, &words, &n);
                     if (m.body != .ops) continue;
-                    for (m.body.ops.ops) |op| {
-                        if (op.kind != .call) continue;
-                        if (!containsWord(words[0..n], op.callee)) {
-                            if (n == words.len) @compileError("jpp: dependency word limit exceeded.");
-                            words[n] = op.callee;
-                            n += 1;
-                        }
-                    }
+                    flatDependencies(m.body.ops, &words, &n);
                 }
             }
         }
@@ -1174,7 +1225,11 @@ fn Canonical(comptime ctx: anytype, comptime word: []const u8) type {
         const value = blk: {
             @setEvalBranchQuota(1_000_000);
             const units = extendAll(.{}, ctx);
-            break :blk canonFrom(.{}, units, footprint(units, word), 0);
+            const words = footprint(units, word);
+            // Captured contexts are observable through reflection. Retain the
+            // full effective context before any reachable callable is created.
+            if (footprintCreatesCallable(units, words)) break :blk units;
+            break :blk canonFrom(.{}, units, words, 0);
         };
     };
 }
@@ -1185,7 +1240,28 @@ pub fn canon(comptime ctx: anytype, comptime word: []const u8) @TypeOf(Canonical
 
 // --- resolution ------------------------------------------------------------------------
 
-const Resolved = struct { m: Method, B: type, home: type, unit: ?type = null };
+pub const Resolved = struct { m: Method, B: type, home: type, unit: ?type = null };
+
+pub const ResolutionStatus = enum { selected, missing, ambiguous, cyclic_order };
+pub const Applicability = enum { applicable, shape_or_qualifier, equality, predicate, guard };
+pub const ResolutionCandidate = struct {
+    method: Method,
+    home: type,
+    unit: ?type = null,
+    context_position: usize,
+    method_position: usize,
+    binding: ?type = null,
+    applicability: Applicability,
+    /// Index in this report, not a summed rank or an inferred order edge.
+    dominated_by: ?usize = null,
+    maximal: bool = false,
+};
+pub const Resolution = struct {
+    status: ResolutionStatus,
+    selected: ?Resolved = null,
+    selected_index: ?usize = null,
+    candidates: []const ResolutionCandidate = &.{},
+};
 
 fn methodUnit(comptime method: Method) ?type {
     const home = method.declaration_home orelse return null;
@@ -1201,7 +1277,7 @@ fn methodUnit(comptime method: Method) ?type {
 /// may exist harmlessly until a call actually hits it); maxima across
 /// DIFFERENT modules = context position, earliest wins (the ordered
 /// context doing its ratified job).
-pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ?Resolved {
+pub fn inspectCall(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) Resolution {
     comptime {
         @setEvalBranchQuota(1_000_000);
         if (std.mem.eql(u8, word, "<:")) {
@@ -1211,39 +1287,61 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
                 @compileError("jpp: '<:' requires two type values.");
         }
         var cands: [64]Resolved = undefined;
+        var indices: [64]usize = undefined;
+        var candidates: []const ResolutionCandidate = &.{};
         var n: usize = 0;
         for (0..ctx.len) |i| {
             const mod = ctx[i];
             if (!@hasDecl(mod, word)) continue;
             const MM = @field(mod, word);
             if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
-            const earlier_modules = n;
-            for (MM.methods) |m| {
+            const earlier_candidates = candidates.len;
+            for (MM.methods, 0..) |m, mi| {
                 const unit = methodUnit(m);
                 // A cycle shares visibility, not an ambiguity scope. Keep
                 // each declaration's module, even through a facade or folder.
                 const candidate_home = if (unit != null) m.declaration_home.? else dispatchHome(mod);
                 // A facade view and its full unit can both be present. They
                 // may expose the same authored method, which is one candidate.
-                const duplicate = for (cands[0..earlier_modules]) |prior| {
-                    if ((prior.home == candidate_home or (unit != null and prior.unit == unit)) and std.meta.eql(prior.m, m)) break true;
+                const duplicate = for (candidates[0..earlier_candidates]) |prior| {
+                    // Source methods have a fixed declaration home. Legacy
+                    // native views without one may use distinct STATIC imports
+                    // for their gates, so a contextual rejection is not yet a
+                    // duplicate of a later view which could be applicable.
+                    const same_applicability = m.declaration_home != null or prior.applicability == .applicable or prior.applicability == .shape_or_qualifier;
+                    if (same_applicability and (prior.home == candidate_home or (unit != null and prior.unit == unit)) and std.meta.eql(prior.method, m)) break true;
                 } else false;
                 if (duplicate) continue;
-                const B = construct(m.signature, Raw) orelse continue;
+                const binding = construct(m.signature, Raw);
                 const candidate_ctx = extendAll(ctx, StaticOf(m.declaration_home orelse mod));
-                if (!eqsOk(candidate_ctx, m, B)) continue;
                 // gates resolve caller-first with the home's static as
                 // fallback — the same reach a BODY gets. applicability
                 // stays caller-derived (a caller extending `Integer` leads
                 // by position) without forcing every caller to import the
                 // predicate module.
-                if (!gatesOk(candidate_ctx, m, B)) continue;
-                if (!valueGuardsOk(candidate_ctx, m, B)) continue;
+                const applicability: Applicability = if (binding) |B|
+                    if (!eqsOk(candidate_ctx, m, B)) .equality else if (!gatesOk(candidate_ctx, m, B)) .predicate else if (!valueGuardsOk(candidate_ctx, m, B)) .guard else .applicable
+                else
+                    .shape_or_qualifier;
+                const ci = candidates.len;
+                candidates = candidates ++ .{ResolutionCandidate{
+                    .method = m,
+                    .home = candidate_home,
+                    .unit = unit,
+                    .context_position = i,
+                    .method_position = mi,
+                    .binding = binding,
+                    .applicability = applicability,
+                }};
+                if (applicability != .applicable) continue;
+                if (n == cands.len) @compileError("jpp: applicable candidate limit exceeded.");
+                const B = binding.?;
+                indices[n] = ci;
                 cands[n] = .{ .m = m, .B = B, .home = candidate_home, .unit = unit };
                 n += 1;
             }
         }
-        if (n == 0) return null;
+        if (n == 0) return .{ .status = .missing, .candidates = candidates };
 
         // stratification: the machinery's own words resolve at stratum 0 —
         // resolving `<:` must not consult `<:` (or any shadowable policy).
@@ -1253,32 +1351,361 @@ pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: t
             policyOf(ctx);
         // maxima: candidates no other candidate strictly dominates
         var first_max: ?Resolved = null;
-        var max_count: usize = 0;
+        var first_index: ?usize = null;
         var same_home_clash = false;
+        var dominators: [64]?usize = @splat(null);
         for (0..n) |i| {
             var dominated = false;
             for (0..n) |j| {
                 if (i == j) continue;
                 if (P.moreSpecific(ctx, suppliedMethod(cands[j].m, Raw), suppliedMethod(cands[i].m, Raw))) {
                     dominated = true;
+                    dominators[i] = indices[j];
                     break;
                 }
             }
             if (dominated) continue;
-            max_count += 1;
             if (first_max == null) {
                 first_max = cands[i]; // gather order = context order = position
+                first_index = indices[i];
             } else if (cands[i].home == first_max.?.home) {
                 same_home_clash = true;
             }
         }
-        if (same_home_clash)
-            @compileError("jpp: call of '" ++ word ++ "' is AMBIGUOUS — " ++
-                "two maximally specific methods in one module (define the intersection method)." ++
-                variantDescription(Raw) ++ candidatesText(ctx, word));
-        if (first_max == null) @compileError("jpp: call of '" ++ word ++ "' has no maximal method (cyclic strict order).");
-        return first_max;
+        var explained: []const ResolutionCandidate = &.{};
+        for (candidates, 0..) |original, ci| {
+            var candidate = original;
+            for (indices[0..n], 0..) |index, ai| {
+                if (index != ci) continue;
+                candidate.dominated_by = dominators[ai];
+                candidate.maximal = dominators[ai] == null;
+                break;
+            }
+            explained = explained ++ .{candidate};
+        }
+        return .{
+            .status = if (same_home_clash) .ambiguous else if (first_max == null) .cyclic_order else .selected,
+            .selected = if (same_home_clash) null else first_max,
+            .selected_index = if (same_home_clash) null else first_index,
+            .candidates = explained,
+        };
     }
+}
+
+/// Strict calls and inspectable reflection share exactly one selection pass.
+pub fn resolve(comptime ctx: anytype, comptime word: []const u8, comptime Raw: type) ?Resolved {
+    const result = comptime inspectCall(ctx, word, Raw);
+    switch (result.status) {
+        .selected => return result.selected,
+        .missing => return null,
+        .ambiguous => @compileError("jpp: call of '" ++ word ++ "' is AMBIGUOUS — " ++
+            "two maximally specific methods in one module (define the intersection method)." ++
+            variantDescription(Raw) ++ candidatesText(ctx, word)),
+        .cyclic_order => @compileError("jpp: call of '" ++ word ++ "' has no maximal method (cyclic strict order)."),
+    }
+}
+
+// Reflection is data about explicit callable values. These helpers receive no
+// ambient execution context, and selection analysis never evaluates a body.
+fn reflectedModuleName(comptime module: type) []const u8 {
+    return if (@hasDecl(module, "MODULE_NAME")) module.MODULE_NAME else @typeName(module);
+}
+
+fn ReflectedContext(comptime ctx: anytype) type {
+    var fields: [ctx.len]ValueInfo = undefined;
+    for (ctx, 0..) |module, i| fields[i] = staticInfo(.{
+        .name = @as([]const u8, reflectedModuleName(module)),
+        .Module = module,
+    });
+    return infoPack(&fields);
+}
+
+fn ReflectedFields(comptime T: type, comptime names: []const []const u8) type {
+    const native = @typeInfo(T).@"struct".fields;
+    var fields: [native.len]ValueInfo = undefined;
+    for (native, 0..) |field, i| fields[i] = staticInfo(.{
+        .name = @as([]const u8, if (names.len > i) names[i] else field.name),
+        .Type = field.type,
+        .is_static = field.is_comptime,
+        // A wrapper preserves the exact known value, including type values.
+        .StaticValue = if (field.is_comptime) @as(?type, Constant(field.defaultValue().?)) else @as(?type, null),
+    });
+    return infoPack(&fields);
+}
+
+fn ReflectedSignature(comptime signature: []const Slot) type {
+    var fields: [signature.len]ValueInfo = undefined;
+    for (signature, 0..) |slot, i| fields[i] = staticInfo(.{
+        .name = @as([]const u8, slot.name),
+        .section = @as([]const u8, @tagName(slot.section)),
+        .rest = slot.rest,
+        .elementwise = slot.elementwise,
+        .qualifier = @as([]const u8, @tagName(slot.qual)),
+        .qual = slot.qual,
+    });
+    return infoPack(&fields);
+}
+
+fn ReflectedCandidates(comptime resolution: Resolution) type {
+    var fields: [resolution.candidates.len]ValueInfo = undefined;
+    for (resolution.candidates, 0..) |candidate, i| fields[i] = staticInfo(.{
+        .name = @as([]const u8, candidate.method.name),
+        .home = @as([]const u8, reflectedModuleName(candidate.method.declaration_home orelse candidate.home)),
+        .source = candidate.method.source,
+        .context_position = candidate.context_position,
+        .method_position = candidate.method_position,
+        .signature = @as(ReflectedSignature(candidate.method.signature), undefined),
+        .applicability = @as([]const u8, @tagName(candidate.applicability)),
+        .Bound = candidate.binding,
+        .dominated_by = candidate.dominated_by,
+        .maximal = candidate.maximal,
+        .selected = resolution.selected_index != null and resolution.selected_index.? == i,
+        .reason = @as([]const u8, if (candidate.applicability != .applicable) switch (candidate.applicability) {
+            .shape_or_qualifier => "argument shape or coordinate qualifier does not match",
+            .equality => "a required type equality does not hold",
+            .predicate => "a signature predicate does not hold",
+            .guard => "a value guard does not hold for the known input facts",
+            .applicable => unreachable,
+        } else if (candidate.dominated_by != null)
+            "another applicable candidate dominates this candidate pointwise"
+        else if (resolution.status == .ambiguous)
+            "maximal; competing maxima remain in the winning context module"
+        else if (resolution.selected_index != null and resolution.selected_index.? == i)
+            "maximal in the first context module containing a maximum"
+        else
+            "maximal but a previous context module wins"),
+    });
+    return infoPack(&fields);
+}
+
+fn ReflectedMethods(comptime ctx: anytype, comptime word: []const u8) type {
+    var fields: []const ValueInfo = &.{};
+    var seen: []const Method = &.{};
+    var homes: []const type = &.{};
+    for (ctx, 0..) |module, position| {
+        if (!@hasDecl(module, word)) continue;
+        const MM = @field(module, word);
+        if (@TypeOf(MM) != type or !@hasDecl(MM, "is_mm")) continue;
+        for (MM.methods) |method| {
+            const home = method.declaration_home orelse dispatchHome(module);
+            const duplicate = for (seen, homes) |previous, previous_home| {
+                if (home == previous_home and std.meta.eql(method, previous)) break true;
+            } else false;
+            if (duplicate) continue;
+            seen = seen ++ .{method};
+            homes = homes ++ .{home};
+            fields = fields ++ .{staticInfo(.{
+                .name = @as([]const u8, method.name),
+                .home = @as([]const u8, reflectedModuleName(home)),
+                .source = method.source,
+                .context_position = position,
+                .signature = @as(ReflectedSignature(method.signature), undefined),
+                .declared_return = method.ret,
+                .return_variable = method.ret_variable,
+            })};
+        }
+    }
+    return infoPack(fields);
+}
+
+pub fn CallableReflection(comptime F: type) type {
+    if (!isFunction(F)) @compileError("jpp: reflection requires a callable value.");
+    const closure = @hasDecl(F, "closure_definition");
+    const callable_identity = if (closure) F.closure_definition.id else F.word_name;
+    const location = if (closure) F.closure_definition.source else F.source;
+    const home_name = if (closure and F.closure_definition.home != null)
+        reflectedModuleName(F.closure_definition.home.?)
+    else
+        "";
+    const Captures = if (closure) ReflectedFields(F.Capture, F.closure_definition.captures) else @TypeOf(.{});
+    const Signature = if (closure) ReflectedSignature(F.closure_definition.signature) else @TypeOf(.{});
+    const Methods = if (closure) @TypeOf(.{}) else ReflectedMethods(F.captured_context, F.word_name);
+    return struct {
+        comptime kind: []const u8 = if (closure) "closure" else "word",
+        comptime identity: []const u8 = callable_identity,
+        comptime source: Source = location,
+        comptime home: []const u8 = home_name,
+        comptime effective_context: ReflectedContext(F.captured_context) = undefined,
+        comptime captures: Captures = undefined,
+        comptime signature: Signature = undefined,
+        comptime methods: Methods = undefined,
+        comptime context_is_collapsed: bool = false,
+    };
+}
+
+pub fn reflectCallable(comptime F: type) CallableReflection(F) {
+    return .{};
+}
+
+fn unresolvedReflectionInput(comptime Raw: type) bool {
+    for (@typeInfo(Raw).@"struct".fields) |field| switch (@typeInfo(field.type)) {
+        .@"enum" => if (!field.is_comptime) return true,
+        .@"union" => |u| if (u.tag_type != null) return true,
+        .error_union => return true,
+        .error_set => if (!field.is_comptime) return true,
+        else => {},
+    };
+    return false;
+}
+
+fn reflectedOrderInputs(comptime Raw: type) bool {
+    const fields = @typeInfo(Raw).@"struct".fields;
+    if (fields.len != 2) return false;
+    for (fields) |field| if (field.type != type or !field.is_comptime) return false;
+    return true;
+}
+
+pub fn CallableAnalysis(comptime F: type, comptime Raw: type) type {
+    if (!isFunction(F)) @compileError("jpp: reflection requires a callable value.");
+    if (@typeInfo(Raw) != .@"struct") @compileError("jpp: call analysis requires an argument pack.");
+    const closure = @hasDecl(F, "closure_definition");
+    const order_word = !closure and std.mem.eql(u8, F.word_name, "<:");
+    const invalid_order = order_word and !reflectedOrderInputs(Raw);
+    const order_identity = order_word and !invalid_order and orderIdentity(Raw);
+    // A closure selects its single body by shape. A word may require injected
+    // branches before selection, so never report its unsplit fallback as final.
+    const incomplete = !closure and !invalid_order and unresolvedReflectionInput(Raw);
+    const binding = if (closure) closureBinding(F, Raw) else null;
+    const resolution: Resolution = if (closure or incomplete or invalid_order or order_identity)
+        .{ .status = if (binding != null or order_identity) .selected else .missing }
+    else
+        inspectCall(F.captured_context, F.word_name, Raw);
+    const Candidates = ReflectedCandidates(resolution);
+    const order_default = order_word and !invalid_order and !incomplete and resolution.status == .missing;
+    const explanation: []const u8 = if (incomplete)
+        "runtime enum/sum inputs require a branch-demand plan; selection was not attempted"
+    else if (invalid_order)
+        "the order operation requires two known type values"
+    else if (order_identity)
+        "type identity is the intrinsic, unshadowable order floor"
+    else if (order_default)
+        "no authored method matches; the intrinsic pairwise order fallback answers"
+    else if (closure)
+        if (binding != null) "one fixed body accepts this argument pack; body typing is a separate query" else "the argument pack does not bind the fixed body signature"
+    else switch (resolution.status) {
+        .selected => "pointwise dominance leaves maxima; the first context module wins, with one maximum there",
+        .missing => "no candidate passes argument binding and applicability conditions",
+        .ambiguous => "the winning context module contains competing maximal candidates",
+        .cyclic_order => "every applicable candidate is dominated; the strict order has no maximum",
+    };
+    return struct {
+        comptime status: []const u8 = if (incomplete) "incomplete" else if (order_default) "selected" else @tagName(resolution.status),
+        comptime selection_kind: []const u8 = if (incomplete) "unresolved_branches" else if (closure) "fixed_body" else if (order_identity) "order_identity" else if (order_default) "order_default" else "word_methods",
+        comptime reason: []const u8 = explanation,
+        comptime complete: bool = !incomplete,
+        comptime body_checked: bool = false,
+        comptime input_facts: ReflectedFields(Raw, &.{}) = undefined,
+        comptime candidates: Candidates = undefined,
+        comptime selected_index: ?usize = resolution.selected_index,
+        comptime Bound: ?type = if (closure) binding else if (resolution.selected) |r| r.B else null,
+    };
+}
+
+pub fn analyzeCallable(comptime F: type, comptime Raw: type) CallableAnalysis(F, Raw) {
+    return .{};
+}
+
+test "reflection shares selection and preserves missing and ambiguous outcomes" {
+    const Fixture = struct {
+        pub const MODULE_NAME = "reflection_fixture";
+        pub const choose = MultiMethod("choose", &.{
+            .{ .name = "choose", .signature = &.{.{ .name = "x", .qual = .bare }}, .body = .{ .ground = struct {} }, .source = .{ .file = "fixture.jpp", .line = 3 } },
+            .{ .name = "choose", .signature = &.{.{ .name = "x", .qual = .{ .exact = i64 } }}, .body = .{ .ground = struct {} }, .source = .{ .file = "fixture.jpp", .line = 4 } },
+        });
+        pub const clash = MultiMethod("clash", &.{
+            .{ .name = "clash", .signature = &.{ .{ .name = "x", .qual = .{ .exact = i64 } }, .{ .name = "y", .qual = .bare } }, .body = .{ .ground = struct {} } },
+            .{ .name = "clash", .signature = &.{ .{ .name = "x", .qual = .bare }, .{ .name = "y", .qual = .{ .exact = i64 } } }, .body = .{ .ground = struct {} } },
+        });
+    };
+    const Raw = struct { @"0": i64 };
+    const selected = comptime inspectCall(.{Fixture}, "choose", Raw);
+    try std.testing.expectEqual(ResolutionStatus.selected, selected.status);
+    try std.testing.expectEqual(@as(?usize, 1), selected.selected_index);
+    try std.testing.expectEqual(@as(?usize, 1), selected.candidates[0].dominated_by);
+    try std.testing.expect(selected.candidates[1].maximal);
+    try std.testing.expectEqual(@as(usize, 4), selected.selected.?.m.source.line);
+    try std.testing.expectEqual(ResolutionStatus.missing, comptime inspectCall(.{Fixture}, "absent", Raw).status);
+    const ambiguous = comptime inspectCall(.{Fixture}, "clash", struct { @"0": i64, @"1": i64 });
+    try std.testing.expectEqual(ResolutionStatus.ambiguous, ambiguous.status);
+    try std.testing.expect(ambiguous.selected == null);
+    try std.testing.expect(ambiguous.candidates[0].maximal and ambiguous.candidates[1].maximal);
+
+    // The bodies deliberately have no Ret/run members. Describing or selecting
+    // candidates must not instantiate their body or claim to type-check it.
+    const W = BoundWord(.{Fixture}, "choose", .{ .file = "caller.jpp", .line = 9 });
+    const description = reflectCallable(W);
+    try std.testing.expectEqualStrings("word", description.kind);
+    try std.testing.expectEqualStrings("choose", description.identity);
+    try std.testing.expectEqualStrings("reflection_fixture", description.effective_context.@"0".name);
+    const analysis = analyzeCallable(W, Raw);
+    try std.testing.expectEqualStrings("selected", analysis.status);
+    try std.testing.expect(!analysis.body_checked);
+    try std.testing.expectEqualStrings("fixture.jpp", analysis.candidates.@"1".source.file);
+    const E = enum { first, second };
+    const deferred = analyzeCallable(W, struct { @"0": E });
+    try std.testing.expectEqualStrings("incomplete", deferred.status);
+    try std.testing.expect(!deferred.complete);
+    const Inert = struct {};
+    const WithInert = BoundWord(.{ Inert, Fixture }, "choose", .{});
+    try std.testing.expectEqual(
+        reflectCallable(WithInert).methods.@"0".context_position,
+        analyzeCallable(WithInert, Raw).candidates.@"0".context_position,
+    );
+    const Alias = struct {
+        pub const DISPATCH_HOME = Fixture;
+        pub const choose = Fixture.choose;
+    };
+    const rejected = comptime inspectCall(.{ Fixture, Alias }, "choose", struct { @"0": bool, @"1": bool });
+    try std.testing.expectEqual(@as(usize, 2), rejected.candidates.len);
+    const Cyclic = struct {
+        pub const specificity = struct {
+            pub fn moreSpecific(comptime ctx: anytype, comptime a: Method, comptime b: Method) bool {
+                _ = ctx;
+                _ = a;
+                _ = b;
+                return true;
+            }
+        };
+    };
+    try std.testing.expectEqual(ResolutionStatus.cyclic_order, comptime inspectCall(.{ Cyclic, Fixture }, "choose", Raw).status);
+}
+
+test "reflection preserves legacy native view gate contexts" {
+    const Reject = struct {
+        pub const gate = MultiMethod("gate", &.{.{
+            .name = "gate",
+            .signature = &.{.{ .name = "T", .qual = .{ .exact = type } }},
+            .body = .{ .ops = .{ .ops = &.{}, .result = .{ .lit_b = false } } },
+        }});
+    };
+    const Accept = struct {
+        pub const gate = MultiMethod("gate", &.{.{
+            .name = "gate",
+            .signature = &.{.{ .name = "T", .qual = .{ .exact = type } }},
+            .body = .{ .ops = .{ .ops = &.{}, .result = .{ .lit_b = true } } },
+        }});
+    };
+    const Home = struct {};
+    const First = struct {
+        pub const DISPATCH_HOME = Home;
+        pub const STATIC = .{Reject};
+        pub const choose = MultiMethod("choose", &.{.{
+            .name = "choose",
+            .signature = &.{.{ .name = "x", .qual = .{ .tvar = "T" } }},
+            .variables = &.{"T"},
+            .gates = &.{.{ .tvar = "T", .word = "gate" }},
+            .body = .{ .ground = struct {} },
+        }});
+    };
+    const Second = struct {
+        pub const DISPATCH_HOME = Home;
+        pub const STATIC = .{Accept};
+        pub const choose = First.choose;
+    };
+    const result = comptime inspectCall(.{ First, Second }, "choose", struct { @"0": i64 });
+    try std.testing.expectEqual(ResolutionStatus.selected, result.status);
+    try std.testing.expectEqual(Applicability.predicate, result.candidates[0].applicability);
+    try std.testing.expectEqual(@as(?usize, 1), result.selected_index);
 }
 
 fn candidatesText(comptime ctx: anytype, comptime word: []const u8) []const u8 {
@@ -1448,6 +1875,9 @@ fn bodyEnumDemand(comptime ctx: anytype, comptime m: Method, comptime B: type, c
                 origins[i][j] = origins[i][j] or from;
             }
         }
+        if (op.target) |target| for (enumOrigins(target, m, Raw, origins[0..i]), 0..) |from, j| {
+            origins[i][j] = origins[i][j] or from;
+        };
         if (op.kind == .call) {
             const Args = argPack(op, B, infos[0..i]);
             const c = canon(ctx, op.callee);
@@ -1461,10 +1891,43 @@ fn bodyEnumDemand(comptime ctx: anytype, comptime m: Method, comptime B: type, c
                 }
             }
         }
+        if (op.kind == .apply) {
+            const F = refInfo(op.target.?, B, infos[0..i]).T;
+            const Args = argPack(op, B, infos[0..i]);
+            if (ApplyRet(F, Args) == type) {
+                if (isBoundWord(F)) {
+                    if (bridgeField(F.captured_context, F.word_name, Args)) |split| {
+                        const entries = expandedEntries(op, B, infos[0..i]);
+                        const demanded = enumOrigins(op.args[entries[split].source], m, Raw, origins[0..i]);
+                        for (demanded, 0..) |from, j| if (from) return j;
+                    }
+                } else {
+                    const ArgsBound = closureArguments(F, Args);
+                    const BodyPack = closureBodyPack(F, ArgsBound);
+                    if (directDemand(F.captured_context, F.closure_definition.body, BodyPack)) |split| {
+                        const definition = F.closure_definition;
+                        if (split >= definition.signature.len) {
+                            const demanded = enumOrigins(op.target.?, m, Raw, origins[0..i]);
+                            for (demanded, 0..) |from, j| if (from) return j;
+                        } else {
+                            const entries = expandedEntries(op, B, infos[0..i]);
+                            for (@typeInfo(Args).@"struct".fields, 0..) |field, ai| {
+                                if (slotFor(definition.signature, field.name).? != split) continue;
+                                const demanded = enumOrigins(op.args[entries[ai].source], m, Raw, origins[0..i]);
+                                for (demanded, 0..) |from, j| if (from) return j;
+                            }
+                        }
+                    }
+                }
+            }
+        }
         infos[i] = switch (op.kind) {
             .call => callInfo(ctx, op.callee, argPack(op, B, infos[0..i])),
             .pack => .{ .T = argPack(op, B, infos[0..i]) },
             .project => projectedInfo(refInfo(op.args[0], B, infos[0..i]), op.field),
+            .closure => closureInfo(ctx, op, B, infos[0..i]),
+            .apply => applyInfo(refInfo(op.target.?, B, infos[0..i]), argPack(op, B, infos[0..i])),
+            .bind_word => staticInfo(@as(BoundWord(ctx, op.callee, op.source), .{})),
         };
     }
     return null;
@@ -1524,13 +1987,13 @@ fn knownBranchRaw(comptime Raw: type, comptime i: usize) type {
 
 fn branchPack(raw: anytype, comptime i: usize, comptime tag: anytype, payload: anytype) branchRaw(@TypeOf(raw), i, tag) {
     const Next = branchRaw(@TypeOf(raw), i, tag);
-    const Source = @typeInfo(@TypeOf(raw)).@"struct".fields[i].type;
+    const SourceType = @typeInfo(@TypeOf(raw)).@"struct".fields[i].type;
     var next: Next = undefined;
     inline for (@typeInfo(Next).@"struct".fields, 0..) |f, j| {
         if (comptime f.is_comptime) continue;
         @field(next, f.name) = if (comptime i != j)
             @field(raw, f.name)
-        else if (comptime @typeInfo(Source) == .error_union)
+        else if (comptime @typeInfo(SourceType) == .error_union)
             payload
         else
             .{ .payload = payload };
@@ -1703,6 +2166,202 @@ fn variantDescription(comptime Raw: type) []const u8 {
 
 // --- body interpreter ---------------------------------------------------------------
 
+fn closureMethod(comptime definition: *const ClosureDef) Method {
+    return .{
+        .name = definition.id,
+        .declaration_home = definition.home,
+        .signature = definition.signature,
+        .body = .{ .ops = definition.body },
+        .gates = definition.gates,
+        .variables = definition.variables,
+        .eqs = definition.eqs,
+        .source = definition.source,
+    };
+}
+
+/// The code, retained creation context and static capture facts are type data;
+/// runtime capture values are shallow immutable value snapshots in the instance.
+pub fn Closure(comptime ctx: anytype, comptime definition: *const ClosureDef, comptime Captures: type) type {
+    if (@typeInfo(Captures) != .@"struct" or @typeInfo(Captures).@"struct".fields.len != definition.captures.len)
+        @compileError("jpp: invalid closure capture pack.");
+    _ = MultiMethod(definition.id, &.{closureMethod(definition)});
+    return ClosureType(ctx, definition, Captures);
+}
+
+fn ClosureType(comptime ctx: anytype, comptime definition: *const ClosureDef, comptime Captures: type) type {
+    return struct {
+        pub const closure_definition = definition;
+        pub const captured_context = ctx;
+        pub const Capture = Captures;
+        captures: Captures,
+    };
+}
+
+pub fn BoundWord(comptime ctx: anytype, comptime word: []const u8, comptime location: Source) type {
+    return struct {
+        pub const is_bound_word = true;
+        pub const word_name = word;
+        pub const captured_context = ctx;
+        pub const source = location;
+    };
+}
+
+pub fn isBoundWord(comptime T: type) bool {
+    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "is_bound_word") or
+        !@hasDecl(T, "word_name") or !@hasDecl(T, "captured_context") or !@hasDecl(T, "source")) return false;
+    if (@TypeOf(T.word_name) != []const u8 or @TypeOf(T.source) != Source) return false;
+    return T == BoundWord(T.captured_context, T.word_name, T.source);
+}
+
+pub fn isClosure(comptime T: type) bool {
+    if (@typeInfo(T) != .@"struct" or !@hasDecl(T, "closure_definition") or
+        !@hasDecl(T, "captured_context") or !@hasDecl(T, "Capture")) return false;
+    if (@TypeOf(T.closure_definition) != *const ClosureDef or @TypeOf(T.Capture) != type) return false;
+    if (@typeInfo(T.Capture) != .@"struct" or @typeInfo(T.Capture).@"struct".fields.len != T.closure_definition.captures.len) return false;
+    // Membership must decline malformed lookalikes without instantiating their
+    // body or turning metadata validation into an unrelated compilation error.
+    return T == ClosureType(T.captured_context, T.closure_definition, T.Capture);
+}
+
+pub fn isFunction(comptime T: type) bool {
+    return isClosure(T) or isBoundWord(T);
+}
+
+fn requireFunction(comptime F: type) void {
+    if (!isFunction(F)) @compileError("jpp: value is not callable (expected a function value).");
+}
+
+fn closureContext(comptime ctx: anytype, comptime definition: *const ClosureDef) @TypeOf(if (definition.home) |home| extendAll(ctx, StaticOf(home)) else ctx) {
+    return if (comptime definition.home) |home| extendAll(ctx, StaticOf(home)) else ctx;
+}
+
+fn closureInfo(comptime ctx: anytype, comptime op: Op, comptime B: type, comptime locals: []const ValueInfo) ValueInfo {
+    const definition = op.closure orelse @compileError("jpp: missing closure definition.");
+    return .{ .T = Closure(closureContext(ctx, definition), definition, argPack(op, B, locals)) };
+}
+
+pub fn closureBinding(comptime F: type, comptime Raw: type) ?type {
+    requireFunction(F);
+    if (@typeInfo(Raw) != .@"struct") return null;
+    const definition = F.closure_definition;
+    const B = construct(definition.signature, Raw) orelse return null;
+    const method = closureMethod(definition);
+    if (!eqsOk(F.captured_context, method, B) or !gatesOk(F.captured_context, method, B)) return null;
+    return B;
+}
+
+fn closureArguments(comptime F: type, comptime Raw: type) type {
+    return closureBinding(F, Raw) orelse @compileError("jpp: arguments do not match anonymous function '" ++ F.closure_definition.id ++ "'.");
+}
+
+fn closureBodyPack(comptime F: type, comptime Args: type) type {
+    const definition = F.closure_definition;
+    const af = @typeInfo(Args).@"struct".fields;
+    const cf = @typeInfo(F.Capture).@"struct".fields;
+    var infos: [af.len + cf.len]ValueInfo = undefined;
+    var names: [af.len + cf.len][]const u8 = undefined;
+    const count = definition.signature.len;
+    for (af[0..count], 0..) |f, i| {
+        infos[i] = fieldInfo(f);
+        names[i] = f.name;
+    }
+    for (cf, 0..) |f, i| {
+        infos[count + i] = fieldInfo(f);
+        names[count + i] = "#capture#" ++ definition.captures[i];
+    }
+    for (af[count..], count + cf.len..) |f, i| {
+        infos[i] = fieldInfo(f);
+        names[i] = f.name;
+    }
+    return namedInfoPack(&infos, &names, false);
+}
+
+fn closureBodyValues(f: anytype, args: anytype) closureBodyPack(@TypeOf(f), @TypeOf(args)) {
+    const F = @TypeOf(f);
+    const BodyPack = closureBodyPack(F, @TypeOf(args));
+    const count = F.closure_definition.signature.len;
+    const captures = @typeInfo(F.Capture).@"struct".fields;
+    var bound: BodyPack = undefined;
+    inline for (@typeInfo(BodyPack).@"struct".fields, 0..) |field, i| {
+        if (comptime field.is_comptime) continue;
+        @field(bound, field.name) = if (comptime i >= count and i < count + captures.len)
+            @field(f.captures, captures[i - count].name)
+        else
+            @field(args, field.name);
+    }
+    return bound;
+}
+
+// Reuse the demand walk over a bound pack, without resolving a fabricated word.
+fn directMethod(comptime flat: Flat, comptime B: type) Method {
+    const fields = @typeInfo(B).@"struct".fields;
+    var signature: [fields.len]Slot = undefined;
+    for (fields, 0..) |field, i| signature[i] = .{ .name = field.name, .section = .named, .qual = .bare };
+    const frozen = signature;
+    return .{ .name = "anonymous function", .signature = &frozen, .body = .{ .ops = flat } };
+}
+
+fn directDemand(comptime ctx: anytype, comptime flat: Flat, comptime B: type) ?usize {
+    for (@typeInfo(B).@"struct".fields) |field| {
+        if (!field.is_comptime and @typeInfo(field.type) == .@"enum")
+            return bodyEnumDemand(ctx, directMethod(flat, B), B, B);
+    }
+    return null;
+}
+
+fn directRet(comptime ctx: anytype, comptime flat: Flat, comptime B: type) type {
+    if (directDemand(ctx, flat, B)) |index| {
+        const field = @typeInfo(B).@"struct".fields[index];
+        const E = bridgeTagType(field.type);
+        var result: type = noreturn;
+        for (@typeInfo(E).@"enum".fields) |case| {
+            const tag: E = @enumFromInt(case.value);
+            result = addBridgeResult(result, directRet(ctx, flat, branchRaw(B, index, tag)), "anonymous function");
+        }
+        return result;
+    }
+    return flatRet(ctx, flat, B);
+}
+
+fn directExec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) directRet(ctx, flat, @TypeOf(bound)) {
+    if (comptime directDemand(ctx, flat, @TypeOf(bound))) |index| {
+        const field = comptime @typeInfo(@TypeOf(bound)).@"struct".fields[index];
+        const R = directRet(ctx, flat, @TypeOf(bound));
+        if (comptime R == type) @compileError("jpp: runtime function application cannot return a comptime-only value.");
+        switch (@field(bound, field.name)) {
+            inline else => |tag| return bridgeResult(R, directExec(ctx, flat, branchPack(bound, index, tag, {}))),
+        }
+    }
+    return exec(ctx, flat, bound);
+}
+
+pub fn ApplyRet(comptime F: type, comptime Raw: type) type {
+    requireFunction(F);
+    if (@typeInfo(Raw) != .@"struct") @compileError("jpp: function application requires an argument pack.");
+    if (isBoundWord(F)) return RetOf(F.captured_context, F.word_name, Raw);
+    return directRet(F.captured_context, F.closure_definition.body, closureBodyPack(F, closureArguments(F, Raw)));
+}
+
+/// Apply one body using its retained creation context; no method selection.
+pub fn apply(f: anytype, raw: anytype) ApplyRet(@TypeOf(f), @TypeOf(raw)) {
+    const F = @TypeOf(f);
+    if (comptime isBoundWord(F)) return call(F.captured_context, F.word_name, raw);
+    const args = bindValues(F.closure_definition.signature, closureArguments(F, @TypeOf(raw)), raw);
+    return directExec(F.captured_context, F.closure_definition.body, closureBodyValues(f, args));
+}
+
+fn applyInfo(comptime target: ValueInfo, comptime Raw: type) ValueInfo {
+    const F = target.T;
+    if (isBoundWord(F)) return callInfo(F.captured_context, F.word_name, Raw);
+    const T = ApplyRet(F, Raw);
+    if (T == type) return staticInfo(apply(if (target.value != null) staticValue(target) else @as(F, undefined), @as(Raw, undefined)));
+    const B = closureBodyPack(F, closureArguments(F, Raw));
+    if (directDemand(F.captured_context, F.closure_definition.body, B) != null) return .{ .T = T };
+    const infos = localInfo(F.captured_context, F.closure_definition.body, B);
+    const result = refInfo(F.closure_definition.body.result, B, &infos);
+    return if (result.T == T) result else .{ .T = T };
+}
+
 fn fieldTypeAt(comptime B: type, comptime i: usize) type {
     return @typeInfo(B).@"struct".fields[i].type;
 }
@@ -1730,7 +2389,7 @@ fn fieldInfo(comptime f: std.builtin.Type.StructField) ValueInfo {
 
 // Declaration checks may inspect literal/module values without executing a
 // method. Unknown arguments, type binders and call results remain deferred.
-fn lexicalInfo(comptime ref: ValRef, comptime locals: []const ?ValueInfo) ?ValueInfo {
+fn lexicalInfo(comptime ref: ValRef, comptime locals: []const ?ValueInfo, comptime params: []const ?ValueInfo) ?ValueInfo {
     return switch (ref) {
         .type_value => |T| staticInfo(T),
         .constant => |C| staticInfo(C.Value),
@@ -1739,15 +2398,28 @@ fn lexicalInfo(comptime ref: ValRef, comptime locals: []const ?ValueInfo) ?Value
         .lit_s => |v| staticInfo(@as([]const u8, v)),
         .lit_b => |v| staticInfo(v),
         .local => |i| locals[i],
-        .bound_type, .param_type, .param => null,
+        .param => |i| if (i < params.len) params[i] else null,
+        .bound_type, .param_type => null,
     };
 }
 
 fn validateStaticProjections(comptime flat: Flat) void {
+    validateLexicalFlat(flat, &.{});
+}
+
+fn validateLexicalFlat(comptime flat: Flat, comptime params: []const ?ValueInfo) void {
     var locals: [flat.ops.len]?ValueInfo = @splat(null);
     for (flat.ops, 0..) |op, i| {
+        if (op.kind == .closure) {
+            const definition = op.closure.?;
+            _ = MultiMethod(definition.id, &.{closureMethod(definition)});
+            var captures: [definition.signature.len + definition.captures.len]?ValueInfo = @splat(null);
+            for (op.args, definition.signature.len..) |arg, j|
+                captures[j] = lexicalInfo(arg, locals[0..i], params);
+            validateLexicalFlat(definition.body, &captures);
+        }
         if (op.kind != .project) continue;
-        if (lexicalInfo(op.args[0], locals[0..i])) |parent|
+        if (lexicalInfo(op.args[0], locals[0..i], params)) |parent|
             locals[i] = projectedInfo(parent, op.field);
     }
 }
@@ -1829,6 +2501,9 @@ fn guardFlatInfo(comptime ctx: anytype, comptime flat: Flat, comptime B: type) V
                 break :blk if (allFieldsKnown(T)) staticInfo(@as(T, undefined)) else .{ .T = T };
             },
             .project => projectedInfo(refInfo(op.args[0], B, infos[0..i]), op.field),
+            .closure => closureInfo(ctx, op, B, infos[0..i]),
+            .apply => applyInfo(refInfo(op.target.?, B, infos[0..i]), argPack(op, B, infos[0..i])),
+            .bind_word => staticInfo(@as(BoundWord(ctx, op.callee, op.source), .{})),
         };
     }
     return refInfo(guardRef(flat.result), B, &infos);
@@ -2025,6 +2700,9 @@ fn LocalInfos(comptime ctx: anytype, comptime flat: Flat, comptime B: type) type
                     .call => callInfo(ctx, op.callee, argPack(op, B, infos[0..i])),
                     .pack => .{ .T = argPack(op, B, infos[0..i]) },
                     .project => projectedInfo(refInfo(op.args[0], B, infos[0..i]), op.field),
+                    .closure => closureInfo(ctx, op, B, infos[0..i]),
+                    .apply => applyInfo(refInfo(op.target.?, B, infos[0..i]), argPack(op, B, infos[0..i])),
+                    .bind_word => staticInfo(@as(BoundWord(ctx, op.callee, op.source), .{})),
                 };
             }
             break :blk infos;
@@ -2102,7 +2780,7 @@ fn exec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) flatRet(ctx,
     inline for (flat.ops, 0..) |op, i| {
         // Static results need no value storage, but calls may still have
         // runtime effects before returning a static field. Execute those calls.
-        if (comptime infos[i].value == null or (op.kind == .call and infos[i].T != type)) {
+        if (comptime infos[i].value == null or ((op.kind == .call or op.kind == .apply) and infos[i].T != type)) {
             if (comptime op.kind == .project) {
                 @field(locals, std.fmt.comptimePrint("{d}", .{i})) = @field(refValue(op.args[0], bound, locals), op.field);
             } else {
@@ -2116,7 +2794,13 @@ fn exec(comptime ctx: anytype, comptime flat: Flat, bound: anytype) flatRet(ctx,
                         @field(raw, name) = if (comptime entry.field) |field| @field(source, field) else source;
                     }
                 }
-                const value = if (comptime op.kind == .pack) raw else call(ctx, op.callee, raw);
+                const value = switch (comptime op.kind) {
+                    .pack => raw,
+                    .call => call(ctx, op.callee, raw),
+                    .apply => apply(refValue(op.target.?, bound, locals), raw),
+                    .closure => infos[i].T{ .captures = raw },
+                    .bind_word, .project => unreachable,
+                };
                 if (comptime infos[i].value == null) @field(locals, std.fmt.comptimePrint("{d}", .{i})) = value;
             }
         }
@@ -3394,4 +4078,167 @@ test "delegated bodies discover type demand in the caller execution context" {
     try std.testing.expectEqual(@as(i64, 2), delegate(.{Reader}, .{ Caller, Reader }, "decodeWidth", .{format}));
     format = .wide;
     try std.testing.expectEqual(@as(i64, 4), delegate(.{Reader}, .{ Caller, Reader }, "decodeWidth", .{format}));
+}
+
+test "callable captures remain data and one body specializes without dispatch" {
+    const Sum = struct {
+        pub fn Ret(comptime B: type) type {
+            return @FieldType(B, "a");
+        }
+        pub fn run(b: anytype) Ret(@TypeOf(b)) {
+            return b.a + b.b;
+        }
+    };
+    const Arithmetic = struct {
+        pub const add = MultiMethod("add", &.{.{ .name = "add", .signature = &.{
+            .{ .name = "a", .qual = .bare }, .{ .name = "b", .qual = .bare },
+        }, .body = .{ .ground = Sum } }});
+    };
+    const definition = ClosureDef{
+        .id = "capture-data",
+        .signature = &.{.{ .name = "x", .qual = .bare }},
+        .captures = &.{"seed"},
+        .body = .{ .ops = &.{.{ .callee = "add", .args = &.{ .{ .param = 0 }, .{ .param = 1 } } }}, .result = .{ .local = 0 } },
+    };
+    const F = Closure(.{Arithmetic}, &definition, struct { seed: i64 });
+    const a = F{ .captures = .{ .seed = 5 } };
+    const b = F{ .captures = .{ .seed = 20 } };
+    try std.testing.expect(isFunction(F));
+    try std.testing.expect(@TypeOf(a) == @TypeOf(b));
+    try std.testing.expectEqual(@as(i64, 12), apply(a, .{@as(i64, 7)}));
+    try std.testing.expectEqual(@as(i64, 27), apply(b, .{@as(i64, 7)}));
+
+    const identity = ClosureDef{ .id = "identity", .signature = &.{.{ .name = "x", .qual = .bare }}, .body = .{ .ops = &.{}, .result = .{ .param = 0 } } };
+    const I = Closure(.{}, &identity, @TypeOf(.{}));
+    const identity_value = I{ .captures = .{} };
+    try std.testing.expect(apply(identity_value, .{i64}) == i64);
+    try std.testing.expectEqual(true, apply(identity_value, .{true}));
+    const Open = enum(u8) { known, _ };
+    var open: Open = @enumFromInt(7);
+    _ = &open;
+    try std.testing.expectEqual(open, apply(identity_value, .{open}));
+}
+
+test "callable constructors retain the complete creation context across collapse" {
+    const One = struct {
+        pub fn Ret(comptime _: type) type {
+            return i64;
+        }
+        pub fn run(_: anytype) i64 {
+            return 1;
+        }
+    };
+    const Nine = struct {
+        pub fn Ret(comptime _: type) type {
+            return i64;
+        }
+        pub fn run(_: anytype) i64 {
+            return 9;
+        }
+    };
+    const Factory = struct {
+        const definition = ClosureDef{ .id = "factory.callback", .home = @This(), .signature = &.{}, .body = .{ .ops = &.{.{ .callee = "policy", .args = &.{} }}, .result = .{ .local = 0 } } };
+        pub const make = MultiMethod("make", &.{.{ .name = "make", .signature = &.{}, .body = .{ .ops = .{ .ops = &.{.{ .kind = .closure, .closure = &definition, .args = &.{} }}, .result = .{ .local = 0 } } } }});
+        pub const makeWord = MultiMethod("makeWord", &.{.{ .name = "makeWord", .signature = &.{}, .body = .{ .ops = .{ .ops = &.{.{ .kind = .bind_word, .callee = "policy", .source = .{ .file = "factory.jpp", .line = 7 }, .args = &.{} }}, .result = .{ .local = 0 } } } }});
+        pub const policy = MultiMethod("policy", &.{.{ .name = "policy", .signature = &.{}, .body = .{ .ground = One } }});
+    };
+    const Caller = struct {
+        pub const policy = MultiMethod("policy", &.{.{ .name = "policy", .signature = &.{}, .body = .{ .ground = Nine } }});
+    };
+    const Inert = struct {};
+    const Invoker = struct {
+        pub const invoke = MultiMethod("invoke", &.{.{ .name = "invoke", .signature = &.{.{ .name = "f", .qual = .bare }}, .body = .{ .ops = .{ .ops = &.{.{ .kind = .apply, .target = .{ .param = 0 }, .args = &.{} }}, .result = .{ .local = 0 } } } }});
+    };
+    const callback = call(.{ Caller, Inert, Factory }, "make", .{});
+    const bound_word = call(.{ Caller, Inert, Factory }, "makeWord", .{});
+    try std.testing.expectEqual(@as(usize, 3), @TypeOf(callback).captured_context.len);
+    try std.testing.expectEqual(@as(usize, 3), @TypeOf(bound_word).captured_context.len);
+    try std.testing.expectEqual(@as(i64, 9), call(.{ Factory, Invoker }, "invoke", .{callback}));
+    try std.testing.expectEqual(@as(i64, 9), call(.{ Factory, Invoker }, "invoke", .{bound_word}));
+    try std.testing.expect(isBoundWord(@TypeOf(bound_word)));
+}
+
+test "callable nested environments retain runtime and static captures" {
+    const Inner = ClosureDef{ .id = "nested.inner", .signature = &.{}, .captures = &.{ "value", "T" }, .body = .{ .ops = &.{}, .result = .{ .param = 0 } } };
+    const Outer = ClosureDef{ .id = "nested.outer", .signature = &.{.{ .name = "value", .qual = .bare }}, .captures = &.{"T"}, .body = .{ .ops = &.{.{ .kind = .closure, .closure = &Inner, .args = &.{ .{ .param = 0 }, .{ .param = 1 } } }}, .result = .{ .local = 0 } } };
+    const Capture = infoPack(&.{staticInfo(i64)});
+    const F = Closure(.{}, &Outer, Capture);
+    const inner = apply(F{ .captures = .{} }, .{@as(i64, 42)});
+    try std.testing.expectEqual(@as(i64, 42), apply(inner, .{}));
+    try std.testing.expect(@typeInfo(@TypeOf(inner).Capture).@"struct".fields[1].is_comptime);
+    try std.testing.expect(@field(inner.captures, "1") == i64);
+}
+
+test "callable type demand follows arguments and captured enums without entry dispatch" {
+    const Format = enum { narrow, wide };
+    const Width = struct {
+        pub fn Ret(comptime _: type) type {
+            return i64;
+        }
+        pub fn run(b: anytype) i64 {
+            return @sizeOf(b.T);
+        }
+    };
+    const Types = struct {
+        pub const choose = MultiMethod("choose", &.{
+            .{ .name = "choose", .signature = &.{.{ .name = "e", .qual = .{ .enum_value = EnumValue(Format.narrow) } }}, .body = .{ .ops = .{ .ops = &.{}, .result = .{ .type_value = u8 } } } },
+            .{ .name = "choose", .signature = &.{.{ .name = "e", .qual = .{ .enum_value = EnumValue(Format.wide) } }}, .body = .{ .ops = .{ .ops = &.{}, .result = .{ .type_value = u32 } } } },
+        });
+        pub const width = MultiMethod("width", &.{.{ .name = "width", .signature = &.{.{ .name = "T", .qual = .{ .exact = type } }}, .body = .{ .ground = Width } }});
+        pub const through = MultiMethod("through", &.{.{ .name = "through", .signature = &.{ .{ .name = "f", .qual = .bare }, .{ .name = "e", .qual = .bare } }, .body = .{ .ops = .{ .ops = &.{
+            .{ .kind = .apply, .target = .{ .param = 0 }, .args = &.{.{ .param = 1 }} },
+            .{ .callee = "width", .args = &.{.{ .local = 0 }} },
+        }, .result = .{ .local = 1 } } } }});
+    };
+    const choice = ClosureDef{ .id = "choose-type", .signature = &.{.{ .name = "e", .qual = .bare }}, .body = .{ .ops = &.{.{ .callee = "choose", .args = &.{.{ .param = 0 }} }}, .result = .{ .local = 0 } } };
+    const F = Closure(.{Types}, &choice, @TypeOf(.{}));
+    var e: Format = .wide;
+    _ = &e;
+    try std.testing.expectEqual(@as(i64, 4), call(.{Types}, "through", .{ F{ .captures = .{} }, e }));
+    const captured = ClosureDef{ .id = "captured-type", .signature = &.{}, .captures = &.{"e"}, .body = .{ .ops = &.{
+        .{ .callee = "choose", .args = &.{.{ .param = 0 }} },
+        .{ .callee = "width", .args = &.{.{ .local = 0 }} },
+    }, .result = .{ .local = 1 } } };
+    const C = Closure(.{Types}, &captured, struct { e: Format });
+    try std.testing.expectEqual(@as(i64, 4), apply(C{ .captures = .{ .e = e } }, .{}));
+}
+
+test "callable membership rejects malformed metadata without inspecting its body" {
+    const definition = ClosureDef{ .id = "metadata-lookalike", .signature = &.{}, .body = .{ .ops = &.{}, .result = .{ .lit_i = 0 } } };
+    const ScalarCapture = struct {
+        pub const closure_definition: *const ClosureDef = &definition;
+        pub const captured_context = .{};
+        pub const Capture = i64;
+    };
+    const WrongShape = struct {
+        pub const closure_definition: *const ClosureDef = &definition;
+        pub const captured_context = .{};
+        pub const Capture = struct { unexpected: i64 };
+    };
+    const Forged = struct {
+        pub const closure_definition: *const ClosureDef = &definition;
+        pub const captured_context = .{};
+        pub const Capture = @TypeOf(.{});
+        captures: Capture,
+    };
+    try std.testing.expect(!isFunction(ScalarCapture));
+    try std.testing.expect(!isFunction(WrongShape));
+    try std.testing.expect(!isFunction(Forged));
+    const Valid = Closure(.{}, &definition, @TypeOf(.{}));
+    try std.testing.expect(isFunction(Valid));
+    try std.testing.expect(closureBinding(Valid, i64) == null);
+}
+
+test "callable signatures preserve repeated exact value coordinates" {
+    const definition = ClosureDef{
+        .id = "repeated-exact",
+        .signature = &.{
+            .{ .name = "i64", .qual = .{ .type_value = i64 } },
+            .{ .name = "i64", .qual = .{ .type_value = i64 } },
+        },
+        .body = .{ .ops = &.{}, .result = .{ .param = 0 } },
+    };
+    const F = Closure(.{}, &definition, @TypeOf(.{}));
+    try std.testing.expect(apply(F{ .captures = .{} }, .{ i64, i64 }) == i64);
+    try std.testing.expect(closureBinding(F, @TypeOf(.{ i64, u64 })) == null);
 }

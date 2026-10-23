@@ -1,0 +1,80 @@
+using Base
+using Base.Reflection
+using alternative
+using bridge
+
+export absent, choose
+
+Counter = zig{ struct { pub var hits: i64 = 0; } }
+Choice = zig{ enum { left, right } }
+
+keep(f) = f
+choose(x) = x
+choose(x::int64) = x
+clash(x::int64, y) = x + y
+clash(x, y::int64) = x + y
+FloatType(T::type)::bool = zig{ T == f64 }
+onlyFloat(x<:FloatType) = x
+touch(x) = bump(Counter, x)
+bump(T::type, x) = zig{ blk: { T.hits += 1; break :blk x; } }
+hits() = readHits(Counter)
+readHits(T::type) = zig{ T.hits }
+runtimeBias() = zig{ @as(i64, 7) }
+runtimeChoice() = makeChoice(Choice)
+makeChoice(T::type) = zig{ @as(T, .left) }
+located(info)::bool = zig{ info.source.file.len > 0 and info.source.line > 0 and info.source.column > 0 }
+capturedType(info)::type = zig{ info.captures.@"0".StaticValue.?.Value }
+
+main() = {
+    bias = runtimeBias()
+    callback = keep() do x { touch(x + bias) }
+    info = reflect(callback)
+    check("callback identity is described", info.kind, "closure")
+    check("callback source location survives lowering", located(info), true)
+    check("capture keeps its source name", info.captures.0.name, "bias")
+    check("capture keeps its runtime type", info.captures.0.Type, int64)
+    check("capture remains runtime data", info.captures.0.is_static, false)
+    check("callback argument has one fixed signature", info.signature.0.name, "x")
+    check("context description is the captured creation context", info.context_is_collapsed, false)
+    selected = analyze(callback, (1,))
+    check("single body accepts supplied pack", selected.status, "selected")
+    check("selection does not claim body checking", selected.body_checked, false)
+    check("selection records argument types", selected.input_facts.0.Type, int64)
+    check("callback return typing is separate", returnType(callback, (1,)), int64)
+    check("reflection did not invoke callback", hits(), 0)
+    check("wrong callback arity is inspectable", analyze(callback, ()).status, "missing")
+    check("callback still works", callback(3), 10)
+    check("only explicit application executed the body", hits(), 1)
+    T = int64
+    typed = keep() do x { (T, x) }
+    typedInfo = reflect(typed)
+    check("type capture remains static", typedInfo.captures.0.is_static, true)
+    check("type capture retains exact value", capturedType(typedInfo), int64)
+
+    wordValue = bindword(choose)
+    wordInfo = reflect(wordValue)
+    check("word value is distinct from fixed closure", wordInfo.kind, "word")
+    check("word binding has a source location", located(wordInfo), true)
+    check("word reflection lists declared methods", located(wordInfo.methods.0), true)
+    wordAnalysis = analyze(wordValue, (3,))
+    check("ordinary resolution is inspectable", wordAnalysis.status, "selected")
+    check("specificity keeps the exact maximum", wordAnalysis.candidates.1.maximal, true)
+    check("bare candidate loses pointwise", wordAnalysis.candidates.0.maximal, false)
+    check("candidate declaration has source", located(wordAnalysis.candidates.1), true)
+    check("bound word uses the same winner", wordValue(8), 8)
+    check("word return typing is separate", returnType(wordValue, (3,)), int64)
+    elsewhere = inspectElsewhere(wordValue, (3,))
+    check("receiver does not replace inspection context", elsewhere.candidates.1.home, "main")
+    check("receiver does not contribute candidates", len(elsewhere.candidates), len(wordAnalysis.candidates))
+    check("missing method is a structured result", analyze(wordValue, (3, 4)).status, "missing")
+    check("failed predicate has an explanation", analyze(bindword(onlyFloat), (3,)).candidates.0.applicability, "predicate")
+    check("declaration without implementation is inspectable", analyze(bindword(absent), (3,)).status, "missing")
+    check("ambiguity is a structured result", analyze(bindword(clash), (3, 4)).status, "ambiguous")
+    check("unresolved enum analysis is honest", analyze(wordValue, (runtimeChoice(),)).status, "incomplete")
+    check("known enum analysis can select", analyze(wordValue, (Choice.left,)).status, "selected")
+    orderWord = bindword(<:)
+    check("order identity is not mistaken for missing methods", analyze(orderWord, (int64, int64)).selection_kind, "order_identity")
+    check("order fallback is described explicitly", analyze(orderWord, (int64, float64)).selection_kind, "order_default")
+    check("invalid order inputs are inspectable", analyze(orderWord, (1, 2)).status, "missing")
+    check("runtime enums do not hide invalid order inputs", analyze(orderWord, (runtimeChoice(), runtimeChoice())).status, "missing")
+}

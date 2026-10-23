@@ -1,0 +1,10 @@
+keep(f) = f
+run(f, ::int64) = f(1)
+run(f, x) = {
+    _ = x
+    f(1.0)
+}
+main() = {
+    callback = keep() do x::float64 { x }
+    run(callback, 1)
+}

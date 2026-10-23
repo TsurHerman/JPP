@@ -28,7 +28,7 @@ const std = @import("std");
 
 // ---------------------------------------------------------------- tokens
 
-const TokKind = enum { ident, int, float, str, lparen, rparen, lbrace, rbrace, comma, dcolon, subtype, eq, eqeq, semi, nl, ground, kw_using, kw_export, kw_where, op, dot, ellipsis, eof };
+const TokKind = enum { ident, int, float, str, lparen, rparen, lbrace, rbrace, comma, dcolon, subtype, eq, eqeq, semi, nl, ground, kw_using, kw_export, kw_where, kw_do, kw_bindword, op, dot, ellipsis, eof };
 
 const Tok = struct { kind: TokKind, text: []const u8, pos: usize };
 
@@ -63,6 +63,10 @@ fn lex(src: []const u8, toks: []Tok) LexError![]Tok {
                 toks[n] = .{ .kind = .kw_export, .text = word, .pos = start };
             } else if (std.mem.eql(u8, word, "where")) {
                 toks[n] = .{ .kind = .kw_where, .text = word, .pos = start };
+            } else if (std.mem.eql(u8, word, "do")) {
+                toks[n] = .{ .kind = .kw_do, .text = word, .pos = start };
+            } else if (std.mem.eql(u8, word, "bindword")) {
+                toks[n] = .{ .kind = .kw_bindword, .text = word, .pos = start };
             } else if (std.mem.eql(u8, word, "zig") and i < src.len and src[i] == '{') {
                 // ground capture: raw until balanced '}', strings skipped
                 i += 1; // consume '{'
@@ -181,6 +185,9 @@ const Node = union(enum) {
     lit_b: bool,
     ident: []const u8,
     call: struct { callee: []const u8, args: []Arg },
+    apply: struct { target: *Node, args: []Arg },
+    closure: *Def,
+    bind_word: struct { name: []const u8, source: SourceIR },
     pack: []Arg,
     project: struct { value: *Node, field: []const u8 },
     bind: struct { name: []const u8, value: *Node },
@@ -209,7 +216,10 @@ const Def = struct {
     where_clause: ?Where = null,
     body: ?*Node, // null when ground
     ground: ?[:0]const u8,
+    source: SourceIR = .{},
 };
+
+const SourceIR = struct { file: []const u8 = "", line: usize = 0, column: usize = 0, offset: usize = 0 };
 
 const Mod = struct {
     name: []const u8,
@@ -227,6 +237,20 @@ const Parser = struct {
     toks: []Tok,
     i: usize = 0,
     a: std.mem.Allocator,
+    source: []const u8 = "",
+    path: []const u8 = "",
+
+    fn location(p: *Parser, offset: usize) SourceIR {
+        var line: usize = 1;
+        var column: usize = 1;
+        for (p.source[0..offset]) |c| {
+            if (c == '\n') {
+                line += 1;
+                column = 1;
+            } else column += 1;
+        }
+        return .{ .file = p.path, .line = line, .column = column, .offset = offset };
+    }
 
     fn peek(p: *Parser) Tok {
         return p.toks[p.i];
@@ -322,6 +346,7 @@ const Parser = struct {
     }
 
     fn parseDef(p: *Parser) !Def {
+        const source = p.location(p.peek().pos);
         const name = p.next().text;
         _ = try p.expect(.lparen);
         var params = try std.ArrayList(Param).initCapacity(p.a, 8);
@@ -379,10 +404,10 @@ const Parser = struct {
         p.skipNlOnlyNewlinesBeforeBody();
         if (p.peek().kind == .ground) {
             const g = try p.a.dupeZ(u8, p.next().text);
-            return .{ .name = name, .params = params.items, .ret = ret, .where_clause = where_clause, .body = null, .ground = g };
+            return .{ .name = name, .params = params.items, .ret = ret, .where_clause = where_clause, .body = null, .ground = g, .source = source };
         }
         const body = try p.parseExpr(0);
-        return .{ .name = name, .params = params.items, .ret = ret, .where_clause = where_clause, .body = body, .ground = null };
+        return .{ .name = name, .params = params.items, .ret = ret, .where_clause = where_clause, .body = body, .ground = null, .source = source };
     }
 
     fn parseWhere(p: *Parser, params: []const Param) !Where {
@@ -471,7 +496,88 @@ const Parser = struct {
     }
 
     fn parsePostfix(p: *Parser) anyerror!*Node {
-        return p.parseMembers(try p.parsePrimary());
+        var value = try p.parsePrimary();
+        while (true) {
+            if (p.peek().kind == .dot) {
+                value = try p.parseMembers(value);
+            } else if (p.peek().kind == .lparen) {
+                _ = p.next();
+                const entries = try p.parseEntries();
+                value = try p.node(.{ .apply = .{ .target = value, .args = entries.args } });
+            } else if (p.peek().kind == .kw_do) {
+                const closure = try p.parseDo();
+                const old = switch (value.*) {
+                    .call => |c| c.args,
+                    .apply => |c| c.args,
+                    else => return bindingError(error.DoNeedsCall, "do must follow a call"),
+                };
+                const args = try p.a.alloc(Arg, old.len + 1);
+                args[0] = .{ .value = closure };
+                @memcpy(args[1..], old);
+                switch (value.*) {
+                    .call => |*c| c.args = args,
+                    .apply => |*c| c.args = args,
+                    else => unreachable,
+                }
+            } else break;
+        }
+        return value;
+    }
+
+    fn parseDo(p: *Parser) anyerror!*Node {
+        const source = p.location((try p.expect(.kw_do)).pos);
+        var params = try std.ArrayList(Param).initCapacity(p.a, 4);
+        var named = false;
+        p.skipNlOnlyNewlinesBeforeBody();
+        while (p.peek().kind != .lbrace and p.peek().kind != .kw_where) {
+            if (p.peek().kind == .lparen)
+                return bindingError(error.DoParametersNeedNames, "write do x, y { ... }");
+            if (p.peek().kind == .semi) {
+                if (named) return bindingError(error.DuplicateNamedSection, ";");
+                named = true;
+                _ = p.next();
+                p.skipNlOnlyNewlinesBeforeBody();
+                if (p.peek().kind == .lbrace) break;
+            }
+            if (p.peek().kind != .ident and p.peek().kind != .dcolon and p.peek().kind != .subtype)
+                return bindingError(error.DoParametersNeedNames, p.peek().text);
+            const spelling = if (p.peek().kind == .ident) p.next().text else "_";
+            const anonymous = std.mem.eql(u8, spelling, "_");
+            if (named and anonymous) return bindingError(error.NamedInputNeedsName, spelling);
+            const name = if (anonymous) try std.fmt.allocPrint(p.a, "__slot{d}", .{params.items.len}) else spelling;
+            for (params.items) |previous| {
+                if (previous.named == named and previous.rest) return bindingError(error.RestMustBeLast, name);
+            }
+            var ty: ?[]const u8 = null;
+            var pred: ?[]const u8 = null;
+            if (p.peek().kind == .dcolon) {
+                _ = p.next();
+                ty = (try p.expect(.ident)).text;
+            } else if (p.peek().kind == .subtype) {
+                _ = p.next();
+                pred = (try p.expect(.ident)).text;
+            }
+            const rest = p.peek().kind == .ellipsis;
+            if (rest) _ = p.next();
+            try params.append(p.a, .{ .name = name, .named = named, .rest = rest, .anonymous = anonymous, .ty = ty, .pred = pred });
+            p.skipNlOnlyNewlinesBeforeBody();
+            if (p.peek().kind == .comma) {
+                _ = p.next();
+                p.skipNlOnlyNewlinesBeforeBody();
+            } else if (p.peek().kind != .semi) break;
+        }
+        var where_clause: ?Where = null;
+        if (p.peek().kind == .kw_where) {
+            _ = p.next();
+            where_clause = try p.parseWhere(params.items);
+            if (where_clause.?.guards.len != 0)
+                return bindingError(error.DoValueGuardsNotSupported, "callback where clauses currently bind types and predicates");
+        }
+        if (p.peek().kind != .lbrace) _ = try p.expect(.lbrace);
+        const body = try p.parsePrimary();
+        const def = try p.a.create(Def);
+        def.* = .{ .name = try std.fmt.allocPrint(p.a, "do@{d}", .{source.offset}), .params = params.items, .ret = null, .where_clause = where_clause, .body = body, .ground = null, .source = source };
+        return p.node(.{ .closure = def });
     }
 
     fn parseMembers(p: *Parser, root: *Node) anyerror!*Node {
@@ -538,6 +644,15 @@ const Parser = struct {
     fn parsePrimary(p: *Parser) anyerror!*Node {
         const t = p.peek();
         switch (t.kind) {
+            .kw_bindword => {
+                _ = p.next();
+                _ = try p.expect(.lparen);
+                const name = p.next();
+                if (name.kind != .ident and name.kind != .op and name.kind != .eqeq and name.kind != .subtype)
+                    return bindingError(error.BindwordNeedsWord, name.text);
+                _ = try p.expect(.rparen);
+                return p.node(.{ .bind_word = .{ .name = name.text, .source = p.location(t.pos) } });
+            },
             .int => {
                 _ = p.next();
                 return p.node(.{ .lit_i = std.fmt.parseInt(i64, t.text, 10) catch return error.Parse });
@@ -623,8 +738,9 @@ fn isTVar(d: Def, name: []const u8) bool {
 // ---------------------------------------------------------------- normalizer (ANF)
 
 const VR = union(enum) { bound_type: []const u8, param_type: usize, name: []const u8, param: usize, local: usize, lit_i: i64, lit_f: f64, lit_s: []const u8, lit_b: bool };
-const OpIR = struct { kind: enum { call, pack, project } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, splats: []const Splat = &.{}, field: []const u8 = "" };
+const OpIR = struct { kind: enum { call, pack, project, closure, apply, bind_word } = .call, callee: []const u8 = "", args: []VR, labels: []const []const u8 = &.{}, splats: []const Splat = &.{}, field: []const u8 = "", target: ?VR = null, closure: ?*ClosureIR = null, source: SourceIR = .{} };
 const FlatIR = struct { ops: []OpIR, result: VR };
+const ClosureIR = struct { def: Def, captures: []const []const u8, flat: FlatIR };
 const GuardIR = struct { input: []const u8, predicate: ?[]const u8, flat: FlatIR };
 const Local = struct { name: []const u8, value: VR };
 
@@ -641,6 +757,8 @@ fn hasBinding(n: *Node, name: []const u8) bool {
             break :blk false;
         },
         .call => |c| hasBindingEntries(c.args, name),
+        .apply => |c| hasBinding(c.target, name) or hasBindingEntries(c.args, name),
+        .closure => false, // a callable starts a new lexical binding scope
         .pack => |args| hasBindingEntries(args, name),
         .project => |proj| hasBinding(proj.value, name),
         else => false,
@@ -657,14 +775,76 @@ fn flattenEntries(a: std.mem.Allocator, entries: []Arg, def: Def, ops: *std.Arra
     result.args = try a.alloc(VR, entries.len);
     const labels = try a.alloc([]const u8, entries.len);
     const splats = try a.alloc(Splat, entries.len);
+    // A trailing do block is constructed after the written call arguments,
+    // while its value occupies argument one in the resulting pack.
+    const trailing_do = entries.len != 0 and entries[0].value.* == .closure;
     for (entries, 0..) |arg, i| {
-        result.args[i] = try flattenNode(a, arg.value, def, ops, locals);
+        if (!trailing_do or i != 0) result.args[i] = try flattenNode(a, arg.value, def, ops, locals);
         labels[i] = arg.label;
         splats[i] = arg.splat;
     }
+    if (trailing_do) result.args[0] = try flattenNode(a, entries[0].value, def, ops, locals);
     result.labels = labels;
     result.splats = splats;
     try ops.append(a, result);
+    return .{ .local = ops.items.len - 1 };
+}
+
+fn closureUses(d: Def, name: []const u8) bool {
+    for (d.params) |param| if (std.mem.eql(u8, param.name, name)) return false;
+    if (isTVar(d, name) or hasBinding(d.body.?, name)) return false;
+    return nodeUses(d.body.?, name);
+}
+
+fn appendCapture(a: std.mem.Allocator, names: *std.ArrayList([]const u8), values: *std.ArrayList(VR), params: *std.ArrayList(Param), name: []const u8, value: VR) !void {
+    for (names.items) |old| if (std.mem.eql(u8, old, name)) return;
+    try names.append(a, name);
+    try values.append(a, value);
+    try params.append(a, .{ .name = name, .ty = null });
+}
+
+fn checkClosureForwards(n: *Node, inner: Def, outer: Def, locals: []const Local) anyerror!void {
+    switch (n.*) {
+        .bind => |b| {
+            if (!std.mem.eql(u8, b.name, "_") and closureUses(inner, b.name)) {
+                const available = blk: {
+                    for (locals) |local| if (std.mem.eql(u8, local.name, b.name)) break :blk true;
+                    for (outer.params) |param| if (std.mem.eql(u8, param.name, b.name)) break :blk true;
+                    break :blk false;
+                };
+                if (!available) return bindingError(error.ForwardBinding, b.name);
+            }
+            try checkClosureForwards(b.value, inner, outer, locals);
+        },
+        .block => |items| for (items) |item| try checkClosureForwards(item, inner, outer, locals),
+        .call => |c| for (c.args) |arg| try checkClosureForwards(arg.value, inner, outer, locals),
+        .apply => |c| {
+            try checkClosureForwards(c.target, inner, outer, locals);
+            for (c.args) |arg| try checkClosureForwards(arg.value, inner, outer, locals);
+        },
+        .pack => |args| for (args) |arg| try checkClosureForwards(arg.value, inner, outer, locals),
+        .project => |p| try checkClosureForwards(p.value, inner, outer, locals),
+        else => {},
+    }
+}
+
+fn flattenClosure(a: std.mem.Allocator, inner: Def, outer: Def, ops: *std.ArrayList(OpIR), locals: *std.ArrayList(Local)) !VR {
+    var names = try std.ArrayList([]const u8).initCapacity(a, 8);
+    var values = try std.ArrayList(VR).initCapacity(a, 8);
+    var params = try std.ArrayList(Param).initCapacity(a, inner.params.len + 8);
+    try params.appendSlice(a, inner.params);
+    try checkClosureForwards(outer.body.?, inner, outer, locals.items);
+    for (locals.items) |local| if (closureUses(inner, local.name))
+        try appendCapture(a, &names, &values, &params, local.name, local.value);
+    for (outer.params, 0..) |param, i| if (closureUses(inner, param.name))
+        try appendCapture(a, &names, &values, &params, param.name, .{ .param = i });
+    if (outer.where_clause) |w| for (w.vars) |name| if (closureUses(inner, name))
+        try appendCapture(a, &names, &values, &params, name, .{ .bound_type = name });
+    var body_def = inner;
+    body_def.params = params.items;
+    const closure = try a.create(ClosureIR);
+    closure.* = .{ .def = inner, .captures = names.items, .flat = try flatten(a, body_def) };
+    try ops.append(a, .{ .kind = .closure, .args = values.items, .closure = closure });
     return .{ .local = ops.items.len - 1 };
 }
 
@@ -702,9 +882,10 @@ fn flattenGuards(a: std.mem.Allocator, def: Def) ![]GuardIR {
         guard_def.body = expr;
         guard_def.ground = null;
         var flat = try flatten(a, guard_def);
-        for (flat.ops) |*op| for (op.args) |*arg| {
-            arg.* = try guardRef(arg.*, def, index);
-        };
+        for (flat.ops) |*op| {
+            for (op.args) |*arg| arg.* = try guardRef(arg.*, def, index);
+            if (op.target) |target| op.target = try guardRef(target, def, index);
+        }
         flat.result = try guardRef(flat.result, def, index);
         const predicate: ?[]const u8 = if (expr.* == .call and expr.call.args.len == 1 and
             expr.call.args[0].label.len == 0 and expr.call.args[0].splat == .none and
@@ -733,11 +914,34 @@ fn flattenNode(a: std.mem.Allocator, n: *Node, def: Def, ops: *std.ArrayList(OpI
             return .{ .name = name };
         },
         .call => |c| {
-            // First-class callable local values need a separate application
-            // representation; never silently call a same-spelled module word.
-            if (hasBinding(def.body.?, c.callee)) return bindingError(error.LocalNotCallable, c.callee);
-            for (def.params) |prm| if (std.mem.eql(u8, prm.name, c.callee)) return bindingError(error.LocalNotCallable, c.callee);
+            var target: ?VR = null;
+            for (locals.items) |local| if (std.mem.eql(u8, local.name, c.callee)) {
+                target = local.value;
+                break;
+            };
+            if (target == null) for (def.params, 0..) |prm, i| if (std.mem.eql(u8, prm.name, c.callee)) {
+                target = .{ .param = i };
+                break;
+            };
+            if (target == null and isTVar(def, c.callee)) target = .{ .bound_type = c.callee };
+            if (target) |ref| return flattenEntries(a, c.args, def, ops, locals, .{ .kind = .apply, .target = ref, .args = &.{} });
+            if (hasBinding(def.body.?, c.callee)) return bindingError(error.ForwardBinding, c.callee);
             return flattenEntries(a, c.args, def, ops, locals, .{ .callee = c.callee, .args = &.{} });
+        },
+        .apply => |c| {
+            const target = try flattenNode(a, c.target, def, ops, locals);
+            return flattenEntries(a, c.args, def, ops, locals, .{ .kind = .apply, .target = target, .args = &.{} });
+        },
+        .closure => |d| return flattenClosure(a, d.*, def, ops, locals),
+        .bind_word => |word| {
+            for (locals.items) |local| if (std.mem.eql(u8, local.name, word.name))
+                return bindingError(error.BindwordNeedsWord, word.name);
+            for (def.params) |param| if (std.mem.eql(u8, param.name, word.name))
+                return bindingError(error.BindwordNeedsWord, word.name);
+            if (isTVar(def, word.name)) return bindingError(error.BindwordNeedsWord, word.name);
+            if (hasBinding(def.body.?, word.name)) return bindingError(error.BindwordNeedsWord, word.name);
+            try ops.append(a, .{ .kind = .bind_word, .callee = word.name, .args = &.{}, .source = word.source });
+            return .{ .local = ops.items.len - 1 };
         },
         .pack => |entries| return flattenEntries(a, entries, def, ops, locals, .{ .kind = .pack, .args = &.{} }),
         .project => |proj| {
@@ -844,11 +1048,58 @@ fn emitStaticExpr(o: *Out, n: *Node) anyerror!void {
     }
 }
 
-fn emitFlat(o: *Out, a: std.mem.Allocator, m: Mod, flat: FlatIR) !void {
+fn emitSource(o: *Out, source: SourceIR) void {
+    o.add(".{{ .file = \"{f}\", .line = {d}, .column = {d}, .offset = {d} }}", .{ std.zig.fmtString(source.file), source.line, source.column, source.offset });
+}
+
+fn emitClosure(o: *Out, a: std.mem.Allocator, m: Mod, closure: ClosureIR) anyerror!void {
+    const d = closure.def;
+    o.add("&jpp.ClosureDef{{ .id = \"{s}:{s}\", .home = this_module, .source = ", .{ m.name, d.name });
+    emitSource(o, d.source);
+    o.add(", .signature = &.{{", .{});
+    for (d.params) |param| {
+        o.add(".{{ .name = \"{s}\", .section = .{s}, .rest = {}, .elementwise = {}, .qual = jpp.declarationQual(STATIC, ", .{ param.name, if (param.named) "named" else "positional", param.rest, param.rest and param.pred != null });
+        if (param.anonymous) o.add("null, ", .{}) else o.add("\"{s}\", ", .{param.name});
+        if (param.pred != null) {
+            o.add(".{{ .tvar = \"{s}\" }}", .{param.name});
+        } else if (param.ty) |ty| {
+            if (isTVar(d, ty)) o.add(".{{ .tvar = \"{s}\" }}", .{ty}) else o.add(".{{ .exact = jpp.requireType(STATIC, \"{s}\") }}", .{ty});
+        } else o.add(".bare", .{});
+        o.add(", {}) }},", .{!param.anonymous and paramUsed(d, param.name)});
+    }
+    o.add(" }}, .gates = &.{{", .{});
+    for (d.params) |param| if (param.pred) |pred|
+        o.add(".{{ .tvar = \"{s}\", .word = \"{s}\" }},", .{ param.name, try localWord(a, m, pred) });
+    if (d.where_clause) |w| for (w.gates) |gate|
+        o.add(".{{ .tvar = \"{s}\", .word = \"{s}\" }},", .{ gate[0], try localWord(a, m, gate[1]) });
+    o.add(" }}, .variables = &.{{", .{});
+    if (d.where_clause) |w| for (w.vars) |name| o.add("\"{s}\",", .{name});
+    o.add(" }}, .eqs = &.{{", .{});
+    if (d.where_clause) |w| for (w.eqs) |eq|
+        o.add(".{{ .a = \"{s}\", .b = \"{s}\" }},", .{ eq[0], eq[1] });
+    o.add(" }}, .captures = &.{{", .{});
+    for (closure.captures) |name| o.add("\"{s}\",", .{name});
+    o.add(" }}, .body = ", .{});
+    try emitFlat(o, a, m, closure.flat);
+    o.add(" }}", .{});
+}
+
+fn emitRequirements(o: *Out, flat: FlatIR) void {
+    for (flat.ops) |op| {
+        if (op.kind == .call or op.kind == .bind_word) o.add("\"{s}\",", .{op.callee});
+        if (op.closure) |closure| {
+            for (closure.def.params) |param| if (param.pred) |pred| o.add("\"{s}\",", .{pred});
+            if (closure.def.where_clause) |w| for (w.gates) |gate| o.add("\"{s}\",", .{gate[1]});
+            emitRequirements(o, closure.flat);
+        }
+    }
+}
+
+fn emitFlat(o: *Out, a: std.mem.Allocator, m: Mod, flat: FlatIR) anyerror!void {
     o.add(".{{ .ops = &.{{\n", .{});
     for (flat.ops) |op| {
         o.add("        .{{ .kind = .{s}, .callee = \"{s}\", .field = \"{s}\", .labels = &.{{", .{
-            @tagName(op.kind), if (op.kind == .call) try localWord(a, m, op.callee) else "", op.field,
+            @tagName(op.kind), if (op.kind == .call or op.kind == .bind_word) try localWord(a, m, op.callee) else "", op.field,
         });
         for (op.labels) |label| o.add("\"{s}\",", .{label});
         o.add(" }}, .splats = &.{{", .{});
@@ -858,7 +1109,20 @@ fn emitFlat(o: *Out, a: std.mem.Allocator, m: Mod, flat: FlatIR) !void {
             if (i > 0) o.add(", ", .{});
             emitVR(o, r);
         }
-        o.add(" }} }},\n", .{});
+        o.add(" }}", .{});
+        if (op.target) |target| {
+            o.add(", .target = ", .{});
+            emitVR(o, target);
+        }
+        if (op.closure) |closure| {
+            o.add(", .closure = ", .{});
+            try emitClosure(o, a, m, closure.*);
+        }
+        if (op.kind == .bind_word) {
+            o.add(", .source = ", .{});
+            emitSource(o, op.source);
+        }
+        o.add(" }},\n", .{});
     }
     o.add("      }}, .result = ", .{});
     emitVR(o, flat.result);
@@ -906,14 +1170,10 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
     o.add("pub const REQUIREMENTS = .{{\n", .{});
     for (m.defs, 0..) |d, i| {
         o.add("    .{{ .owner = \"{s}\", .words = &[_][]const u8{{", .{d.name});
-        if (flats[i]) |flat| for (flat.ops) |op| {
-            if (op.kind == .call) o.add("\"{s}\",", .{op.callee});
-        };
+        if (flats[i]) |flat| emitRequirements(o, flat);
         for (d.params) |prm| if (prm.pred) |pred| o.add("\"{s}\",", .{pred});
         if (d.where_clause) |w| for (w.gates) |g| o.add("\"{s}\",", .{g[1]});
-        for (guards[i]) |guard| for (guard.flat.ops) |op| {
-            if (op.kind == .call) o.add("\"{s}\",", .{op.callee});
-        };
+        for (guards[i]) |guard| emitRequirements(o, guard.flat);
         o.add(" }} }},\n", .{});
     }
     o.add("}};\ncomptime {{ for (REQUIREMENTS) |r| jpp.validateCalls(STATIC, r.owner, r.words); }}\n", .{});
@@ -974,7 +1234,9 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
         for (m.defs, 0..) |e, ei| {
             if (!std.mem.eql(u8, e.name, d.name)) continue;
             done[ei] = true;
-            o.add("    .{{ .declaration_home = this_module, .name = \"{s}\", .signature = &.{{", .{emitted_name});
+            o.add("    .{{ .declaration_home = this_module, .name = \"{s}\", .source = ", .{emitted_name});
+            emitSource(o, e.source);
+            o.add(", .signature = &.{{", .{});
             for (e.params, 0..) |prm, pi| {
                 if (pi > 0) o.add(",", .{});
                 o.add(" .{{ .name = \"{s}\", .section = .{s}, .rest = {}, .elementwise = {}, .qual = ", .{ prm.name, if (prm.named) "named" else "positional", prm.rest, prm.rest and prm.pred != null });
@@ -1048,22 +1310,9 @@ fn emitModule(o: *Out, a: std.mem.Allocator, m: Mod, flats: []?FlatIR, unit_name
                 o.add(" .body = .{{ .ground = G{d} }} }},\n", .{ei});
             } else {
                 const flat = flats[ei].?;
-                o.add("\n      .body = .{{ .ops = .{{ .ops = &.{{\n", .{});
-                for (flat.ops) |op| {
-                    o.add("        .{{ .kind = .{s}, .callee = \"{s}\", .field = \"{s}\", .labels = &.{{", .{ @tagName(op.kind), if (op.kind == .call) try localWord(a, m, op.callee) else "", op.field });
-                    for (op.labels) |label| o.add("\"{s}\",", .{label});
-                    o.add(" }}, .splats = &.{{", .{});
-                    for (op.splats) |splat| o.add(".{s},", .{@tagName(splat)});
-                    o.add(" }}, .args = &.{{ ", .{});
-                    for (op.args, 0..) |r, ri| {
-                        if (ri > 0) o.add(", ", .{});
-                        emitVR(o, r);
-                    }
-                    o.add(" }} }},\n", .{});
-                }
-                o.add("      }}, .result = ", .{});
-                emitVR(o, flat.result);
-                o.add(" }} }} }},\n", .{});
+                o.add("\n      .body = .{{ .ops = ", .{});
+                try emitFlat(o, a, m, flat);
+                o.add(" }} }},\n", .{});
             }
         }
         o.add("}});\ncomptime {{ _ = @field(@This(), \"{s}\"); }}\n", .{emitted_name});
@@ -1095,7 +1344,10 @@ fn nodeUses(n: *Node, name: []const u8) bool {
     return switch (n.*) {
         .ident => |s| std.mem.eql(u8, s, name),
         .bind => |b| nodeUses(b.value, name),
-        .call => |c| entriesUse(c.args, name),
+        .call => |c| std.mem.eql(u8, c.callee, name) or entriesUse(c.args, name),
+        .apply => |c| nodeUses(c.target, name) or entriesUse(c.args, name),
+        .closure => |d| closureUses(d.*, name),
+        .bind_word => |word| std.mem.eql(u8, word.name, name),
         .pack => |args| entriesUse(args, name),
         .project => |proj| nodeUses(proj.value, name),
         .block => |items| blk: {
@@ -1396,7 +1648,7 @@ pub fn main(pinit: std.process.Init) !void {
             std.debug.print("jppc: lex error {any} in {s}\n", .{ e, f.path });
             return e;
         };
-        var p = Parser{ .toks = toks, .a = a };
+        var p = Parser{ .toks = toks, .a = a, .source = src, .path = f.path };
         parsed[mi] = p.parseModule(f.name) catch |e| {
             std.debug.print("jppc: parse error in {s}\n", .{f.path});
             return e;

@@ -1,0 +1,10 @@
+using Base
+export make, policy, capturedType
+
+policy(x<:Any) = 5
+privateOffset(seed::int64) = seed + 1
+retain(f) = f
+make(seed::int64) = deeper(seed)
+deeper(seed::int64) = retain() do x { policy(x) + privateOffset(seed) }
+
+capturedType(T::type) = retain() do { T }

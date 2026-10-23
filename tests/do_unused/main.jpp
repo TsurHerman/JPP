@@ -1,0 +1,2 @@
+keep(f) = f
+main() = keep() do _ { 1 }

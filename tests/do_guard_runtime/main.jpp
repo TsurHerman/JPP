@@ -1,0 +1,7 @@
+using Base
+keep(f) = f
+guarded(x<:Any, f) where f() = 1
+main() = {
+    f = keep() do { true }
+    check("callback guard", guarded(9, f), 1)
+}

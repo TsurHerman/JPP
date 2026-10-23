@@ -1,0 +1,71 @@
+using Base
+using Base.Function
+using factory
+using bridge
+
+export policy
+policy(::int64) = 100
+
+keep(f) = f
+applyPair(f, a, b) = f(a, b)
+applyNamed(f, a, b) = f(; right = b, left = a)
+invokeNull(f) = f()
+acceptFunction(f<:Function, x) = f(x)
+sameType(A::type, B::type)::bool = zig{ A == B }
+sameRepresentation(a, b)::bool = zig{ @TypeOf(a) == @TypeOf(b) }
+next()::int64 = zig{
+    blk: {
+        const State = struct { var count: i64 = 0; };
+        State.count += 1;
+        break :blk State.count;
+    }
+}
+
+main() = {
+    sum = applyPair(2, 3) do x, y { x + y }
+    check("do inserts the callback first", sum, 5)
+    check("zero argument callback", invokeNull() do { 17 }, 17)
+
+    identity = keep() do x { x }
+    check("one body accepts integer inputs", identity(8), 8)
+    check("the same body accepts float inputs", identity(1.25), 1.25)
+    check("the same body retains type values", sameType(identity(int64), int64), true)
+    check("ordinary Function predicate accepts closure", acceptFunction(identity, 12), 12)
+
+    firstClosure = make(10)
+    secondClosure = make(20)
+    check("returned closure keeps runtime capture", invoke(firstClosure, 1), 111)
+    check("separate instances keep separate captures", invoke(secondClosure, 1), 121)
+    check("runtime captures share representation", sameRepresentation(firstClosure, secondClosure), true)
+
+    named = applyNamed(4, 9) do ; left, right { right - left }
+    check("callback names bind by name", named, 5)
+    collect = keep() do xs... { xs }
+    check("callback rest uses ordinary packs", len(collect(1, 2, 3)), 3)
+
+    outer = 40
+    nested = keep() do x {
+        keep() do y { outer + x + y }
+    }
+    inner = nested(1)
+    check("nested closures capture both lexical levels", inner(2), 43)
+    check("returned callable can be applied directly", nested(2)(3), 45)
+    holder = (; action = identity)
+    check("record callable projection", holder.action(19), 19)
+
+    witness = capturedType(float64)
+    check("captured type values retain identity", sameType(witness(), float64), true)
+    check("a callback parameter shadows an outer local", applyPair(3, 4) do outer, y { outer + y }, 7)
+    check("shadowing leaves the outer binding intact", outer, 40)
+
+    seed = next()
+    delayed = keep() do { next() + seed }
+    check("constructing a callback does not run its body", next(), 2)
+    check("captured producer is not repeated", delayed(), 4)
+    check("callback executes again when requested", delayed(), 5)
+    check("argument producers run in source order", applyPair(next(), next()) do x, y { y - x }, 1)
+
+    selected = bindword(policy)
+    check("bound word dispatches in captured context", invoke(selected, 3), 100)
+    check("ordinary Function predicate accepts bound word", acceptFunction(selected, 3), 100)
+}

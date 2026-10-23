@@ -47,6 +47,8 @@ Status of the major features:
 | infix operators are ordinary overridable words: `\|\| && == + - * /`, precedence loosest-first | RUNS (pred_join pins boolean precedence; value_equality covers equality) |
 | explicit Base namespace/facade, recursive folder imports, wildcard siblings, and ordered public import-cycle interfaces | RUNS (base_folder, folder_modules, cycle_imports, cycle_folder, cycle_ambiguity, cycle_facade_ambiguity; facade, privacy and same-module ambiguity negatives) |
 | immutable local bindings name ANF values without repeating calls | RUNS (local_bindings, checkout; binding_* frontend rejection cases) |
+| `do` blocks as callable structs, creation-context capture, direct generic application, and explicit `bindword` values | RUNS (do_blocks, do_enum, do_types; do_* rejection cases) |
+| language reflection of callables, captures, provenance, and concrete resolution outcomes | RUNS (reflection; Base.Reflection); runtime word branch plans and general AST reflection remain unbuilt |
 | immutable module constants, native namespace access, and lexical enum case patterns | RUNS (static_bindings, dwarf_offsets; static_binding_* and enum_pattern_* rejection cases) |
 | value predicates and classifier comparisons in `where`, evaluated from known branch facts | RUNS (log_labels, enum_guard_order, value_guard_variant; guard rejection cases) |
 | native error sets and error unions use the same injected dispatch mechanism | RUNS (error_dispatch; error coverage, open-set and result rejection cases) |
@@ -70,7 +72,7 @@ Status of the major features:
 | repeated type binder = identity; `where T == S` = mutual direct relation; all predicate conjuncts participate in dominance | RUNS (type_bindings, where_gate, gate_conjunction; negative: pointwise_gap) |
 | tiering & hot-swap, symbol-name-as-cache-key, sessions | RATIFIED (soprobe touches the dlsym venue) |
 | memory model, threading, stdlib strategy, tensors, macros, ledger tooling | OPEN (§11) |
-| dispatched resource cleanup backed by Zig `defer` | VALIDATED (`spike/scopeprobe.zig`); callable actions, source scopes and ownership contracts remain OPEN |
+| dispatched resource cleanup backed by Zig `defer` | VALIDATED (`spike/scopeprobe.zig`); source callable values RUN, source scope primitives and ownership contracts remain OPEN |
 | export-only word declarations, imported re-exports, and lexical call/gate checks | RUNS (declaration_tunnel, reexport_chain, override; undeclared and missing-implementation negatives); typed contracts remain OPEN |
 
 ---
@@ -113,7 +115,7 @@ Status of the major features:
 - **Base is an explicit namespace (RUNS).** Write `using Base` to import the
   public interface selected by `Base/Base.jpp`. It uses `Base.*` and re-exports
   arithmetic, boolean words, equality, isOneOf, Any and its authored order,
-  Tuple utilities, and check. Narrow
+  Function, Tuple utilities, and check. Narrow
   imports such as `using Base.Arithmetic` or `using Base.Test` are also available.
   No import is inserted automatically. A file must declare its own dependencies;
   a program's imports do not repair a library's undeclared calls.
@@ -196,7 +198,8 @@ Status of the major features:
   are searched in source order. An aggregate can coalesce identical values but
   rejects different values or a value/method collision under one public name.
   A module cannot redefine a builtin type or give one name both a value binding
-  and methods. Binding a callable value does not implement callable application.
+  and methods. Local callable application now RUNS; module initializers retain
+  their restricted staging rules.
 - **Native namespaces (RUNS).** `using Base.Zig` imports an ordinary library
   constant, Zig. `Format = Zig.std.dwarf.Format` retains the actual native type;
   `Format.32` retains its actual case value. Static member access also reads
@@ -477,7 +480,7 @@ run once in source order; canonicalization only routes their completed results.
 selectors, retain their actual values through packing, projection, and identity
 forwarding. Runtime data and ordinary source literals contribute only their types
 to specialization. A static result does not erase a call's preceding runtime
-effects. General static arithmetic, brace syntax, and callable aliases are later
+effects. General static arithmetic and brace syntax are later
 work. See [packs](design/packs.md) for the field and dispatch decision tables.
 
 Variadic and tuples (RUNS):
@@ -679,8 +682,9 @@ Variadic and tuples (RUNS):
   meaning. Value comparisons and body expressions use the ordinary `==` word.
   Integer/float threshold predicates also work when the input is explicitly
   known, as in [sensor configuration](tests/value_guard_static/test.md).
-  Correlated multi-input guards, whole-rest guards, callable values and runtime
-  integer/float thresholds remain OPEN. See [log_labels](tests/log_labels/test.md).
+  Correlated multi-input guards, whole-rest guards, runtime callback evaluation
+  in guards, and runtime integer/float thresholds remain OPEN. See
+  [log_labels](tests/log_labels/test.md).
 - **Native errors (RUNS, 2026-09-20).** An error-set alias such as
   `ReadError = Zig.std.Io.Reader.Error` preserves the native set. A qualified
   member must already belong to it; a missing member never becomes a binder.
@@ -738,7 +742,32 @@ Variadic and tuples (RUNS):
 
 ## 5. Reflection
 
-Two comptime primitives:
+**RUNS (2026-10-23): explicit callable reflection.** Import `Base.Reflection` for
+`reflect(f)`, `analyze(f, pack)`, and `returnType(f, pack)`. A callable is a `do`
+closure or an explicit `bindword(name)` value; the latter captures a declared
+word and its effective creation context while preserving bare word identities.
+The pack is an ordinary two-section value, including its retained static facts.
+
+`reflect` returns typed metadata: callable kind and identity, lexical home for a
+closure, source location, effective captured context, signature and captures.
+Capture descriptors retain source names, native types and explicit staticness.
+`analyze` returns `selected`, `missing`, `ambiguous`, or `cyclic_order`, with
+candidate binding/qualification evidence, dominance witnesses, maxima, context
+positions and declaration source locations. The same selection engine drives
+ordinary calls; reflection does not maintain a parallel resolver. The selected
+index identifies the winning candidate when a word resolves. The intrinsic `<:`
+identity and default rules have explicit selection kinds and no method index.
+
+Selection does not claim that the body type-checks. `returnType` asks the normal
+inference path separately; neither query runs the callback's runtime effects.
+The initial word analysis reports `incomplete` for unresolved runtime enum/sum
+inputs: full branch-plan reflection is unbuilt, and an unsplit fallback must not
+be reported as the final winner. An anonymous closure still has one fixed body.
+Source locations and metadata are available; general AST quotation, universal
+contracts and a stable external inspection protocol remain OPEN. See
+[callables and reflection](design/callables.md) and `tests/reflection`.
+
+Two further comptime queries remain RATIFIED, not surface implementations:
 
 - `exists(f, args...)` — does this call resolve for these comptime-known
   values in this context? (also spelled over call shapes:
@@ -764,10 +793,15 @@ The whole surface reduces to one mechanism:
   comptime value — often a type — and when that type carries a `call`,
   `F{...}(args)` is `F{t1, t2}.call(args)`: braces evaluate away at
   comptime; parens are the real code left standing when comptime ends.
-- **Every surface call lowers to `call`.** `f(args...)` written in
+- **A named-word call lowers to `call`.** `f(args...)` written in
   module M means `call{M's context, f}(args...)`, defined in core:
 
       call{context, f}(args...) = resolve{context, f, typeof(args)}(args...)
+
+  Applying an anonymous callable instead binds and instantiates its already
+  selected body. A `bindword` value uses ordinary word resolution under its
+  captured context. Both preserve the caller's written argument order and the
+  same two-section pack model.
 
 - **A signature is a pack CONSTRUCTOR (ratified).** `{x::T, y::S} where
   P{T,S}` emits as ONE comptime function: bind the pattern's variables
@@ -856,9 +890,35 @@ The whole surface reduces to one mechanism:
   binding scope, and return their last expression's value. `_ = expression`
   discards a result while preserving its effects and can be repeated.
   An explicit local binding can shadow a module word as a value; applying
-  local callable values is still unbuilt and produces a diagnostic rather
-  than dispatching to a same-spelled module word. Typed local annotations
+  local callable values now RUNS. Applying a non-callable value produces a
+  diagnostic rather than dispatching to a same-spelled module word. Typed local annotations
   and mutable assignment remain outside this implemented surface.
+- **Callable structs and `do` (RUNS, 2026-10-23).** `F(args) do x, y { body }`
+  creates one anonymous callable and inserts it as the first positional input.
+  `do { body }` has zero inputs. The receiver's `f(...)` expressions supply the
+  input types; each invocation specializes the same body independently. Parameter
+  annotations validate that body and never introduce competing callback methods.
+  The receiver is resolved first; a callback failure does not retry another
+  receiver method. `Function` is an ordinary imported predicate from Base.Function,
+  also exported by Base; it has no compiler-special nominal or return rule.
+
+  A closure stores shallow immutable captures of existing ANF values plus static
+  body/home/context metadata. Its dispatch context is the effective caller-first
+  context at construction, including caller policies already in force there.
+  Later invokers do not add their contexts to that body. Private declarations
+  retain their lexical home. Callback parameters and locals form a separate scope;
+  nested closures can capture them, and later outer bindings remain unavailable.
+  Existing signature-name and unused-input rules apply. Source literal data is
+  not made static merely by capture, while type values keep their identity.
+
+  `bindword(f)` creates an explicitly context-bound method family; it retains
+  ordinary dispatch when called. Bare word/class values are unchanged. Reflection
+  makes captured contexts observable, so context collapse conservatively retains
+  the full effective context on paths that construct these callable values.
+  Dependency and lexical checks include dormant nested bodies. Application alone
+  does not split enums; inner dispatch and type-valued results retain their normal
+  demands. Captures are not a borrow checker or shared mutable function statics.
+  See [the complete callable contract](design/callables.md).
 - **Overridable definition operator (RATIFIED direction, 2026-09-18; unbuilt).**
   The eventual `=` word covers both value bindings (`x = expression`) and method
   definitions (`f(x) = body`). The agreed protocol dispatches on the kind of
@@ -1211,7 +1271,11 @@ Boundary contract:
   filters the existing caller sequence, and imports still accumulate on
   method entry (`collapse_imports`, `checkout`). Worklist discovery and
   cached context values let the checkout graph compile under the existing
-  comptime quota; this does not settle the recursion issue in §11.
+  comptime quota; this does not settle the recursion issue in §11. Paths that
+  construct `do` or `bindword` values retain their complete effective context:
+  it will be observable through callable reflection. Nested callback dependencies
+  are discovered before construction. More aggressive capture-context reduction
+  must preserve those observations as well as execution.
   A more aggressive decision-based collapse is OPEN. The historical
   probe's claim that removing losers always preserves winners is false
   for the pairwise nontransitive relation: A<B, B<C, no A<C leaves A
@@ -1336,7 +1400,8 @@ print/algebra demo):
   no keyword defaults or nominal record declaration syntax; splats/rests
   currently require statically shaped packs, not runtime-length collections;
   reduced internal AST (alignment with src/ast.zig's three layers = debt),
-  no spans/hashes emitted yet. General value literals/patterns in
+  source locations emitted for methods and closures, but no persistent hashes.
+  General value literals/patterns in
   signatures, type constructors with selectors, and arbitrary static
   evaluation depending on runtime data remain unimplemented. The live
   compiler, native instance slots, artifact identity, and hot swapping
@@ -1377,8 +1442,8 @@ print/algebra demo):
   synchronous `ensure(body, cleanup)` primitive using Zig `defer`, with ordinary
   caller-context dispatch for acquisition, body and release. It includes pooling,
   nested/error exits and cleanup overrides. This is deterministic cleanup, not
-  lifetime checking: escaping views remain possible. Callable source bodies and
-  an ownership contract are still OPEN; native grounds retain their existing
+  lifetime checking: escaping views remain possible. Callable source bodies now
+  RUN; a source scope primitive and an ownership contract remain OPEN. Native grounds retain their existing
   context-free boundary.
 - Tensors design (`tensors.jpp` is a decision stub). Direction (from
   MimIR's %tensor + julia's broadcast): shapes/ranks as comptime values

@@ -1,0 +1,24 @@
+using Base
+
+Mode = zig{ enum { narrow, wide } }
+keep(f) = f
+mode(wide::bool)::Mode = zig{ if (wide) .wide else .narrow }
+width(Mode.narrow) = uint32
+width(Mode.wide) = uint64
+bytesAs(bytes::string, T::type)::uint64 = zig{ std.mem.readInt(T, bytes[0..@sizeOf(T)], .little) }
+decode(f, m::Mode, bytes::string) = bytesAs(bytes, f(m))
+runtimeField(pack)::bool = zig{ !@typeInfo(@TypeOf(pack)).@"struct".fields[0].is_comptime }
+wideValue()::uint64 = zig{ 0x0807060504030201 }
+narrowValue()::uint64 = zig{ 0x04030201 }
+
+main() = {
+    identity = keep() do x { x }
+    check("direct callback application keeps enums runtime", runtimeField((identity(mode(false)),)), true)
+    selector = keep() do m { width(m) }
+    bytes = "\x01\x02\x03\x04\x05\x06\x07\x08"
+    check("callback type result composes with its receiver", decode(selector, mode(false), bytes), narrowValue())
+    check("callback type result checks every demanded arm", decode(selector, mode(true), bytes), wideValue())
+    chosen = mode(true)
+    reader = keep() do data { bytesAs(data, width(chosen)) }
+    check("type selection can depend on a runtime capture", reader(bytes), wideValue())
+}

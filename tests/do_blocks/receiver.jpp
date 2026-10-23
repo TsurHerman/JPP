@@ -1,0 +1,3 @@
+export invoke, policy
+policy(::int64) = 200
+invoke(f, x) = f(x)

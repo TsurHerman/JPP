@@ -1,0 +1,11 @@
+using Base.Test
+
+Open = zig{ enum(u8) { named = 0, _ } }
+keep(f) = f
+opaque()::Open = zig{ @enumFromInt(7) }
+tag(value::Open)::int64 = zig{ @intFromEnum(value) }
+
+main() = {
+    identity = keep() do x { x }
+    check("generic callback does not enumerate an open enum", tag(identity(opaque())), 7)
+}

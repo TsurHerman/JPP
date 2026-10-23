@@ -1,0 +1,3 @@
+keep(f) = f
+unused() = keep() do x { absent(x) }
+main() = 0

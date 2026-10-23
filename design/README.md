@@ -20,7 +20,9 @@ Read in this order:
    evaluation, the next scalar comparison proof, and the earlier running JSON case.
 7. [Binary units](binary_units.md): what an inspectable compiled unit must retain.
 8. [Resource scopes](resource_scopes.md): validated dispatched cleanup with Zig
-   defer; callable source bodies and borrowing remain open.
+   defer; source scope primitives and borrowing remain open.
+9. [Callable values and reflection](callables.md): `do` blocks, captured dispatch
+   contexts, generic invocation, bound words, and inspectable resolution evidence.
 
 **Status vocabulary:** RUNS means implemented and checked through the active
 pipeline; VALIDATED means machinery/probe evidence; RATIFIED means decided but

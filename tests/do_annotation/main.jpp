@@ -1,0 +1,5 @@
+keep(f) = f
+main() = {
+    callback = keep() do x::int64 { x }
+    callback(1.5)
+}

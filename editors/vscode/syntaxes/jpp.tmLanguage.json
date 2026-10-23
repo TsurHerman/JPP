@@ -454,6 +454,10 @@
           "name": "constant.language.boolean.jpp"
         },
         {
+          "match": "\\b(do|bindword)\\b",
+          "name": "keyword.control.callable.jpp"
+        },
+        {
           "include": "#call"
         },
         {

@@ -1,0 +1,6 @@
+using Base.Reflection
+keep(f) = f
+main() = {
+    callback = keep() do x { x }
+    returnType(callback, 1)
+}

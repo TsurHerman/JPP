@@ -1,0 +1,15 @@
+using Base
+
+Mode = zig{ enum { narrow, wide } }
+keep(f) = f
+mode(wide::bool)::Mode = zig{ if (wide) .wide else .narrow }
+width(Mode.narrow) = uint32
+width(Mode.wide) = uint64
+bytesAs(bytes::string, T::type)::uint64 = zig{ std.mem.readInt(T, bytes[0..@sizeOf(T)], .little) }
+consume(selector, bytes::string) = bytesAs(bytes, selector())
+
+main() = {
+    chosen = mode(true)
+    selector = keep() do { width(chosen) }
+    consume(selector, "\x01\x02\x03\x04\x05\x06\x07\x08")
+}

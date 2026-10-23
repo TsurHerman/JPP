@@ -114,7 +114,21 @@ a feature; preserve the ratified semantics unless the task changes them.
 - Local `name = expression` bindings are immutable aliases of ANF values.
   Preserve evaluation once and in source order, type identity, and the
   method-wide sequential binding environment. Rebinding and forward uses
-  are frontend errors; mutable assignment and callable locals are unbuilt.
+  are frontend errors; mutable assignment remains unbuilt. Local callable values
+  apply directly and must never fall back to a same-spelled module word.
+- `do` blocks construct callable structs and pass them as argument one. Their
+  anonymous body is fixed; actual invocation packs determine its specialization.
+  Preserve shallow immutable captures, static facts, original lexical homes and
+  the effective caller-first context at construction. Later receiver contexts do
+  not enter the callback. `bindword(name)` explicitly captures a declared method
+  family; bare word identities remain unchanged. Callback scopes are separate,
+  but signature-name and unused-input rules remain the same as methods.
+  Reflection makes captured contexts observable: conservatively retain full
+  contexts before reachable callable construction. Nested bodies participate in
+  dependency/member/declaration checks even when never invoked. `Base.Reflection`
+  queries the execution resolver, never a parallel matcher. Keep selection,
+  return typing and universal contracts distinct; unresolved runtime word branch
+  analysis reports incomplete. See `design/callables.md` for remaining limits.
 - `src/ast.zig` describes the intended AST but is not yet consumed by
   jppc. `spike/jpp.zig` retains the historical encoding needed by the
   tail-call probe; it is not the active runtime. The obsolete emitter and

@@ -31,7 +31,8 @@ member-path patterns retain their lexical native identities through module
 composition. This completes the bounded source slice, not a general reflection
 or branch library. Next specify ordinary static application's stage/context and
 derive the remaining generic primitives from this consumer. Arbitrary initializer
-calls, callable values and staged branch continuations remain unbuilt.
+calls and staged branch continuations remain unbuilt. Callable values now run
+under the [callable contract](callables.md).
 
 The next bounded slice now runs: [log labels](../tests/log_labels/test.md) uses
 ordinary boolean predicates and classifier comparisons in `where`; typed defaults
@@ -163,14 +164,21 @@ Runtime-sized collections and keyword defaults remain separate work.
 
 ## 4. Static computation and callable types
 
+Callable application now RUNS (2026-10-23): `do` blocks create callable structs,
+`bindword(name)` explicitly binds a word to its creation context, and local values
+can be applied directly. `Base.Reflection` exposes callable metadata and concrete
+selection evidence from the execution resolver. Captures retain static facts and
+runtime data separately; source locations and lexical homes survive lowering.
+See [callables](callables.md) for the ratified rules and remaining boundaries.
+
 Generalize static calculations, expose brace application with the same semantic
 pack and word table, and reject unavailable runtime selectors. Constructor aliases
 and known callable values need dependency discovery and private-home preservation
 before context collapse. Test deep caller overrides through an alias.
 
 Compare literal/computed static selectors, keyword permutations, and different
-runtime data at the bound method's instance identity. General closures and
-bool/integer-range bridges remain later extensions. The enum/tagged-union
+runtime data at the bound method's instance identity. Mutable/erased callable
+interfaces and bool/integer-range bridges remain later extensions. The enum/tagged-union
 bridge below was brought forward to test declarative library composition.
 
 ### 4a. Injected tables through a real library

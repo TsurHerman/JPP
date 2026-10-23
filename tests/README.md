@@ -111,7 +111,28 @@ identities distinct and prevents source modules from overwriting the runtime.
 `local_bindings` tests evaluation once, effects in source order, aliases of
 type and record values, discarded results, and nested blocks. Frontend cases
 `binding_duplicate`, `binding_parameter`, `binding_type_parameter`,
-`binding_forward`, `binding_self`, and `binding_call` pin the invalid forms.
+`binding_forward`, and `binding_self` pin invalid binding forms. `binding_call`
+rejects applying a non-callable local value at compilation.
+
+`do_blocks` exercises callable structs, first-argument do notation, generic
+invocation, nested/returned captures, private homes and context isolation.
+`do_types` covers annotated/named/rest inputs, type captures, exact value patterns
+and callback scopes. `do_enum` keeps generic enum transport runtime while allowing
+type-selection demand through callback inputs and captured values consumed within
+the callback. `do_captured_type_escape` records the unsupported escape of a type
+selected by an enum hidden inside a callable environment.
+`do_no_fallback` prevents an invalid callback from retrying a less preferred
+receiver method. `do_member` and `do_undeclared` validate dormant callback bodies;
+`do_scope_leak` rejects escaping body locals. `do_guard_undeclared` preserves
+lexical validation in unused guards, while `do_guard_runtime` rejects evaluating
+a runtime callback in a guard.
+
+`reflection` describes callable provenance, captures and contexts, then inspects
+the real resolver's candidates, winners and rejection evidence without invoking
+the callback. Missing and ambiguous selections are ordinary query results;
+`returnType` checks the selected body's type separately. Runtime word branch-plan
+reflection remains incomplete and is explicitly reported as such.
+`reflection_pack` rejects a return-type query without an argument pack.
 
 ## Promise catalog and coverage
 
@@ -138,11 +159,13 @@ type and record values, discarded results, and nested blocks. Frontend cases
 | 19 | Type values and bound return types survive calls | `type_values`, `type_bindings`; machinery pack test | general static computation and braces |
 | 20 | Every where variable must bind somewhere | `unbound_where` | arbitrary where expressions |
 | 21 | Ground inference preserves runtime data and intentional static fields (§7) | `ground_records`; `checkout` (native record pipeline and void statement emission) | richer record surface |
-| 22 | Immutable local bindings alias ANF values (§6) | `local_bindings`, `checkout`; `binding_*` frontend rejection cases | typed local annotations; application of callable values |
-| 23 | Module constants and native member paths preserve lexical identity | `static_bindings`, `dwarf_offsets`; `static_binding_*` rejection cases | calls in static initializers; callable values |
+| 22 | Immutable local bindings alias ANF values (§6) | `local_bindings`, `checkout`, `do_blocks`; `binding_*` rejection cases | typed local annotations |
+| 23 | Module constants and native member paths preserve lexical identity | `static_bindings`, `dwarf_offsets`; `static_binding_*` rejection cases | calls/callable construction in static initializers |
 | 24 | Value qualifiers use known branch facts, ordinary predicates and classifier comparisons | `log_labels`, `enum_guard_order`, `enum_guard_runtime_ambiguous`, `value_guard_variant`, `value_guard_static`, `value_guard_named_type`; guard rejection cases | runtime numeric intervals; correlated inputs; whole-rest guards |
 | 25 | Native error sets/unions inject exhaustive tables and rejoin compatible results | `error_dispatch`; `error_*` rejection cases; native join tests | open anyerror dispatch; unrelated success-type joins |
 | 26 | Equality and finite membership remain ordinary library words | `value_equality`, `log_labels`, `error_dispatch` | mixed numeric promotion; general record/collection equality; predicate factories |
+| 27 | Do blocks retain creation context and infer inputs at each direct invocation (§6) | `do_blocks`, `do_types`, `do_enum`; `do_arity`, `do_annotation`, `do_unused`, `do_undeclared`, `do_duplicate`, `do_no_fallback`, `do_member`, `do_scope_leak`, `do_guard_undeclared`, `do_guard_runtime`; frontend `do_forward`, `do_rebind`, `do_parameter_syntax`, `do_bindword_local`; `do_captured_type_escape` | captured-type annotations, dotted callback value patterns; general callable structs and ownership |
+| 28 | Reflection is structured evidence from the actual resolver (§5) | `reflection`, `reflection_pack`; native resolver/reflection tests; ordinary ambiguity tests retain strict errors | complete runtime word branch plans, general AST quotation, external inspection protocol |
 
 `variant_static` preserves known results from static union arms through helpers,
 named calls and rest forwarding. A returned known tag needs only its selected
@@ -294,6 +317,8 @@ under `spike/`, run with `zig build scope-probe` or `zig build probes`. It check
 dispatched cleanup with Zig defer, errors, nesting and caller overrides, plus a
 compile rejection for fallible cleanup. It does not add source scope syntax or
 claim lifetime safety; an escaping-view test records that limit.
+Source callable values now run independently in `do_blocks`; the probe does not
+yet provide a source `ensure` primitive.
 
 ## Injected tables and serialization
 

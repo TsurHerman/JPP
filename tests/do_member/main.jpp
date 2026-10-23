@@ -1,0 +1,7 @@
+using Base.Zig
+keep(f) = f
+unused() = {
+    Native = Zig.std.builtin.Endian
+    keep() do { Native.misspelled }
+}
+main() = 0
